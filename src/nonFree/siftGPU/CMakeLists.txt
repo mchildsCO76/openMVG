@@ -1,0 +1,36 @@
+# SIFTGPU_MODE (CUDA=1, GLSL=0)
+
+# Variables set for SiftGPU makefile
+set(ENV{SIFTGPU_MODE}		${SIFTGPU_MODE}) #CUDA = 1, GLSL = 2
+set(ENV{SIFTGPU_CUDA_PATH}	${CUDA_TOOLKIT_ROOT_DIR})
+set(ENV{SIFTGPU_BIN_PATH}	${CMAKE_CURRENT_BINARY_DIR})
+
+#  include_directories(${CMAKE_CURRENT_BINARY_DIR} nonFree/siftGPU/SiftGPU)
+	SET(SIFTGPU_SRC_PATH ${CMAKE_SOURCE_DIR}/nonFree/siftGPU/SiftGPU)
+  MESSAGE("\n------------------------------------------------------------------\n")
+  MESSAGE("Compiling SiftGPU...")
+  EXECUTE_PROCESS(
+    COMMAND make siftgpu
+    WORKING_DIRECTORY ${SIFTGPU_SRC_PATH}
+    RESULT_VARIABLE SIFTGPU_BUILD_RETURN
+  )
+  MESSAGE("\n------------------------------------------------------------------\n")
+
+  #on error
+  IF (NOT ${SIFTGPU_BUILD_RETURN} EQUAL 0)
+    MESSAGE(FATAL_ERROR "SiftGPU cannot be compiled. Returned: ${SIFTGPU_BUILD_RETURN}")
+  ENDIF (NOT ${SIFTGPU_BUILD_RETURN} EQUAL 0)
+
+	# Copy library files to output
+  FILE(COPY ${CMAKE_CURRENT_BINARY_DIR}/bin/libsiftgpu.so DESTINATION ${PROJECT_BINARY_DIR}/${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}-${CMAKE_BUILD_TYPE})
+  FILE(COPY ${CMAKE_CURRENT_BINARY_DIR}/bin/libsiftgpu.a DESTINATION ${PROJECT_BINARY_DIR}/${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}-${CMAKE_BUILD_TYPE})
+
+#INSTALL(TARGETS siftgpu DESTINATION lib EXPORT openMVG-targets)
+#SET_PROPERTY(TARGET siftgpu PROPERTY FOLDER OpenMVG/nonFree)
+INSTALL(
+  DIRECTORY .
+  DESTINATION include/openMVG_dependencies/nonFree/siftgpu
+  COMPONENT headers
+  FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h"
+)
+#${PROJECT_BINARY_DIR}/${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}-${CMAKE_BUILD_TYPE}
