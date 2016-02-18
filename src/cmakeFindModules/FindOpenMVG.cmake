@@ -44,6 +44,7 @@ SET(OPENMVG_LIBRARIES_NAMES
   easyexif
   #optional third_party
   vlsift
+  siftgpu
   jpeg
   png
   tiff

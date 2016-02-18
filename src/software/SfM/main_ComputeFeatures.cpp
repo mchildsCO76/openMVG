@@ -12,6 +12,7 @@
 /// Feature/Regions & Image describer interfaces
 #include "openMVG/features/features.hpp"
 #include "nonFree/sift/SIFT_describer.hpp"
+#include "nonFree/siftGPU/SIFTGPU_describer.hpp"
 #include <cereal/archives/json.hpp>
 #include "openMVG/system/timer.hpp"
 
@@ -78,6 +79,7 @@ int main(int argc, char **argv)
       << "[-m|--describerMethod]\n"
       << "  (method to use to describe an image):\n"
       << "   SIFT (default),\n"
+      << "   SIFTGPU,\n"
       << "   AKAZE_FLOAT: AKAZE with floating point descriptors,\n"
       << "   AKAZE_MLDB:  AKAZE with binary descriptors\n"
       << "[-u|--upright] Use Upright feature 0 or 1\n"
@@ -162,6 +164,11 @@ int main(int argc, char **argv)
     {
       image_describer.reset(new SIFT_Image_describer(SiftParams(), !bUpRight));
     }
+	else
+	if (sImage_Describer_Method == "SIFTGPU")
+    {
+      image_describer.reset(new SIFTGPU_Image_describer(SiftGPUParams()));
+    }
     else
     if (sImage_Describer_Method == "AKAZE_FLOAT")
     {
@@ -187,6 +194,12 @@ int main(int argc, char **argv)
         std::cerr << "Preset configuration failed." << std::endl;
         return EXIT_FAILURE;
       }
+    }
+
+	// In case of SiftGPU detector has to be initialized
+	if (sImage_Describer_Method == "SIFTGPU")
+    {
+      (dynamic_cast<SIFTGPU_Image_describer*>(image_describer.get()))->init();
     }
 
     // Export the used Image_describer and region type for:

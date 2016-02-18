@@ -31,6 +31,7 @@ INSTALL(TARGETS openMVG_main_ConvertList DESTINATION bin/)
 # - openMVG_main_ComputeMatches: putative matches + geometric filtered matches
 ###
 
+#link_directories(${PROJECT_BINARY_DIR}/${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}-${CMAKE_BUILD_TYPE} ${SIFTGPU_CUDA_LIB_PATH})
 ADD_EXECUTABLE(openMVG_main_ComputeFeatures main_ComputeFeatures.cpp)
 TARGET_LINK_LIBRARIES(openMVG_main_ComputeFeatures
   openMVG_system
@@ -40,7 +41,9 @@ TARGET_LINK_LIBRARIES(openMVG_main_ComputeFeatures
   openMVG_sfm
   stlplus
   vlsift
+  siftgpu
   )
+
 
 ADD_EXECUTABLE(openMVG_main_ComputeMatches main_ComputeMatches.cpp)
 TARGET_LINK_LIBRARIES(openMVG_main_ComputeMatches
@@ -50,7 +53,9 @@ TARGET_LINK_LIBRARIES(openMVG_main_ComputeMatches
   openMVG_sfm
   openMVG_matching_image_collection
   stlplus
+  siftgpu
   )
+
 
 # Installation rules
 SET_PROPERTY(TARGET openMVG_main_ComputeFeatures PROPERTY FOLDER OpenMVG/software)
@@ -291,6 +296,7 @@ IF(OpenMVG_USE_OPENCV)
       openMVG_sfm
       stlplus
       vlsift
+      siftgpu
       ${OpenCV_LIBS})
 
   SET_PROPERTY(TARGET openMVG_main_ComputeFeatures_OpenCV PROPERTY FOLDER OpenMVG/software)
