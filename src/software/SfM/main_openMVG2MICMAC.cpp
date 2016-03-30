@@ -63,8 +63,8 @@ bool exportCAMSToMICMAC(
     // Create MicMac-LocalChantierDescripteur.xml file
     const std::string & sLocalChantierDescripteur = stlplus::folder_append_separator(sOutDir)+"MicMac-LocalChantierDescripteur.xml";
     std::ofstream file_MM_lcd_xml(sLocalChantierDescripteur.c_str());
-    file_MM_lcd_xml << "<Global>" << os.widen('\n')
-     << os.widen('\t')<<"<ChantierDescripteur >"<< os.widen('\n');
+    file_MM_lcd_xml << "<Global>\n"
+    << "\t<ChantierDescripteur >\n";
 
 
     // Compute Landmarks for each view
@@ -128,53 +128,53 @@ bool exportCAMSToMICMAC(
       const int h = pinhole_cam->h();
 
       // Create orientation file
-      std::ofstream outfile( stlplus::create_filespec(
+      std::ofstream file_MM_orient( stlplus::create_filespec(
            sOutCalibFolder, std::string("Orientation-") + stlplus::filename_part(view->s_Img_path), "xml" ).c_str() );
-      outfile << setprecision(8) << fixed ;
+      file_MM_orient << setprecision(8) << fixed ;
 
       // See ParamChantierPhotogram.xml in MicMac distrib for full specs. The doc is also useful !
-      outfile
+      file_MM_orient
         << "<?xml version=\"1.0\" ?>\n"
         << "<ExportAPERO>\n"
-        << "    <OrientationConique>\n"
-        << "        <OrIntImaM2C>\n"
-        << "            <I00>0 0</I00>\n"
-        << "            <V10>1 0</V10>\n"
-        << "            <V01>0 1</V01>\n"
-        << "        </OrIntImaM2C>\n"
-        << "        <TypeProj>eProjStenope</TypeProj>\n"
-        << "        <ZoneUtileInPixel>true</ZoneUtileInPixel>\n"
-        << "        <Interne>\n"
-        << "            <KnownConv>eConvApero_DistM2C</KnownConv>\n"
-        << "            <PP>" << pp(0) << " " << pp(1) <<"</PP>\n"
-        << "            <F>" << f << "</F>\n"
-        << "            <SzIm>" << w << " " << h << "</SzIm>\n"
-        << "            <CalibDistortion>\n"
-        << "                <ModRad>\n"
-        << "                    <CDist>" << pp(0) << " " <<  pp(1) << "</CDist>\n"
-        << "                </ModRad>\n"
-        << "            </CalibDistortion>\n"
-        << "        </Interne>\n"
-        << "        <Externe>\n"
-        << "            <AltiSol>" << meanZ << "</AltiSol>\n"
-        << "            <Profondeur>" << meanDepth << "</Profondeur>\n"
-        << "            <KnownConv>eConvApero_DistM2C</KnownConv>\n"
-        << "            <Centre>" << c(0) << " " << c(1) << " " << c(2) << "</Centre>\n"
-        << "            <IncCentre>1 1 1</IncCentre>\n"
-        << "            <ParamRotation>\n"
-        << "                <CodageMatr>\n"
-        << "                    <L1>" << R(0,0) << " " << R(0,1) << " " << R(0,2) <<  "</L1>\n"
-        << "                    <L2>" << R(1,0) << " " << R(1,1) << " " << R(1,2) << "</L2>\n"
-        << "                    <L3>" << R(2,0) << " " << R(2,1) << " " << R(2,2) << "</L3>\n"
-        << "                </CodageMatr>\n"
-        << "            </ParamRotation>\n"
-        << "        </Externe>\n"
-        << "        <ConvOri>\n"
-        << "            <KnownConv>eConvApero_DistM2C</KnownConv>\n"
-        << "        </ConvOri>\n"
-        << "    </OrientationConique>\n"
+        << "\t<OrientationConique>\n"
+        << "\t\t<OrIntImaM2C>\n"
+        << "\t\t\t<I00>0 0</I00>\n"
+        << "\t\t\t<V10>1 0</V10>\n"
+        << "\t\t\t<V01>0 1</V01>\n"
+        << "\t\t</OrIntImaM2C>\n"
+        << "\t\t<TypeProj>eProjStenope</TypeProj>\n"
+        << "\t\t<ZoneUtileInPixel>true</ZoneUtileInPixel>\n"
+        << "\t\t<Interne>\n"
+        << "\t\t\t<KnownConv>eConvApero_DistM2C</KnownConv>\n"
+        << "\t\t\t<PP>" << pp(0) << " " << pp(1) <<"</PP>\n"
+        << "\t\t\t<F>" << f << "</F>\n"
+        << "\t\t\t<SzIm>" << w << " " << h << "</SzIm>\n"
+        << "\t\t\t<CalibDistortion>\n"
+        << "\t\t\t\t<ModRad>\n"
+        << "\t\t\t\t\t<CDist>" << pp(0) << " " <<  pp(1) << "</CDist>\n"
+        << "\t\t\t\t</ModRad>\n"
+        << "\t\t\t</CalibDistortion>\n"
+        << "\t\t</Interne>\n"
+        << "\t\t<Externe>\n"
+        << "\t\t\t<AltiSol>" << meanZ << "</AltiSol>\n"
+        << "\t\t\t<Profondeur>" << meanDepth << "</Profondeur>\n"
+        << "\t\t\t<KnownConv>eConvApero_DistM2C</KnownConv>\n"
+        << "\t\t\t<Centre>" << c(0) << " " << c(1) << " " << c(2) << "</Centre>\n"
+        << "\t\t\t<IncCentre>1 1 1</IncCentre>\n"
+        << "\t\t\t<ParamRotation>\n"
+        << "\t\t\t\t<CodageMatr>\n"
+        << "\t\t\t\t\t<L1>" << R(0,0) << " " << R(0,1) << " " << R(0,2) <<  "</L1>\n"
+        << "\t\t\t\t\t<L2>" << R(1,0) << " " << R(1,1) << " " << R(1,2) << "</L2>\n"
+        << "\t\t\t\t\t<L3>" << R(2,0) << " " << R(2,1) << " " << R(2,2) << "</L3>\n"
+        << "\t\t\t\t</CodageMatr>\n"
+        << "\t\t\t</ParamRotation>\n"
+        << "\t\t</Externe>\n"
+        << "\t\t<ConvOri>\n"
+        << "\t\t\t<KnownConv>eConvApero_DistM2C</KnownConv>\n"
+        << "\t\t</ConvOri>\n"
+        << "\t</OrientationConique>\n"
         << "</ExportAPERO>\n";
-      outfile.close();
+      file_MM_orient.close();
 
         // Copy images to output folder
       if(bExportImages){
@@ -200,41 +200,41 @@ bool exportCAMSToMICMAC(
     }
 
 
-    file_MM_lcd_xml << os.widen('\t') << "<KeyedNamesAssociations>" << os.widen('\n');
+    file_MM_lcd_xml << "\t\t<KeyedNamesAssociations>\n";
     for(int i=0;i<valid_views.size();i++){
       const View * view = valid_views.at(i)->second.get();
       std::string filename = stlplus::filename_part(view->s_Img_path);
-      file_MM_lcd_xml << os.widen('\t') << os.widen('\t') << "<Calcs>" << os.widen('\n');
-      file_MM_lcd_xml << os.widen('\t') << os.widen('\t') << os.widen('\t') << "<Arrite> 1 1 </Arrite>" << os.widen('\n');
-      file_MM_lcd_xml << os.widen('\t') << os.widen('\t') << os.widen('\t') << "<Direct>" << os.widen('\n');
-      file_MM_lcd_xml << os.widen('\t') << os.widen('\t') << os.widen('\t') << os.widen('\t') << "<PatternTransform>"<<filename<< "</PatternTransform>" << os.widen('\n');
-      file_MM_lcd_xml << os.widen('\t') << os.widen('\t') << os.widen('\t') << os.widen('\t') << "<CalcName>"<<"OpenMVG_cam_"<<view->id_intrinsic<< "</CalcName>" << os.widen('\n');
-      file_MM_lcd_xml << os.widen('\t') << os.widen('\t') << os.widen('\t') << "</Direct>" << os.widen('\n');
-      file_MM_lcd_xml << os.widen('\t') << os.widen('\t') << "</Calcs>" << os.widen('\n');
+      file_MM_lcd_xml << "\t\t<Calcs>\n"
+      << "\t\t\t<Arrite> 1 1 </Arrite>\n"
+      << "\t\t\t<Direct>\n"
+      << "\t\t\t\t<PatternTransform>"<<filename<< "</PatternTransform>\n"
+      << "\t\t\t\t<CalcName>"<<"OpenMVG_cam_"<<view->id_intrinsic<< "</CalcName>\n"
+      << "\t\t\t</Direct>\n"
+      << "\t\t</Calcs>\n";
     }
-    file_MM_lcd_xml << os.widen('\t') << os.widen('\t') << "<Key>   NKS-Assoc-STD-CAM  </Key>" << os.widen('\n');
-    file_MM_lcd_xml << os.widen('\t') << "</KeyedNamesAssociations>" << os.widen('\n');
-
-    file_MM_lcd_xml << os.widen('\t') << "<KeyedNamesAssociations>" << os.widen('\n');
+    file_MM_lcd_xml << "\t\t<Key>   NKS-Assoc-STD-CAM  </Key>\n"
+    << "\t\t</KeyedNamesAssociations>\n"
+    
+    << "\t\t<KeyedNamesAssociations>\n";
     for(int i=0;i<valid_views.size();i++){
       const View * view = valid_views.at(i)->second.get();
       std::string filename = stlplus::filename_part(view->s_Img_path);
 
       Intrinsics::const_iterator iterIntrinsic = sfm_data.GetIntrinsics().find(view->id_intrinsic);
       const double f = static_cast<const Pinhole_Intrinsic *>((sfm_data.GetIntrinsics().find(view->id_intrinsic))->second.get())->focal();
-      file_MM_lcd_xml << os.widen('\t') << os.widen('\t') << "<Calcs>" << os.widen('\n');
-      file_MM_lcd_xml << os.widen('\t') << os.widen('\t') << os.widen('\t') << "<Arrite> 1 1 </Arrite>" << os.widen('\n');
-      file_MM_lcd_xml << os.widen('\t') << os.widen('\t') << os.widen('\t') << "<Direct>" << os.widen('\n');
-      file_MM_lcd_xml << os.widen('\t') << os.widen('\t') << os.widen('\t') << os.widen('\t') << "<PatternTransform>"<<filename<< "</PatternTransform>" << os.widen('\n');
-      file_MM_lcd_xml << os.widen('\t') << os.widen('\t') << os.widen('\t') << os.widen('\t') << "<CalcName>"<<f<< "</CalcName>" << os.widen('\n');
-      file_MM_lcd_xml << os.widen('\t') << os.widen('\t') << os.widen('\t') << "</Direct>" << os.widen('\n');
-      file_MM_lcd_xml << os.widen('\t') << os.widen('\t') << "</Calcs>" << os.widen('\n');
+      
+      file_MM_lcd_xml << "\t\t<Calcs>\n"
+      << "\t\t\t<Arrite> 1 1 </Arrite>\n"
+      << "\t\t\t<Direct>\n"
+      << "\t\t\t\t<PatternTransform>"<<filename<< "</PatternTransform>\n"
+      << "\t\t\t\t<CalcName>"<<f<<"</CalcName>\n"
+      << "\t\t\t</Direct>\n"
+      << "\t\t</Calcs>\n";
     }
-    file_MM_lcd_xml << os.widen('\t') << os.widen('\t') << "<Key>   NKS-Assoc-STD-FOC  </Key>" << os.widen('\n');
-    file_MM_lcd_xml << os.widen('\t') << "</KeyedNamesAssociations>" << os.widen('\n');
-
-    file_MM_lcd_xml << os.widen('\t') << "</ChantierDescripteur>" << os.widen('\n');
-    file_MM_lcd_xml << os.widen('\t') << "</Global>" << os.widen('\n');
+    file_MM_lcd_xml << "\t\t<Key>   NKS-Assoc-STD-FOC  </Key>\n"
+    << "\t\t</KeyedNamesAssociations>\n"
+    << "\t</ChantierDescripteur>\n"
+    << "</Global>\n";
     file_MM_lcd_xml.close();
 
   }
