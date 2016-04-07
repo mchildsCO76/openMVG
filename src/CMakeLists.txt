@@ -69,6 +69,7 @@ SET(LIBRARY_OUTPUT_PATH "${PROJECT_BINARY_DIR}/${CMAKE_SYSTEM_NAME}-${CMAKE_SYST
 
 IF (WIN32)
   ADD_DEFINITIONS(-DNOMINMAX)
+  ADD_DEFINITIONS(-DVC_EXTRALEAN)
   IF (MSVC)
     ADD_DEFINITIONS(/bigobj)
   ENDIF (MSVC)
@@ -249,8 +250,7 @@ FIND_PACKAGE(Eigen QUIET)
 IF(EIGEN_FOUND)
   INCLUDE_DIRECTORIES(${EIGEN_INCLUDE_DIRS})
 ENDIF(EIGEN_FOUND)
-# Configure Eigen to use only MPL2 licensed code
-ADD_DEFINITIONS(-DEIGEN_MPL2_ONLY)
+
 
 # ==============================================================================
 # Ceres
