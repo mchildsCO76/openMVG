@@ -35,7 +35,7 @@ void getLandmarksPerView(
     for (Observations::const_iterator itObs = obs.begin();
       itObs != obs.end(); ++itObs)
     {
-      // Add Z value of landmark
+      // Add visible landmark by the current view to the list
       landmarks_per_view[itObs->first].push_back(iterTracks->second.X);
     }
   }
@@ -119,8 +119,6 @@ bool exportCAMSToMICMAC(
       IndexT intrinsic_id = view->id_intrinsic;
       // Intrinsic
       const double f = pinhole_cam->focal();
-      const int focal_int = (int)(f+0.05)*10;
-
       const Vec2 pp = pinhole_cam->principal_point();
 
       // Image size in px
@@ -298,18 +296,18 @@ bool exportPOINTSToMICMAC(
             Hash_Map<IndexT, std::vector<std::pair<Observation,Observation> > > &obs_per_view = obs_per_view_pair.at(view_A);
             if(obs_per_view.find(view_B)!=obs_per_view.end()){
               std::vector<std::pair<Observation,Observation> > & obs_vector =  obs_per_view.at(view_B);
-              obs_vector.push_back(std::pair<Observation,Observation>(obs_A,obs_B));
+              obs_vector.emplace_back(std::pair<Observation,Observation>(obs_A,obs_B));
             }
             else{
               std::vector<std::pair<Observation,Observation> > obs_vector;
-              obs_vector.push_back(std::pair<Observation,Observation>(obs_A,obs_B));
+              obs_vector.emplace_back(std::pair<Observation,Observation>(obs_A,obs_B));
               obs_per_view.insert(std::pair<IndexT, std::vector<std::pair<Observation,Observation> > >(view_B,obs_vector));
             }
           }
           else{
             Hash_Map<IndexT, std::vector<std::pair<Observation,Observation> > > obs_per_view;
             std::vector<std::pair<Observation,Observation> > obs_vector;
-            obs_vector.push_back(std::pair<Observation,Observation>(obs_A,obs_B));
+            obs_vector.emplace_back(std::pair<Observation,Observation>(obs_A,obs_B));
             obs_per_view.insert(std::pair<IndexT, std::vector<std::pair<Observation,Observation> > >(view_B,obs_vector));
             obs_per_view_pair.insert(std::pair<IndexT, Hash_Map<IndexT, std::vector<std::pair<Observation,Observation> > > >(view_A,obs_per_view));
           }
