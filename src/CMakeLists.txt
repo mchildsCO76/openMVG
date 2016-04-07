@@ -45,11 +45,18 @@ OPTION(OpenMVG_USE_OCVSIFT "Add or not OpenCV SIFT in available features" OFF)
 OPTION(SIFTGPU_USE_CUDA "Use CUDA in SiftGPU " OFF)
 SET(SIFTGPU_CUDA_LIB_PATH "/usr/local/cuda-7.5/lib64/" CACHE STRING "Path to CUDA lib")
 
-SET(OPENMVG_VERSION_MAJOR 0)
-SET(OPENMVG_VERSION_MINOR 8)
-SET(OPENMVG_VERSION_PATCH 1)
-SET(OPENMVG_VERSION
-    ${OPENMVG_VERSION_MAJOR}.${OPENMVG_VERSION_MINOR}.${OPENMVG_VERSION_PATCH})
+# ==============================================================================
+# OpenMVG version
+# ==============================================================================
+file(STRINGS "openMVG/version.hpp" _OPENMVG_VERSION_HPP_CONTENTS REGEX "#define OPENMVG_VERSION_")
+foreach(v MAJOR MINOR REVISION)
+  if("${_OPENMVG_VERSION_HPP_CONTENTS}" MATCHES "#define OPENMVG_VERSION_${v} ([0-9]+)")
+    set(OPENMVG_VERSION_${v} "${CMAKE_MATCH_1}")
+ else()
+    message(FATAL_ERROR "Failed to retrieve the OpenMVG version from the source code. Missing OPENMVG_VERSION_${v}.")
+  endif()
+endforeach()
+SET(OPENMVG_VERSION ${OPENMVG_VERSION_MAJOR}.${OPENMVG_VERSION_MINOR}.${OPENMVG_VERSION_REVISION})
 
 # Default build is in Release mode
 IF(NOT CMAKE_BUILD_TYPE AND NOT MSVC)
@@ -470,7 +477,7 @@ ADD_SUBDIRECTORY(nonFree)
 # --------------------------
 # Sphinx detection
 # ==============================================================================
-IF(OpenMVG_BUILD_DOC)
+IF (OpenMVG_BUILD_DOC)
   FIND_PACKAGE(Sphinx)
   IF (EXISTS ${SPHINX_EXECUTABLE})
     SET(SPHINX_HTML_DIR "${CMAKE_CURRENT_BINARY_DIR}/htmlDoc")
@@ -490,9 +497,29 @@ IF(OpenMVG_BUILD_DOC)
     SET_PROPERTY(TARGET doc PROPERTY FOLDER OpenMVG)
 
   ELSE (EXISTS ${SPHINX_EXECUTABLE})
-    MESSAGE("Sphinx need to be installed to generate the documentation")
+    MESSAGE("Sphinx need to be installed to generate the sphinx documentation")
   ENDIF (EXISTS ${SPHINX_EXECUTABLE})
+  
+  
+  # ------
+  # Doxygen detection
+  # ======
+  FIND_PACKAGE(Doxygen)
+  IF (DOXYGEN_FOUND)
+  
+    CONFIGURE_FILE( ${CMAKE_CURRENT_SOURCE_DIR}/../docs/doxygen/Doxyfile.in
+                    ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile @ONLY )
+
+    ADD_CUSTOM_TARGET( doc_doxygen ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile
+                       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+                       COMMENT "Generating API documentation with Doxygen" VERBATIM )
+  
+  ELSE (DOXYGEN_FOUND)
+    MESSAGE("Doxygen need to be installed to generate the doxygen documentation")
+  ENDIF (DOXYGEN_FOUND)
 ENDIF()
+
+
 
 MESSAGE("\n")
 
