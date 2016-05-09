@@ -20,13 +20,15 @@ class IntrinsicBase;
 
 namespace sfm {
 
-class SfM_Data;
+struct SfM_Data;
 
 /// Create the appropriate cost functor according the provided input camera intrinsic model
+/// Can be residual cost functor can be weighetd if desired (default 0.0 means no weight).
 ceres::CostFunction * IntrinsicsToCostFunction
 (
   cameras::IntrinsicBase * intrinsic,
-  const Vec2 & observation
+  const Vec2 & observation,
+  const double weight = 0.0
 );
 
 class Bundle_Adjustment_Ceres : public Bundle_Adjustment
@@ -41,6 +43,7 @@ class Bundle_Adjustment_Ceres : public Bundle_Adjustment
     ceres::PreconditionerType preconditioner_type_;
     ceres::SparseLinearAlgebraLibraryType sparse_linear_algebra_library_type_;
     double parameter_tolerance_;
+    bool bUse_loss_function_;
 
     BA_Ceres_options(const bool bVerbose = true, bool bmultithreaded = true);
   };
@@ -50,13 +53,15 @@ class Bundle_Adjustment_Ceres : public Bundle_Adjustment
   public:
   Bundle_Adjustment_Ceres(Bundle_Adjustment_Ceres::BA_Ceres_options options = BA_Ceres_options());
 
+  BA_Ceres_options & ceres_options();
+
   bool Adjust
   (
     // the SfM scene to refine
     SfM_Data & sfm_data,
     // tell which parameter needs to be adjusted
     const Optimize_Options options
-  );
+  ) override;
 };
 
 } // namespace sfm
