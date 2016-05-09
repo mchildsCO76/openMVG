@@ -183,10 +183,11 @@ int main(int argc, char **argv)
       image_describer.reset(new SIFT_Image_describer
         (SIFT_Image_describer::Params(), !bUpRight));
     }
-	else
-	if (sImage_Describer_Method == "SIFTGPU")
+	  else
+	  if (sImage_Describer_Method == "SIFTGPU")
     {
-      image_describer.reset(new SIFTGPU_Image_describer(SiftGPUParams()));
+      image_describer.reset(new SIFTGPU_Image_describer
+        (SIFTGPU_Image_describer::Params(), !bUpRight));
     }
     else
     if (sImage_Describer_Method == "AKAZE_FLOAT")
@@ -216,8 +217,8 @@ int main(int argc, char **argv)
       }
     }
 
-	// In case of SiftGPU detector has to be initialized
-	if (sImage_Describer_Method == "SIFTGPU")
+	  // In case of SiftGPU detector has to be initialized
+	  if (sImage_Describer_Method == "SIFTGPU")
     {
       (dynamic_cast<SIFTGPU_Image_describer*>(image_describer.get()))->init();
     }

@@ -13,7 +13,6 @@
 
 /// Generic Image Collection image matching
 #include "openMVG/matching_image_collection/Matcher_Regions_AllInMemory.hpp"
-#include "openMVG/matching_image_collection/Matcher_Regions_SiftGPU.hpp"
 #include "openMVG/matching_image_collection/Cascade_Hashing_Matcher_Regions_AllInMemory.hpp"
 #include "openMVG/matching_image_collection/GeometricFilter.hpp"
 #include "openMVG/matching_image_collection/F_ACRobust.hpp"
@@ -74,10 +73,6 @@ int main(int argc, char **argv)
   bool bGuided_matching = false;
   int imax_iteration = 2048;
 
-  // SiftGPU matching
-  int maxSiftGPUMatches = 8192;
-
-
   //required
   cmd.add( make_option('i', sSfM_Data_Filename, "input_file") );
   cmd.add( make_option('o', sMatchesDirectory, "out_dir") );
@@ -122,7 +117,6 @@ int main(int argc, char **argv)
       << "    FASTCASCADEHASHINGL2: (default)\n"
       << "      L2 Cascade Hashing with precomputed hashed regions\n"
       << "     (faster than CASCADEHASHINGL2 but use more memory).\n"
-	  << "    SIFTGPU_L2: Sift matching on GPU.\n"
       << "  For Binary based descriptor:\n"
       << "    BRUTEFORCEHAMMING: BruteForce Hamming matching.\n"
       << "[-m|--guided_matching]\n"
@@ -319,12 +313,6 @@ int main(int argc, char **argv)
     {
       std::cout << "Using FAST_CASCADE_HASHING_L2 matcher" << std::endl;
       collectionMatcher.reset(new Cascade_Hashing_Matcher_Regions_AllInMemory(fDistRatio));
-    }
-    else
-    if (sNearestMatchingMethod == "SIFTGPU_L2")
-    {
-      std::cout << "Using SIFTGPU_L2 matcher" << std::endl;
-      collectionMatcher.reset(new Matcher_Regions_SiftGPU(fDistRatio, maxSiftGPUMatches));
     }
     if (!collectionMatcher)
     {

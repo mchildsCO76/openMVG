@@ -53,7 +53,6 @@ TARGET_LINK_LIBRARIES(openMVG_main_ComputeMatches
   openMVG_sfm
   openMVG_matching_image_collection
   stlplus
-  siftgpu
   )
 
 
