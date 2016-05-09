@@ -30,6 +30,7 @@ class Descriptor : public Eigen::Matrix<T, N, 1>
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   typedef T bin_type;
+  typedef std::size_t size_type;
 
   /// Compile-time length of the descriptor
   static const std::size_t static_size = N;
@@ -118,7 +119,7 @@ std::istream& Descriptor<T,N>::read(std::istream& in)
 
 /// Read descriptors from file
 template<typename DescriptorsT >
-static bool loadDescsFromFile(
+inline bool loadDescsFromFile(
   const std::string & sfileNameDescs,
   DescriptorsT & vec_desc)
 {
@@ -139,7 +140,7 @@ static bool loadDescsFromFile(
 
 /// Write descriptors to file
 template<typename DescriptorsT >
-static bool saveDescsToFile(
+inline bool saveDescsToFile(
   const std::string & sfileNameDescs,
   DescriptorsT & vec_desc)
 {
@@ -156,7 +157,7 @@ static bool saveDescsToFile(
 
 /// Read descriptors from file (in binary mode)
 template<typename DescriptorsT >
-static bool loadDescsFromBinFile(
+inline bool loadDescsFromBinFile(
   const std::string & sfileNameDescs,
   DescriptorsT & vec_desc)
 {
@@ -182,7 +183,7 @@ static bool loadDescsFromBinFile(
 
 /// Write descriptors to file (in binary mode)
 template<typename DescriptorsT >
-static bool saveDescsToBinFile(
+inline bool saveDescsToBinFile(
   const std::string & sfileNameDescs,
   DescriptorsT & vec_desc)
 {

@@ -7,7 +7,12 @@
 #ifndef OPENMVG_IMAGE_IMAGE_CONVOLUTION_HPP_
 #define OPENMVG_IMAGE_IMAGE_CONVOLUTION_HPP_
 
+#include "openMVG/numeric/numeric.h"
 #include "openMVG/numeric/accumulator_trait.hpp"
+#include "openMVG/image/image_container.hpp"
+
+#include <cassert>
+#include <vector>
 
 /**
  ** @file Standard 2D image convolution functions :
@@ -74,7 +79,7 @@ void ImageConvolution( const Image & img , const Mat & kernel , Image & out )
  ** @param out Output image
  **/
 template< typename ImageTypeIn , typename ImageTypeOut, typename Kernel >
-static void ImageHorizontalConvolution( const ImageTypeIn & img , const Kernel & kernel , ImageTypeOut & out )
+void ImageHorizontalConvolution( const ImageTypeIn & img , const Kernel & kernel , ImageTypeOut & out )
 {
   typedef typename ImageTypeIn::Tpixel pix_t ;
 
@@ -186,7 +191,7 @@ void ImageSeparableConvolution( const ImageType & img ,
 typedef Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> RowMatrixXf;
 
 /// Specialization for Float based image (for arbitrary sized kernel)
-static void SeparableConvolution2d( const RowMatrixXf& image,
+inline void SeparableConvolution2d( const RowMatrixXf& image,
                                     const Eigen::Matrix<float, 1, Eigen::Dynamic>& kernel_x,
                                     const Eigen::Matrix<float, 1, Eigen::Dynamic>& kernel_y,
                                     RowMatrixXf* out )

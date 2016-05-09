@@ -25,7 +25,7 @@ using namespace openMVG::geometry;
 
 
 /// Camera pair epipole (Projection of camera center 2 in the image plane 1)
-static Vec3 epipole_from_P(const Mat34& P1, const Pose3& P2)
+inline Vec3 epipole_from_P(const Mat34& P1, const Pose3& P2)
 {
   const Vec3 c = P2.center();
   Vec4 center;
@@ -36,7 +36,7 @@ static Vec3 epipole_from_P(const Mat34& P1, const Pose3& P2)
 /// Export point feature based vector to a matrix [(x,y)'T, (x,y)'T]
 /// Use the camera intrinsics in order to get undistorted pixel coordinates
 template<typename MatT >
-static void PointsToMat(
+void PointsToMat(
   const IntrinsicBase * cam,
   const PointFeatures & vec_feats,
   MatT & m)
@@ -241,7 +241,6 @@ void SfM_Data_Structure_Estimation_From_Known_Poses::filter(
 
               triplets_matches[std::make_pair(I,J)].emplace_back(iterI->second, iterJ->second);
               triplets_matches[std::make_pair(J,K)].emplace_back(iterJ->second, iterK->second);
-              triplets_matches[std::make_pair(I,K)].emplace_back(iterI->second, iterK->second);
             }
           }
         }

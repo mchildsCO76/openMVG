@@ -11,6 +11,11 @@
   #pragma warning(once:4244)
 #endif
 
+#include "openMVG/numeric/numeric.h"
+
+#include <vector>
+#include <cmath>
+
 namespace openMVG
 {
 namespace image
@@ -246,7 +251,7 @@ void ImageFEDCycle( Image & self , const Image & diff , const std::vector< typen
 * @retval false if number is not prime
 * @todo Move this function elsewhere since it's not an image related function
 */
-static bool IsPrime( const int i )
+inline bool IsPrime( const int i )
 {
   if( i == 1 )
   {
@@ -278,7 +283,7 @@ static bool IsPrime( const int i )
 * @param i Input number
 * @return next prime greater or equal to input
 */
-static inline int NextPrimeGreaterOrEqualTo( const int i )
+inline int NextPrimeGreaterOrEqualTo( const int i )
 {
   if( IsPrime( i ) )
   {
