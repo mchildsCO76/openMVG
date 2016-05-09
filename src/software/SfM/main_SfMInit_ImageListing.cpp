@@ -21,12 +21,16 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <tuple>
+#include <regex>
 
 using namespace openMVG;
 using namespace openMVG::cameras;
 using namespace openMVG::exif;
 using namespace openMVG::image;
 using namespace openMVG::sfm;
+
+
 
 /// Check that Kmatrix is a string like "f;0;ppx;0;f;ppy;0;0;1"
 /// With f,ppx,ppy as valid numerical value
@@ -54,6 +58,57 @@ bool checkIntrinsicStringValidity(const std::string & Kmatrix, double & focal, d
   return true;
 }
 
+
+typedef tuple <string, EINTRINSIC, string> camParam;
+/// Check that sCamsParamsRegex is a string like "imgRegex;camType;Kmatrix"
+bool checkCamsRegexStringValidity(const std::string & camsRegex, std::vector<camParam> & vecCamParams)
+{
+  std::vector<std::string> vec_str;
+  stl::split(camsRegex, ';', vec_str);
+  // Number of parameters have to be multiple of 11 (regex+type+Kmatrix ~ 1+1+9)
+  if (vec_str.size()%11!=0)  {
+    std::cerr << "\n Missing ';' character" << std::endl;
+    return false;
+  }
+  // Loop through all camParam sets
+  for (size_t i = 0; i< vec_str.size()/11; ++i){
+    camParam camP;
+    EINTRINSIC camType;
+    std::stringstream ss;
+
+    // CamType: Check if string is integer
+    char * p ;
+    std::strtol(vec_str[i*11+1].c_str(), &p, 10);
+    if(*p==0){
+      // Convert to string and EINTRINSIC
+      int iCamType;
+      ss.str(vec_str[i*11+1]);
+      ss >> iCamType;
+      camType = EINTRINSIC(iCamType);
+    }
+    else{
+      std::cerr << "\n Used an invalid not a number character in camera type" << std::endl;
+      return false;
+    }
+
+    // Check that all K matrix value are valid numbers
+    std::stringstream Kmatrix;
+    for (size_t k = 2; k < 11; ++k) {
+      Kmatrix<<vec_str[i*11+k]<<";";
+    }
+    double f,ppx,ppy;
+    if(!checkIntrinsicStringValidity(Kmatrix.str(),f,ppx,ppy))
+      return false;
+
+    camP = std::make_tuple(vec_str[i*11],camType,Kmatrix.str());
+    vecCamParams.push_back(camP);
+
+  }
+  return true;
+
+}
+
+
 //
 // Create the description of an input image dataset for OpenMVG toolsuite
 // - Export a SfM_Data file with View & Intrinsic data
@@ -65,7 +120,8 @@ int main(int argc, char **argv)
   std::string sImageDir,
     sfileDatabase = "",
     sOutputDir = "",
-    sKmatrix;
+    sKmatrix,
+    sCamsParamsRegex;
 
   int i_User_camera_model = PINHOLE_CAMERA_RADIAL3;
 
@@ -80,6 +136,7 @@ int main(int argc, char **argv)
   cmd.add( make_option('k', sKmatrix, "intrinsics") );
   cmd.add( make_option('c', i_User_camera_model, "camera_model") );
   cmd.add( make_option('g', b_Group_camera_model, "group_camera_model") );
+  cmd.add( make_option('r', sCamsParamsRegex, "regex") );
 
   try {
       if (argc == 1) throw std::string("Invalid command line parameter.");
@@ -100,6 +157,7 @@ int main(int argc, char **argv)
       << "[-g|--group_camera_model]\n"
       << "\t 0-> each view have it's own camera intrinsic parameters,\n"
       << "\t 1-> (default) view can share some camera intrinsic parameters\n"
+      << "[-r|--regex] Regex: \"[regex;camera_model;focal;ppx;ppy;]{1,...n}\"\n"
       << std::endl;
 
       std::cerr << s << std::endl;
@@ -114,7 +172,8 @@ int main(int argc, char **argv)
             << "--focal " << focal_pixels << std::endl
             << "--intrinsics " << sKmatrix << std::endl
             << "--camera_model " << i_User_camera_model << std::endl
-            << "--group_camera_model " << b_Group_camera_model << std::endl;
+            << "--group_camera_model " << b_Group_camera_model << std::endl
+            << "--regex " << sCamsParamsRegex << std::endl;
 
   // Expected properties for each image
   double width = -1, height = -1, focal = -1, ppx = -1,  ppy = -1;
@@ -138,6 +197,14 @@ int main(int argc, char **argv)
     if ( !stlplus::folder_create( sOutputDir ))
     {
       std::cerr << "\nCannot create output directory" << std::endl;
+      return EXIT_FAILURE;
+    }
+  }
+
+  std::vector<camParam> vecCamParams;
+  if(sCamsParamsRegex.size()>0){
+    if(!checkCamsRegexStringValidity(sCamsParamsRegex,vecCamParams)){
+      std::cerr << "\nInvalid Cameras parameters regex string input" << std::endl;
       return EXIT_FAILURE;
     }
   }
@@ -221,49 +288,71 @@ int main(int argc, char **argv)
       exifReader->doesHaveExifInfo()
       && !exifReader->getModel().empty();
 
-    // Consider the case where the focal is provided manually
-    if ( !bHaveValidExifMetadata || focal_pixels != -1)
-    {
-      if (sKmatrix.size() > 0) // Known user calibration K matrix
-      {
-        if (!checkIntrinsicStringValidity(sKmatrix, focal, ppx, ppy))
-          focal = -1.0;
-      }
-      else // User provided focal length value
-        if (focal_pixels != -1 )
-          focal = focal_pixels;
-    }
-    else // If image contains meta data
-    {
-      const std::string sCamModel = exifReader->getModel();
-
-      // Handle case where focal length is equal to 0
-      if (exifReader->getFocal() == 0.0f)
-      {
-        error_report_stream
-          << stlplus::basename_part(sImageFilename) << ": Focal length is missing." << "\n";
-        focal = -1.0;
-      }
-      else
-      // Create the image entry in the list file
-      {
-        Datasheet datasheet;
-        if ( getInfo( sCamModel, vec_database, datasheet ))
-        {
-          // The camera model was found in the database so we can compute it's approximated focal length
-          const double ccdw = datasheet.sensorSize_;
-          focal = std::max ( width, height ) * exifReader->getFocal() / ccdw;
+    // Check if image fits any regex patterns
+    bool bImageMatched = false;
+    if(vecCamParams.size()>0){
+      // Loop through regex patterns
+      for(std::vector<camParam>::const_iterator iter_cParam = vecCamParams.begin();iter_cParam!=vecCamParams.end(); ++iter_cParam){
+        const std::regex imgNameRegex(std::get<0>(*iter_cParam),std::regex_constants::extended);
+        std::smatch smBaseCamMatch;
+        // Check if it match the regex
+        if (std::regex_match(*iter_image, smBaseCamMatch, imgNameRegex)) {
+          // Get focal, ppx, ppy
+          if (!checkIntrinsicStringValidity(std::get<2>(*iter_cParam), focal, ppx, ppy)){
+            bImageMatched = false;
+            continue;
+          }
+          bImageMatched = true;
+          break;
         }
-        else
+      }
+    }
+
+    // Image has not been matched with regex
+    if(!bImageMatched){
+      // Consider the case where the focal is provided manually
+      if ( !bHaveValidExifMetadata || focal_pixels != -1)
+      {
+        if (sKmatrix.size() > 0) // Known user calibration K matrix
+        {
+          if (!checkIntrinsicStringValidity(sKmatrix, focal, ppx, ppy))
+            focal = -1.0;
+        }
+        else // User provided focal length value
+          if (focal_pixels != -1 )
+            focal = focal_pixels;
+      }
+      else // If image contains meta data
+      {
+        const std::string sCamModel = exifReader->getModel();
+
+        // Handle case where focal length is equal to 0
+        if (exifReader->getFocal() == 0.0f)
         {
           error_report_stream
-            << stlplus::basename_part(sImageFilename)
-            << "\" model \"" << sCamModel << "\" doesn't exist in the database" << "\n"
-            << "Please consider add your camera model and sensor width in the database." << "\n";
+            << stlplus::basename_part(sImageFilename) << ": Focal length is missing." << "\n";
+          focal = -1.0;
+        }
+        else
+        // Create the image entry in the list file
+        {
+          Datasheet datasheet;
+          if ( getInfo( sCamModel, vec_database, datasheet ))
+          {
+            // The camera model was found in the database so we can compute it's approximated focal length
+            const double ccdw = datasheet.sensorSize_;
+            focal = std::max ( width, height ) * exifReader->getFocal() / ccdw;
+          }
+          else
+          {
+            error_report_stream
+              << stlplus::basename_part(sImageFilename)
+              << "\" model \"" << sCamModel << "\" doesn't exist in the database" << "\n"
+              << "Please consider add your camera model and sensor width in the database." << "\n";
+          }
         }
       }
     }
-
     // Build intrinsic parameter related to the view
     std::shared_ptr<IntrinsicBase> intrinsic (NULL);
 
