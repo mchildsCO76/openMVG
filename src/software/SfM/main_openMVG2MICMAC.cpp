@@ -324,6 +324,7 @@ bool exportPOINTSToMICMAC(
 
       IndexT view_A_id = view_A_iter->first;
       View * view_A = sfm_data.GetViews().at(view_A_id).get();
+      const IntrinsicBase * cam_A = sfm_data.GetIntrinsics().find(view_A->id_intrinsic)->second.get();
 
       Hash_Map<IndexT, std::vector<std::pair<Observation,Observation> > > obs_per_view_A = view_A_iter->second;
 
@@ -331,6 +332,7 @@ bool exportPOINTSToMICMAC(
 
         IndexT view_B_id = view_B_iter->first;
         View * view_B = sfm_data.GetViews().at(view_B_id).get();
+        const IntrinsicBase * cam_B = sfm_data.GetIntrinsics().find(view_B->id_intrinsic)->second.get();
 
         std::vector<std::pair<Observation,Observation> >  obs_vector =  view_B_iter->second;
 
@@ -371,11 +373,13 @@ bool exportPOINTSToMICMAC(
           file_img_B_A.write(reinterpret_cast<const char *>(&num_2),sizeof(num_2));
           file_img_B_A.write(reinterpret_cast<const char *>(&num_1),sizeof(num_1));
 
-          const double im_A_x =  point_pair.first.x(0);
-          const double im_A_y =  point_pair.first.x(1);
-          const double im_B_x =  point_pair.second.x(0);
-          const double im_B_y =  point_pair.second.x(1);
+          // Undistort point locations          
+          const double im_A_x =  cam_A->get_ud_pixel(point_pair.first.x)(0);
+          const double im_A_y =  cam_A->get_ud_pixel(point_pair.first.x)(1);
+          const double im_B_x =  cam_B->get_ud_pixel(point_pair.second.x)(0);
+          const double im_B_y =  cam_B->get_ud_pixel(point_pair.second.x)(1);
 
+          // Save to files
           file_img_A_B.write(reinterpret_cast<const char *>(&im_A_x),sizeof(im_A_x));
           file_img_A_B.write(reinterpret_cast<const char *>(&im_A_y),sizeof(im_A_y));
           file_img_A_B.write(reinterpret_cast<const char *>(&im_B_x),sizeof(im_B_x));
