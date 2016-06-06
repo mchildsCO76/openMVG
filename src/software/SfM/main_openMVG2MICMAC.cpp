@@ -44,8 +44,7 @@ void getLandmarksPerView(
 
 bool exportCAMSToMICMAC(
   const SfM_Data & sfm_data,
-  const std::string & sOutDir,
-  const bool bExportImages)
+  const std::string & sOutDir)
 {
   std::ostringstream os;
   
@@ -173,28 +172,6 @@ bool exportCAMSToMICMAC(
         << "\t</OrientationConique>\n"
         << "</ExportAPERO>\n";
       file_MM_orient.close();
-
-        // Copy images to output folder
-      if(bExportImages){
-        Image<RGBColor> image, image_ud;
-        const std::string srcImage = stlplus::create_filespec(sfm_data.s_root_path,view->s_Img_path);
-        const std::string dstImage = stlplus::create_filespec(sOutDir,stlplus::filename_part(view->s_Img_path) ,"");
-        if (cam->have_disto())
-        {
-        // undistort the image and save it
-          if (ReadImage( srcImage.c_str(), &image))
-          {
-            UndistortImage(image, cam, image_ud, BLACK);
-            bOk &= WriteImage(dstImage.c_str(), image_ud);
-          }
-        }
-        else // (no distortion)
-        {
-          // copy the image since there is no distortion
-          stlplus::file_copy(srcImage, dstImage);
-        }
-      }
-
     }
 
 
@@ -245,8 +222,7 @@ bool exportCAMSToMICMAC(
 
 bool exportPOINTSToMICMAC(
   const SfM_Data & sfm_data,
-  const std::string & sOutDir,
-  const bool bExportImages)
+  const std::string & sOutDir)
 {
   std::ostringstream os;
 
@@ -406,13 +382,11 @@ int main(int argc, char **argv)
 
   std::string sSfM_Data_Filename;
   std::string sOutDir = "";
-  bool bExportImages = true;
   bool bExportFeatures = true;
 
   cmd.add( make_option('i', sSfM_Data_Filename, "sfmdata") );
   cmd.add( make_option('o', sOutDir, "outdir") );
   cmd.add( make_option('f', bExportFeatures, "exportFeatures") );
-  cmd.add( make_option('e', bExportImages, "exportImages") );
 
   try {
     if (argc == 1) throw std::string("Invalid command line parameter.");
@@ -421,9 +395,6 @@ int main(int argc, char **argv)
     std::cerr << "Usage: " << argv[0] << '\n'
     << "[-i|--sfmdata] filename, the SfM_Data (after SfM) file to convert\n"
     << "[-o|--outdir] path.\n"
-    << "[-e|--exportImages] \n"
-    << "\t 0-> do NOT export images\n"
-    << "\t 1-> export images to output folder (default).\n"
     << "[-f|--exportFeatures] \n"
     << "\t 0-> do NOT export features\n"
     << "\t 1-> export features (default).\n"
@@ -438,7 +409,6 @@ int main(int argc, char **argv)
       << "--sfmdata " << sSfM_Data_Filename << std::endl
       << "--outdir " << sOutDir << std::endl
       << "--exportFeatures " << bExportFeatures << std::endl
-      << "--exportImages " << bExportImages << std::endl;
 
   // Create output dir
   if (!stlplus::folder_exists(sOutDir))
@@ -454,10 +424,10 @@ int main(int argc, char **argv)
 
 
   // Export camera orientations
-  exportCAMSToMICMAC(sfm_data,sOutDir,bExportImages);
+  exportCAMSToMICMAC(sfm_data,sOutDir);
   // Export features
   if(bExportFeatures)
-    exportPOINTSToMICMAC(sfm_data,sOutDir,bExportImages);
+    exportPOINTSToMICMAC(sfm_data,sOutDir);
 
   return EXIT_SUCCESS;
 }
