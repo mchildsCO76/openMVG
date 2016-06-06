@@ -408,7 +408,7 @@ int main(int argc, char **argv)
       << argv[0] << std::endl
       << "--sfmdata " << sSfM_Data_Filename << std::endl
       << "--outdir " << sOutDir << std::endl
-      << "--exportFeatures " << bExportFeatures << std::endl
+      << "--exportFeatures " << bExportFeatures << std::endl;
 
   // Create output dir
   if (!stlplus::folder_exists(sOutDir))
