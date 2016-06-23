@@ -62,6 +62,15 @@ class Bundle_Adjustment_Ceres : public Bundle_Adjustment
     // tell which parameter needs to be adjusted
     const Optimize_Options options
   ) override;
+
+  bool EstimateUncertainty
+  (
+    // the SfM scene to refine
+    SfM_Data & sfm_data,
+    // tell which parameter needs to be adjusted
+    const Optimize_Options options
+  );
+
 };
 
 } // namespace sfm
