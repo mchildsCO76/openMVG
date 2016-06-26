@@ -542,7 +542,7 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
   }
 
   // Basic sizes of parameters
-  const int n_cam_ext_param = 6;
+  const int single_cam_ext_param = 6;
 
   // Confgure problem evaluator
   ceres::Problem::EvaluateOptions evaluate_options_;
@@ -552,36 +552,39 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
   // Evaluate problem
   problem.Evaluate(evaluate_options_, &cost, NULL, NULL, &jacobian);
 
+  // -----------------------------------------------
+  // Compute size of parameters
+  // -----------------------------------------------
+  
+  // Compute the size of Jacobian matrix
   const int num_J_rows = jacobian.num_rows;
   const int num_J_cols = jacobian.num_cols;
   const int num_J_nonzeros = jacobian.values.size();
-
-  const int num_cam_ext_param = n_cam_ext_param*sfm_data.poses.size();
-  const int num_landmark_param = 3*sfm_data.structure.size();
-  const int num_control_param = 3*sfm_data.control_points.size();
-
-  // Determine the number of total intrinsic parameters
-  int num_intrinsic_param = 0;
+  // Compute the size of different parameter blocks
+  const int total_cam_ext_param = single_cam_ext_param*sfm_data.poses.size();
+  const int total_landmark_param = 3*sfm_data.structure.size();
+  const int total_control_param = 3*sfm_data.control_points.size();
+  int total_intrinsic_param = 0;
+  int max_intrinsic_param = 0;
+  // Save the index of the start of next intrinsic block of params
   Hash_Map<IndexT, int> start_intrinsic_param_per_row;
-  int max_intrinsic_param_per_row=0;
   for (Intrinsics::const_iterator itIntrinsic = sfm_data.intrinsics.begin();
     itIntrinsic != sfm_data.intrinsics.end(); ++itIntrinsic)
   {
     const int n_intrinsic_param = map_intrinsics[itIntrinsic->first].size();
     // Save the start index of the intrinsics
-    start_intrinsic_param_per_row[itIntrinsic->first] = num_intrinsic_param;
+    start_intrinsic_param_per_row[itIntrinsic->first] = total_intrinsic_param;
     // Compute total number of intrinsics
-    num_intrinsic_param += n_intrinsic_param;
+    total_intrinsic_param += n_intrinsic_param;
     // Compute max number of intrinsics
-    if(n_intrinsic_param>max_intrinsic_param_per_row)
-      max_intrinsic_param_per_row = n_intrinsic_param;
+    if(n_intrinsic_param>max_intrinsic_param)
+      max_intrinsic_param = n_intrinsic_param;
   }
 
-  const int num_A_B_rows = num_J_rows;
-  const int num_A_cols = num_cam_ext_param + num_intrinsic_param;
-  const int num_B_cols = num_landmark_param + num_control_param;
-
-  typedef Eigen::SparseMatrix<double, Eigen::ColMajor> EigenSparseMatrix;
+  // -----------------------------------------------
+  // Convert Ceres Jacobian to Sparse Eigen Matrix
+  // -----------------------------------------------
+  typedef Eigen::SparseMatrix<double, Eigen::RowMajor> EigenSparseMatrix;
   // Convert the matrix to column major order
   EigenSparseMatrix sparse_jacobian =
       Eigen::MappedSparseMatrix<double, Eigen::RowMajor>(
@@ -589,8 +592,314 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
           static_cast<int>(jacobian.values.size()),
           jacobian.rows.data(), jacobian.cols.data(), jacobian.values.data());
 
+
+  // -----------------------------------------------
+  // Determine problem dependent IDs
+  // -----------------------------------------------
+  typedef Hash_Map< IndexT, std::shared_ptr<Observation> > Problem_ObservationID;
+  Problem_ObservationID problem_observationID;
+  typedef Hash_Map< IndexT, std::shared_ptr<Landmark> > Problem_LandmarkID;
+  Problem_LandmarkID problem_landmarkID;
+  typedef Hash_Map< IndexT, std::vector<IndexT> > Problem_ObservationsPerView;
+  Problem_ObservationsPerView problem_obs_per_view;
+  typedef Hash_Map< IndexT, Hash_Map<IndexT, IndexT> > Problem_ObservationPerLandmarkView;
+  Problem_ObservationPerLandmarkView problem_obs_per_land_view;
+  
+  Eigen::VectorXi nonZeroW = Eigen::VectorXi::Zero(total_cam_ext_param + total_intrinsic_param);
+
+  IndexT pObsID=0;
+  IndexT pLandID=0;
+  for (Landmarks::iterator iterTracks = sfm_data.structure.begin();
+    iterTracks!= sfm_data.structure.end(); ++iterTracks)
+  {
+    std::set<IndexT> addedIntrinsics;
+    const Observations & obs = iterTracks->second.obs;
+    for (Observations::const_iterator itObs = obs.begin();
+      itObs != obs.end(); ++itObs)
+    {
+      problem_observationID[pObsID] = std::make_shared<Observation>(itObs->second);
+      (problem_obs_per_view[itObs->first]).push_back(pObsID);
+      (problem_obs_per_land_view[pLandID])[itObs->first] = pObsID;
+
+	  const IndexT view_id = itObs->first;
+	  const IndexT pose_id = sfm_data.views.at(view_id)->id_pose;
+      const IndexT intrinsic_id = sfm_data.views.at(view_id)->id_intrinsic;
+      const int n_intrinsic_param = sfm_data.intrinsics.at(intrinsic_id)->getParams().size();
+      
+      for (int i=0;i<3;i++){
+		nonZeroW(pose_id*3+i) += 3;		 
+      }
+      
+      if (addedIntrinsics.find(intrinsic_id) == addedIntrinsics.end())
+      {
+        // Point was not added for this intrinsics group yet
+        for (int i=0;i<n_intrinsic_param;i++){
+		  nonZeroW(total_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id] + i) += 3;
+        }
+        addedIntrinsics.insert(intrinsic_id);
+      }
+
+      pObsID++;
+    }
+    problem_landmarkID[pLandID] = std::make_shared<Landmark>(iterTracks->second);
+    pLandID++;
+  }
+  if (options.control_point_opt.bUse_control_points)
+  {
+    // Use Ground Control Point:
+    // - fixed 3D points with weighted observations
+    for (Landmarks::iterator iterGCPTracks = sfm_data.control_points.begin();
+      iterGCPTracks!= sfm_data.control_points.end(); ++iterGCPTracks)
+    {
+      std::set<IndexT> addedIntrinsics;
+      const Observations & obs = iterGCPTracks->second.obs;
+      for (Observations::const_iterator itObs = obs.begin();
+        itObs != obs.end(); ++itObs)
+      {
+        problem_observationID[pObsID] = std::make_shared<Observation>(itObs->second);
+        (problem_obs_per_view[itObs->first]).push_back(pObsID);
+        (problem_obs_per_land_view[pLandID])[itObs->first] = pObsID;
+        
+        const IndexT view_id = itObs->first;
+	    const IndexT pose_id = sfm_data.views.at(view_id)->id_pose;
+        const IndexT intrinsic_id = sfm_data.views.at(view_id)->id_intrinsic;
+        const int n_intrinsic_param = sfm_data.intrinsics.at(intrinsic_id)->getParams().size();
+      
+        for (int i=0;i<3;i++){
+		  nonZeroW(pose_id*3+i) += 3;		 
+        }
+      
+        if (addedIntrinsics.find(intrinsic_id) == addedIntrinsics.end())
+        {
+          // Point was not added for this intrinsics group yet
+          for (int i=0;i<n_intrinsic_param;i++){
+		    nonZeroW(total_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id] + i) += 3;
+          }
+          addedIntrinsics.insert(intrinsic_id);
+        }
+        pObsID++;
+      }
+      problem_landmarkID[pLandID] = std::make_shared<Landmark>(iterGCPTracks->second);
+      pLandID++;  
+    }  
+  }
+
+  // -----------------------------------------------
+  // Result matrices
+  // -----------------------------------------------
+  Eigen::MatrixXd U = Eigen::MatrixXd::Zero(total_cam_ext_param + total_intrinsic_param,total_cam_ext_param + total_intrinsic_param);
+  EigenSparseMatrix V_inv(total_landmark_param + total_control_param,total_landmark_param + total_control_param);
+  EigenSparseMatrix W(total_cam_ext_param + total_intrinsic_param,total_landmark_param + total_control_param);
+  Eigen::MatrixXd WUW = Eigen::MatrixXd::Zero(total_cam_ext_param + total_intrinsic_param,total_cam_ext_param + total_intrinsic_param);
+  //EigenSparseMatrix WVW(total_cam_ext_param + total_intrinsic_param,total_cam_ext_param + total_intrinsic_param);
+
+  // Uncertainty of each feature detected
+  Eigen::Matrix2d Ex;
+  Ex << 0.5,0,0,0.5;
+  
+  
+  // -----------------------------------------------
+  // Compute U
+  // -----------------------------------------------
+  Eigen::MatrixXd camBlockMatrix = Eigen::MatrixXd::Zero(single_cam_ext_param,single_cam_ext_param);
+  Eigen::MatrixXd J_cam_matrix;
+  Eigen::MatrixXd J_intrinsics_matrix;
+  
+  for (Problem_ObservationsPerView::iterator iterObsView = problem_obs_per_view.begin();
+      iterObsView!= problem_obs_per_view.end(); ++iterObsView)
+  {
+    const IndexT view_id = iterObsView->first;
+    const IndexT pose_id = sfm_data.views.at(view_id)->id_pose;
+    const IndexT intrinsic_id = sfm_data.views.at(view_id)->id_intrinsic;
+    const int n_intrinsic_param  = sfm_data.intrinsics.at(intrinsic_id)->getParams().size();
+    // Initialize sum computations
+    camBlockMatrix.setZero();
+    Eigen::MatrixXd intrinsicsCamBlockMatrix = Eigen::MatrixXd::Zero(single_cam_ext_param,n_intrinsic_param);
+    Eigen::MatrixXd intrinsicsBlockMatrix = Eigen::MatrixXd::Zero(n_intrinsic_param,n_intrinsic_param);
+    
+    // Loop through observations and comptue sum of pairwise blocks
+    const std::vector<IndexT> obs_ids = iterObsView->second;
+    for (std::vector<IndexT>::const_iterator itObs = obs_ids.begin();
+      itObs != obs_ids.end(); ++itObs)
+    {
+	  const IndexT obsID = *itObs;
+	  // Get blocks from Jacobian matrix
+	  J_cam_matrix = sparse_jacobian.block(obsID*2,pose_id*single_cam_ext_param,2,single_cam_ext_param);
+      J_intrinsics_matrix = sparse_jacobian.block(obsID*2,total_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id],2,n_intrinsic_param);
+		
+	  // Compute resulting blocks
+      camBlockMatrix += J_cam_matrix.transpose()*Ex*J_cam_matrix;
+      intrinsicsCamBlockMatrix += J_cam_matrix.transpose()*Ex*J_intrinsics_matrix;
+      intrinsicsBlockMatrix += J_intrinsics_matrix.transpose()*Ex*J_intrinsics_matrix;
+    }
+    // Save results
+    // Pose diagonals
+    U.block(pose_id*single_cam_ext_param,pose_id*single_cam_ext_param,single_cam_ext_param,single_cam_ext_param) = camBlockMatrix;
+    // Intrinsic diagonals
+    U.block(total_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id],total_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id],n_intrinsic_param,n_intrinsic_param) += intrinsicsBlockMatrix;
+    // Pose - intrinsic diagonals
+    U.block(pose_id*single_cam_ext_param,total_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id],single_cam_ext_param,n_intrinsic_param) = intrinsicsCamBlockMatrix;
+    U.block(total_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id],pose_id*single_cam_ext_param,n_intrinsic_param,single_cam_ext_param) = intrinsicsCamBlockMatrix.transpose();    
+  }
+  
+  
+  // -----------------------------------------------
+  // Compute V_inverse and W
+  // -----------------------------------------------
+  Eigen::MatrixXd pointBlockMatrix = Eigen::MatrixXd::Zero(3,3);
+  Eigen::MatrixXd camPointBlockMatrix = Eigen::MatrixXd::Zero(single_cam_ext_param,3);
+  Eigen::MatrixXd J_point_matrix;
+  // Reserve space in V: Each row will have 3 non-zero elements
+  V_inv.reserve(3);
+  W.reserve(nonZeroW);
+
+  // Loop through landmarks
+  for (Problem_ObservationPerLandmarkView::iterator iterTracks = problem_obs_per_land_view.begin();
+    iterTracks!= problem_obs_per_land_view.end(); ++iterTracks)
+  {
+    const IndexT track_id = iterTracks->first;
+    // Initialize computation
+    pointBlockMatrix.setZero();
+    const Hash_Map<IndexT,IndexT> * obs_per_land_view = &(iterTracks->second);
+    for (Hash_Map<IndexT,IndexT>::const_iterator iterObsLV = obs_per_land_view->begin();
+	  iterObsLV!=obs_per_land_view->end();++iterObsLV){
+	  const IndexT view_id = iterObsLV->first;
+	  const IndexT pose_id = sfm_data.views.at(view_id)->id_pose;
+      const IndexT intrinsic_id = sfm_data.views.at(view_id)->id_intrinsic;
+      const int n_intrinsic_param = sfm_data.intrinsics.at(intrinsic_id)->getParams().size();
+	  const IndexT obs_id = iterObsLV->second;
+	  
+	  // Get track/obs block from Jacobian matrix
+	  J_cam_matrix = sparse_jacobian.block(obs_id*2,pose_id*single_cam_ext_param,2,single_cam_ext_param);
+      J_intrinsics_matrix = sparse_jacobian.block(obs_id*2,total_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id],2,n_intrinsic_param);
+      J_point_matrix = sparse_jacobian.block(obs_id*2,(total_cam_ext_param + total_intrinsic_param)+track_id*3,2,3);
+      
+      
+      // Compute diagonal block for V_inverse
+      pointBlockMatrix += J_point_matrix.transpose()*Ex*J_point_matrix;
+	  
+	  // Compute (cam,landmark) block for W
+	  camPointBlockMatrix = J_cam_matrix.transpose()*Ex*J_point_matrix;
+	  // Compute (intrinsic,landmark) block for W
+	  Eigen::MatrixXd intrinsicsPointBlockMatrix = J_intrinsics_matrix.transpose()*Ex*J_point_matrix;
+	  
+	  // Save block to W
+	  for(int r=0;r<single_cam_ext_param;r++){
+        for(int c=0;c<3;c++){
+          W.insert(pose_id*single_cam_ext_param+r,track_id*3+c) = camPointBlockMatrix(r,c);
+        }
+      }
+      
+	  for(int r=0;r<n_intrinsic_param;r++){
+        for(int c=0;c<3;c++){
+          W.coeffRef(total_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id]+r,track_id*3+c) += intrinsicsPointBlockMatrix(r,c);
+        }
+      }
+	  
+	}
+	
+    // Compute inverse of block of V
+    pointBlockMatrix=pointBlockMatrix.inverse();
+    
+    // Save block to V
+	for(int r=0;r<3;r++){
+      for(int c=0;c<3;c++){
+        V_inv.insert(track_id*3+r,track_id*3+c) = pointBlockMatrix(r,c);
+      }
+    }    
+  }
+  
+  // -----------------------------------------------
+  // WVW
+  // -----------------------------------------------
+  Eigen::MatrixXd camWBlockMatrix;
+  Eigen::MatrixXd camWVWBlockMatrix;
+  // Loop through landmarks
+  for (Problem_ObservationPerLandmarkView::iterator iterTracks = problem_obs_per_land_view.begin();
+    iterTracks!= problem_obs_per_land_view.end(); ++iterTracks)
+  {
+    const IndexT track_id = iterTracks->first;
+    // Initialize computation
+    pointBlockMatrix.setZero();
+    const Hash_Map<IndexT,IndexT> * obs_per_land_view = &(iterTracks->second);
+    for (Hash_Map<IndexT,IndexT>::const_iterator iterObsLV = obs_per_land_view->begin();
+	  iterObsLV!=obs_per_land_view->end();++iterObsLV){
+	  const IndexT view_id = iterObsLV->first;
+	  const IndexT pose_id = sfm_data.views.at(view_id)->id_pose;
+      const IndexT intrinsic_id = sfm_data.views.at(view_id)->id_intrinsic;
+      const int n_intrinsic_param = sfm_data.intrinsics.at(intrinsic_id)->getParams().size();
+	  const IndexT obs_id = iterObsLV->second;
+	  
+	  // Get track/obs block from Jacobian matrix
+	  camWBlockMatrix = W.block(pose_id*single_cam_ext_param,track_id*3,single_cam_ext_param,3);
+	  camWVWBlockMatrix = camWBlockMatrix*V_inv.block(track_id*3,track_id*3,3,3)*camWBlockMatrix.transpose();
+	  
+	  WUW.block(track_id*3,track_id*3,3,3) = camWBlockMatrix;
+	  
+	}	   
+  }
+  
+  Eigen::MatrixXd UWVW = ((U-WUW).transpose()).inverse();
+  
+  
+
+/*
+  int gObsID=0;
+  int gTrackID=0;
+  // Loop through landmarks
+  for (Landmarks::iterator iterTracks = sfm_data.structure.begin();
+    iterTracks!= sfm_data.structure.end(); ++iterTracks)
+  {
+    const Observations & obs = iterTracks->second.obs;
+    // Set the resulting block to zero
+    pointBlockMatrix.setZero();
+
+    for (Observations::const_iterator itObs = obs.begin();
+      itObs != obs.end(); ++itObs)
+    {
+      const IndexT view_id = itObs->first;
+      const IndexT pose_id = sfm_data.views.at(view_id)->id_pose;
+      const IndexT intrinsic_id = sfm_data.views.at(view_id)->id_intrinsic;
+      const int n_intrinsic_param = sfm_data.intrinsics.at(intrinsic_id)->getParams().size();
+
+      // Get B matrix from J
+      J_point_matrix = sparse_jacobian.block(gObsID*2,(total_cam_ext_param + total_intrinsic_param)+gTrackID*3,2,3);
+      pointBlockMatrix += J_point_matrix.transpose()*Ex*J_point_matrix;
+
+      J_A_matrix = sparse_jacobian.block(gObsID*2,pose_id*single_cam_ext_param,2,single_cam_ext_param);
+      J_B_matrix = sparse_jacobian.block(gObsID*2,(total_cam_ext_param + total_intrinsic_param)+gTrackID*3,2,3);
+      camPointBlockMatrix = J_A_matrix.transpose()*Ex*J_B_matrix;
+
+      for(int r=0;r<3;r++){
+        for(int c=0;c<3;c++){
+          W.insert(pose_id*single_cam_ext_param*3+r,gTrackID*3+c) = camPointBlockMatrix(r,c);
+        }
+      }
+
+
+
+      gObsID++;
+    }
+    pointBlockMatrix=pointBlockMatrix.inverse();
+
+    for(int r=0;r<3;r++){
+      for(int c=0;c<3;c++){
+        V_inv.insert(gTrackID*3+r,gTrackID*3+c) = pointBlockMatrix(r,c);
+      }
+    }
+    gTrackID++;
+  }
+  
+  */
+
+  // -----------------------------------------------
+  // Compute Partial Jacobian matrices (Eigen)
+  // -----------------------------------------------
+  const int num_A_B_rows = num_J_rows;
+  const int num_A_cols = total_cam_ext_param + total_intrinsic_param;
+  const int num_B_cols = total_landmark_param + total_control_param;
   // Matrix A (camera part of Jacobian) - each row has only values for one camera+intrinsics
-  EigenSparseMatrix sparse_J_A = sparse_jacobian.block(0,0,num_A_B_rows,num_cam_ext_param+num_intrinsic_param);
+  EigenSparseMatrix sparse_J_A = sparse_jacobian.block(0,0,num_A_B_rows,total_cam_ext_param+total_intrinsic_param);
   // Matrix B (landmark part of Jacobian) - each row has only values for one point
   EigenSparseMatrix sparse_J_B = sparse_jacobian.block(0,num_A_cols,num_A_B_rows,num_B_cols);
 
@@ -598,10 +907,16 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
   for (int i=0;i<num_A_B_rows;i++){
     ExAll.insert(i,i) = 0.5;
   }
+  
+  EigenSparseMatrix JJA = sparse_J_A.transpose()*ExAll*sparse_J_A;
+  EigenSparseMatrix JJB = sparse_J_B.transpose()*ExAll*sparse_J_B;
+  EigenSparseMatrix JJW = sparse_J_A.transpose()*ExAll*sparse_J_B;
+  
+  EigenSparseMatrix JJWVW = JJW*JJB*JJW.transpose();
+  Eigen::MatrixXd UJJWUW = (U-Eigen::MatrixXd(JJWVW));
+  UJJWUW = UJJWUW.transpose().inverse();
 
-  EigenSparseMatrix SS = sparse_J_B.transpose()*ExAll*sparse_J_B;
-
-
+/*
   // Observations for each Landmark and camera
   typedef Hash_Map< IndexT, Hash_Map< IndexT, Observations > > ObservationsPerLandmarkAndCam;
   // Find appropriate observations for each camera
@@ -639,12 +954,12 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
     }
   }
 
-  Eigen::MatrixXd U = Eigen::MatrixXd::Zero(num_cam_ext_param + num_intrinsic_param,num_cam_ext_param + num_intrinsic_param);
-  EigenSparseMatrix V_inv(num_landmark_param + num_control_param,num_landmark_param + num_control_param);
-  EigenSparseMatrix W(num_cam_ext_param + num_intrinsic_param,num_landmark_param + num_control_param);
+  Eigen::MatrixXd U = Eigen::MatrixXd::Zero(total_cam_ext_param + total_intrinsic_param,total_cam_ext_param + total_intrinsic_param);
+  EigenSparseMatrix V_inv(total_landmark_param + total_control_param,total_landmark_param + total_control_param);
+  EigenSparseMatrix W(total_cam_ext_param + total_intrinsic_param,total_landmark_param + total_control_param);
 
 
-  Eigen::MatrixXd camBlockMatrix = Eigen::MatrixXd::Zero(n_cam_ext_param,n_cam_ext_param);
+  Eigen::MatrixXd camBlockMatrix = Eigen::MatrixXd::Zero(single_cam_ext_param,single_cam_ext_param);
 
   // Uncertainty of each feature detected
   Eigen::Matrix2d Ex;
@@ -666,7 +981,7 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
     const int n_intrinsic_param = sfm_data.intrinsics.at(intrinsic_id)->getParams().size();
 
     camBlockMatrix.setZero();
-    Eigen::MatrixXd intrinsicsCamBlockMatrix = Eigen::MatrixXd::Zero(n_cam_ext_param,n_intrinsic_param);
+    Eigen::MatrixXd intrinsicsCamBlockMatrix = Eigen::MatrixXd::Zero(single_cam_ext_param,n_intrinsic_param);
     Eigen::MatrixXd intrinsicsBlockMatrix = Eigen::MatrixXd::Zero(n_intrinsic_param,n_intrinsic_param);
 
     const Observations & obs = iterObsCam->second;
@@ -675,24 +990,24 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
     {
       const IndexT obsID = itObs->first;
       // Get block from A
-      J_cam_matrix = sparse_jacobian.block(obsID*2,pose_id*n_cam_ext_param,2,n_cam_ext_param);
-      J_intrinsics_matrix = sparse_jacobian.block(obsID*2,num_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id],2,n_intrinsic_param);
+      J_cam_matrix = sparse_jacobian.block(obsID*2,pose_id*single_cam_ext_param,2,single_cam_ext_param);
+      J_intrinsics_matrix = sparse_jacobian.block(obsID*2,total_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id],2,n_intrinsic_param);
 
       camBlockMatrix += J_cam_matrix.transpose()*Ex*J_cam_matrix;
       intrinsicsCamBlockMatrix += J_cam_matrix.transpose()*Ex*J_intrinsics_matrix;
       intrinsicsBlockMatrix += J_intrinsics_matrix.transpose()*Ex*J_intrinsics_matrix;
     }
     // Pose diagonals
-    U.block(pose_id*n_cam_ext_param,pose_id*n_cam_ext_param,n_cam_ext_param,n_cam_ext_param) = camBlockMatrix;
+    U.block(pose_id*single_cam_ext_param,pose_id*single_cam_ext_param,single_cam_ext_param,single_cam_ext_param) = camBlockMatrix;
     // Intrinsic diagonals
-    U.block(num_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id],num_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id],n_intrinsic_param,n_intrinsic_param) += intrinsicsBlockMatrix;
+    U.block(total_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id],total_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id],n_intrinsic_param,n_intrinsic_param) += intrinsicsBlockMatrix;
     // Pose - intrinsic diagonals
-    U.block(pose_id*n_cam_ext_param,num_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id],n_cam_ext_param,n_intrinsic_param) = intrinsicsCamBlockMatrix;
-    U.block(num_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id],pose_id*n_cam_ext_param,n_intrinsic_param,n_cam_ext_param) = intrinsicsCamBlockMatrix.transpose();
+    U.block(pose_id*single_cam_ext_param,total_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id],single_cam_ext_param,n_intrinsic_param) = intrinsicsCamBlockMatrix;
+    U.block(total_cam_ext_param + start_intrinsic_param_per_row[intrinsic_id],pose_id*single_cam_ext_param,n_intrinsic_param,single_cam_ext_param) = intrinsicsCamBlockMatrix.transpose();
   }
 
   Eigen::MatrixXd pointBlockMatrix = Eigen::MatrixXd::Zero(3,3);
-  Eigen::MatrixXd camPointBlockMatrix = Eigen::MatrixXd::Zero(n_cam_ext_param,3);
+  Eigen::MatrixXd camPointBlockMatrix = Eigen::MatrixXd::Zero(single_cam_ext_param,3);
   // Each row in V will have 3 non-zero elements
   V_inv.reserve(3);
 
@@ -716,16 +1031,16 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
       const int n_intrinsic_param = sfm_data.intrinsics.at(intrinsic_id)->getParams().size();
 
       // Get B matrix from J
-      J_point_matrix = sparse_jacobian.block(gObsID*2,(num_cam_ext_param + num_intrinsic_param)+gTrackID*3,2,3);
+      J_point_matrix = sparse_jacobian.block(gObsID*2,(total_cam_ext_param + total_intrinsic_param)+gTrackID*3,2,3);
       pointBlockMatrix += J_point_matrix.transpose()*Ex*J_point_matrix;
 
-      J_A_matrix = sparse_jacobian.block(gObsID*2,pose_id*n_cam_ext_param,2,n_cam_ext_param);
-      J_B_matrix = sparse_jacobian.block(gObsID*2,(num_cam_ext_param + num_intrinsic_param)+gTrackID*3,2,3);
+      J_A_matrix = sparse_jacobian.block(gObsID*2,pose_id*single_cam_ext_param,2,single_cam_ext_param);
+      J_B_matrix = sparse_jacobian.block(gObsID*2,(total_cam_ext_param + total_intrinsic_param)+gTrackID*3,2,3);
       camPointBlockMatrix = J_A_matrix.transpose()*Ex*J_B_matrix;
 
       for(int r=0;r<3;r++){
         for(int c=0;c<3;c++){
-          W.insert(pose_id*n_cam_ext_param*3+r,gTrackID*3+c) = camPointBlockMatrix(r,c);
+          W.insert(pose_id*single_cam_ext_param*3+r,gTrackID*3+c) = camPointBlockMatrix(r,c);
         }
       }
 
@@ -746,8 +1061,7 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
 
 
 
-
-
+*/
 
 
 
@@ -762,18 +1076,26 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
       << " #tracks: " << sfm_data.structure.size() << "\n"
       << " #J rows: " << num_J_rows << "\n"
       << " #J cols: " << num_J_cols << "\n"
-      << " #J NonZero: " << global_obs_id << "\n"
       << " #Sparse J rows: " << sparse_jacobian.rows()<<" :: "<<sparse_jacobian.cols() << "\n"
-      << " #Sparse JA rows: " << sparse_J_A.rows()<<" :: "<<sparse_J_A.cols() << "\n"
+      /*<< " #Sparse JA rows: " << sparse_J_A.rows()<<" :: "<<sparse_J_A.cols() << "\n"
       << " #Sparse JB rows: " << sparse_J_B.rows()<<" :: "<<sparse_J_B.cols() << "\n"
       << " #Sparse J nonZero: " << sparse_jacobian.nonZeros() << "\n"
       << " #Sparse JA nonZero: " << sparse_J_A.nonZeros() << "\n"
-      << " #Sparse JB nonZero: " << sparse_J_B.nonZeros() << "\n"
+      << " #Sparse JB nonZero: " << sparse_J_B.nonZeros() << "\n"*/
       << " Final RMSE: " << std::sqrt( cost / num_J_rows) << "\n"
       << " Final cost: " << cost << "\n"
       << " --------------------------\n"
-      << " V: \n" << V_inv.block(100,100,10,10) << "\n"
-      << " VV: \n "<<SS.block(100,100,10,10)<<"\n"
+      /*<< " U: \n" << U << "\n"
+      << " UU: \n "<<JJA<<"\n"*/
+      /*<< " V: \n" << V_inv.block(100,100,10,10) << "\n"
+      << " VV: \n "<<JJB.block(100,100,10,10)<<"\n"*/
+      << " W: \n" << UWVW.block(0,0,W.rows(),10) << "\n"
+      << " WW: \n "<<UJJWUW.block(0,0,JJW.rows(),10)<<"\n"
+      
+      << " #Sparse W rows: " << W.rows()<<" :: "<<W.cols() << "\n"
+      << " #Sparse JW rows: " << JJW.rows()<<" :: "<<JJW.cols() << "\n"
+      /*<< " V: \n" << V_inv.block(100,100,10,10) << "\n"
+      << " VV: \n "<<SS.block(100,100,10,10)<<"\n"*/
       << std::endl;
   }
 
