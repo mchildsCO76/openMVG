@@ -68,7 +68,8 @@ class Bundle_Adjustment_Ceres : public Bundle_Adjustment
     // the SfM scene to refine
     SfM_Data & sfm_data,
     // tell which parameter needs to be adjusted
-    const Optimize_Options options
+    const Optimize_Options options,
+    const bool estimateLandmarks = false
   );
 
 };
