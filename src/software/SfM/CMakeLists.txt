@@ -119,6 +119,15 @@ TARGET_LINK_LIBRARIES(openMVG_main_ComputeSfM_DataColor
   stlplus
   )
   
+ADD_EXECUTABLE(openMVG_main_ComputeSfM_DataColorWithUncertainty main_ComputeSfM_DataColorWithUncertainty.cpp)
+TARGET_LINK_LIBRARIES(openMVG_main_ComputeSfM_DataColorWithUncertainty
+  openMVG_system
+  openMVG_image
+  openMVG_features
+  openMVG_sfm
+  stlplus
+  )
+  
 ADD_EXECUTABLE(openMVG_main_EstimateUncertainty main_EstimateUncertainty.cpp)
 TARGET_LINK_LIBRARIES(openMVG_main_EstimateUncertainty
   openMVG_system
@@ -141,6 +150,8 @@ SET_PROPERTY(TARGET openMVG_main_ComputeStructureFromKnownPoses PROPERTY FOLDER 
 INSTALL(TARGETS openMVG_main_ComputeStructureFromKnownPoses DESTINATION bin/)
 SET_PROPERTY(TARGET openMVG_main_ComputeSfM_DataColor PROPERTY FOLDER OpenMVG/software)
 INSTALL(TARGETS openMVG_main_ComputeSfM_DataColor DESTINATION bin/)
+SET_PROPERTY(TARGET openMVG_main_ComputeSfM_DataColorWithUncertainty PROPERTY FOLDER OpenMVG/software)
+INSTALL(TARGETS openMVG_main_ComputeSfM_DataColorWithUncertainty DESTINATION bin/)
 
 ###
 # SfM tools to visualize feature tracking data

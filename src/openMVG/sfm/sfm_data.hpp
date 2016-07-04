@@ -62,6 +62,7 @@ struct SfM_Data
   const Intrinsics & GetIntrinsics() const {return intrinsics;}
   const Landmarks & GetLandmarks() const {return structure;}
   const Landmarks & GetControl_Points() const {return control_points;}
+  const UncertaintyLandmarks & GetUncertaintyLandmarks() const {return uncertainty_structure;}
 
   /// Check if the View have defined intrinsic and pose
   bool IsPoseAndIntrinsicDefined(const View * view) const

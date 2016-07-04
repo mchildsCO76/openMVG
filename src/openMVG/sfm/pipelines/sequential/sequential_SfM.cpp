@@ -145,19 +145,6 @@ bool SequentialSfMReconstructionEngine::Process() {
   }
 
 
-  std::cout << "\n\n-------------------------------" << "\n"
-      << "Estimate Uncertainty"<<"\n"
-      << "-------------------------------" << "\n";
-  Bundle_Adjustment_Ceres::BA_Ceres_options options;
-  Bundle_Adjustment_Ceres bundle_adjustment_obj(options);
-  const Optimize_Options ba_refine_options
-    ( ReconstructionEngine::intrinsic_refinement_options_,
-      Extrinsic_Parameter_Type::ADJUST_ALL, // Adjust camera motion
-      Structure_Parameter_Type::ADJUST_ALL // Adjust scene structure
-    );
-  bundle_adjustment_obj.EstimateUncertainty(sfm_data_, ba_refine_options,true);
-
-
   // Ensure there is no remaining outliers
   if (badTrackRejector(4.0, 0))
   {

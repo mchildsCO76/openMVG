@@ -700,11 +700,15 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
   // ----------------------------------------------- 
   if (ceres_options_.bVerbose_)
   { 
-    std::cout<<"Computing Y and W * V_inv * W'\n";
+    std::cout<<"Computing Y\n";
   }
   
-  EigenSparseMatrix Y = (W * V_inv).pruned(0.0);
+  EigenSparseMatrix Y = (W * V_inv);
   Y.makeCompressed();
+  if (ceres_options_.bVerbose_)
+  {
+    std::cout<<"Computing W * V_inv * W'\n";
+  }
   EigenSparseMatrix WVW = (Y * W.transpose()).pruned(0.0);
   WVW.makeCompressed();
   
@@ -724,19 +728,17 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
   // -----------------------------------------------
   // Compute E_B
   // -----------------------------------------------
-  //Eigen::MatrixXd E_B = Eigen::MatrixXd::Zero(total_landmark_param + total_control_param,3);
   if(evaluateLandmarks){
     if (ceres_options_.bVerbose_)
     { 
       std::cout<<"Computing E_B\n";
     }
 
-    EigenSparseMatrix E_B_sparse = (Y.transpose() * (E_A) * Y).pruned(0.0);
+    EigenSparseMatrix E_B_sparse = (Y.transpose() * (E_A) * Y);
     E_B_sparse.makeCompressed();
     for(int o_i=0;o_i<(total_landmark_param + total_control_param)/3;o_i++){
       UncertaintyLandmark un_landmark;
       un_landmark.covariance = E_B_sparse.block(o_i*3,o_i*3,3,3);
-      //E_B.block(o_i*3,0,3,3) = E_B_sparse.block(o_i*3,o_i*3,3,3);
       sfm_data.uncertainty_structure[o_i] = un_landmark;
     }
   }
