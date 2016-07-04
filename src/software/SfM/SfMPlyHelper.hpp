@@ -53,63 +53,13 @@ static bool exportToPly(const std::vector<Vec3> & vec_points,
 static bool exportToPly(const std::vector<Vec3> & vec_points,
   const std::vector<Vec3> & vec_camPos,
   const std::string & sFileName,
-  const std::vector<Vec3> * vec_coloredPoints = NULL)
+  const std::vector<Vec3> * vec_coloredPoints = NULL,
+  const std::vector<double> * vec_structureUncertainty = NULL)
 {
   std::ofstream outfile(sFileName.c_str());
   if (!outfile.is_open())
     return false;
 
-  outfile << "ply"
-    << '\n' << "format ascii 1.0"
-    << '\n' << "element vertex " << vec_points.size()+vec_camPos.size()
-    << '\n' << "property float x"
-    << '\n' << "property float y"
-    << '\n' << "property float z"
-    << '\n' << "property uchar red"
-    << '\n' << "property uchar green"
-    << '\n' << "property uchar blue"
-    << '\n' << "end_header" << std::endl;
-
-  for (size_t i=0; i < vec_points.size(); ++i)  {
-    if (vec_coloredPoints == NULL)
-      outfile
-        << vec_points[i](0) << ' '
-        << vec_points[i](1) << ' '
-        << vec_points[i](2) << ' '
-        << "255 255 255" << "\n";
-    else
-      outfile
-        << vec_points[i](0) << ' '
-        << vec_points[i](1) << ' '
-        << vec_points[i](2) << ' '
-        << (*vec_coloredPoints)[i](0) << ' '
-        << (*vec_coloredPoints)[i](1) << ' '
-        << (*vec_coloredPoints)[i](2)
-        << "\n";
-  }
-
-  for (size_t i=0; i < vec_camPos.size(); ++i)  {
-    outfile
-      << vec_camPos[i](0) << ' '
-      << vec_camPos[i](1) << ' '
-      << vec_camPos[i](2) << ' '
-      << "0 255 0" << "\n";
-  }
-  outfile.flush();
-  const bool bOk = outfile.good();
-  outfile.close();
-  return bOk;
-}
-
-static bool exportToPly(const std::vector<Vec3> & vec_points,
-  const std::vector<Vec3> & vec_camPos,
-  const std::string & sFileName,
-  const std::vector<Vec3> * vec_coloredPoints,
-  const std::vector<double> * vec_structureUncertainty)
-{
-  std::ofstream outfile(sFileName.c_str());
-  if (!outfile.is_open())
-    return false;
 
   outfile << "ply"
     << '\n' << "format ascii 1.0"
@@ -156,13 +106,14 @@ static bool exportToPly(const std::vector<Vec3> & vec_points,
       << vec_camPos[i](0) << ' '
       << vec_camPos[i](1) << ' '
       << vec_camPos[i](2) << ' '
-      << "0 255 0 0.0" << "\n";
+      << "0 255 0 0.0 " << "\n";
   }
   outfile.flush();
   const bool bOk = outfile.good();
   outfile.close();
   return bOk;
 }
+
 
 } // namespace plyHelper
 } // namespace openMVG
