@@ -28,12 +28,10 @@ int main(int argc, char **argv)
 
   std::string sSfM_Data_Filename;
   std::string sIntrinsic_refinement_options = "ADJUST_ALL";
-  int i_User_camera_model = PINHOLE_CAMERA_RADIAL3;
   bool bEstimateLandmarks = false;
   std::string sOutDir = "";
 
   cmd.add( make_option('i', sSfM_Data_Filename, "sfmdata") );
-  cmd.add( make_option('c', i_User_camera_model, "camera_model") );
   cmd.add( make_option('f', sIntrinsic_refinement_options, "refineIntrinsics") );
   cmd.add( make_option('l', bEstimateLandmarks, "estimateLandmarks") );
   cmd.add( make_option('o', sOutDir, "outdir") );
@@ -44,12 +42,6 @@ int main(int argc, char **argv)
   } catch(const std::string& s) {
       std::cerr << "Usage: " << argv[0] << '\n'
       << "[-i|--sfmdata] filename, the SfM_Data file to use\n"
-      << "[-c|--camera_model] Camera model type for view with unknown intrinsic:\n"
-        << "\t 1: Pinhole \n"
-        << "\t 2: Pinhole radial 1\n"
-        << "\t 3: Pinhole radial 3 (default)\n"
-        << "\t 4: Pinhole radial 3 + tangential 2\n"
-        << "\t 5: Pinhole fisheye\n"
       << "[-f|--refineIntrinsics] Intrinsic parameters refinement option\n"
         << "\t ADJUST_ALL -> refine all existing parameters (default) \n"
         << "\t NONE -> intrinsic parameters are held as constant\n"
@@ -73,12 +65,6 @@ int main(int argc, char **argv)
 
   if (sOutDir.empty())  {
     std::cerr << "\nIt is an invalid output directory" << std::endl;
-    return EXIT_FAILURE;
-  }
-
-  if (i_User_camera_model < PINHOLE_CAMERA ||
-      i_User_camera_model > PINHOLE_CAMERA_FISHEYE )  {
-    std::cerr << "\n Invalid camera type" << std::endl;
     return EXIT_FAILURE;
   }
 
