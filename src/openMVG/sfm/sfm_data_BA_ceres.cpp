@@ -366,41 +366,6 @@ bool Bundle_Adjustment_Ceres::Adjust
 }
 
 
-bool checkMatrixEquality(Eigen::MatrixXd &A, Eigen::MatrixXd &B){
-  if(A.rows()!=B.rows() || A.cols()!=B.cols()){
-    return false;
-  }
-  
-  for(int r=0;r<A.rows();r++){
-    for(int c=0;c<A.cols();c++){
-      if(fabs(A(r,c)-B(r,c))>0.001){
-		std::cout<<"Not Equal: ("<<r<<","<<c<<")\n";
-		return false;
-	  }
-    }
-  }
-  return true;
-} 
-
-bool checkMatrixEquality(Eigen::SparseMatrix<double, Eigen::RowMajor> &A, Eigen::MatrixXd &B){
-  
-  Eigen::MatrixXd C = Eigen::MatrixXd(A);
-  return checkMatrixEquality(C,B);
-}
-
-bool checkMatrixEquality(Eigen::MatrixXd &A, Eigen::SparseMatrix<double, Eigen::RowMajor> &B){
-  
-  Eigen::MatrixXd D = Eigen::MatrixXd(B);
-  return checkMatrixEquality(A,D);
-}
-
-
-
-bool checkMatrixEquality(Eigen::SparseMatrix<double, Eigen::RowMajor> &A, Eigen::SparseMatrix<double, Eigen::RowMajor> &B){
-  Eigen::MatrixXd C = Eigen::MatrixXd(A);
-  Eigen::MatrixXd D = Eigen::MatrixXd(B);
-  return checkMatrixEquality(C,D);
-}
 
 
 Eigen::MatrixXd pseudoInverse(const Eigen::MatrixXd &a, double epsilon = std::numeric_limits<double>::epsilon())
@@ -416,15 +381,6 @@ Eigen::SparseMatrix<double, Eigen::RowMajor> pseudoInverse(const Eigen::SparseMa
   sparse_a_inv.makeCompressed();
   return sparse_a_inv;
 }
-
-Eigen::MatrixXd pseudoInverse_reconstructed(const Eigen::MatrixXd &a, double epsilon = std::numeric_limits<double>::epsilon())
-{
-	Eigen::JacobiSVD< Eigen::MatrixXd > svd(a ,Eigen::ComputeFullU | Eigen::ComputeFullV);
-	double tolerance = epsilon * std::max(a.cols(), a.rows()) *svd.singularValues().array().abs()(0);
-	return svd.matrixU() *  (svd.singularValues().array().abs() > tolerance).select(svd.singularValues().array(), 0).matrix().asDiagonal() * svd.matrixV().transpose();
-}
-
-
 
 
 bool Bundle_Adjustment_Ceres::EstimateUncertainty
@@ -698,7 +654,7 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
     std::cout<<"Computing U\n";  
   }
   
-  EigenSparseMatrix U = J_A.transpose() * E_x_inv * J_A;
+  EigenSparseMatrix U = (J_A.transpose() * E_x_inv * J_A).pruned(0.0);
   U.makeCompressed();
   
   // -----------------------------------------------
@@ -709,7 +665,7 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
     std::cout<<"Computing V_inverse\n";
   }  
   
-  EigenSparseMatrix V_inv = J_B.transpose() * E_x_inv * J_B;
+  EigenSparseMatrix V_inv = (J_B.transpose() * E_x_inv * J_B).pruned(0.0);
   V_inv.makeCompressed();
   
   // Invert diagonal blocks
@@ -735,7 +691,7 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
     std::cout<<"Computing W\n";
   }
   
-  EigenSparseMatrix W = J_A.transpose() * E_x_inv * J_B;
+  EigenSparseMatrix W = (J_A.transpose() * E_x_inv * J_B).pruned(0.0);
   W.makeCompressed();
   
 
@@ -747,9 +703,9 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
     std::cout<<"Computing Y and W * V_inv * W'\n";
   }
   
-  EigenSparseMatrix Y = W * V_inv;
+  EigenSparseMatrix Y = (W * V_inv).pruned(0.0);
   Y.makeCompressed();
-  EigenSparseMatrix WVW = Y * W.transpose();
+  EigenSparseMatrix WVW = (Y * W.transpose()).pruned(0.0);
   WVW.makeCompressed();
   
   // -----------------------------------------------
@@ -763,22 +719,28 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
   EigenSparseMatrix E_A = pseudoInverse(EigenSparseMatrix(U-WVW));
   E_A.makeCompressed();
   
+  sfm_data.uncertainty_poses_intrinsics.covariance = E_A;
 
   // -----------------------------------------------
   // Compute E_B
   // -----------------------------------------------
-  Eigen::MatrixXd E_A_dense;   
+  //Eigen::MatrixXd E_B = Eigen::MatrixXd::Zero(total_landmark_param + total_control_param,3);
   if(evaluateLandmarks){
     if (ceres_options_.bVerbose_)
     { 
       std::cout<<"Computing E_B\n";
     }
-    // Convert E_A to dense  
-    E_A_dense =  Eigen::MatrixXd(E_A);
-    Eigen::MatrixXd E_B_dense = Y.transpose() * (E_A_dense) * Y;
+
+    EigenSparseMatrix E_B_sparse = (Y.transpose() * (E_A) * Y).pruned(0.0);
+    E_B_sparse.makeCompressed();
+    for(int o_i=0;o_i<(total_landmark_param + total_control_param)/3;o_i++){
+      UncertaintyLandmark un_landmark;
+      un_landmark.covariance = E_B_sparse.block(o_i*3,o_i*3,3,3);
+      //E_B.block(o_i*3,0,3,3) = E_B_sparse.block(o_i*3,o_i*3,3,3);
+      sfm_data.uncertainty_structure[o_i] = un_landmark;
+    }
   }
-  std::cout<<"E_A: " << E_A.block(0,0,E_A.rows(),E_A.cols())<<"\n";
-  std::cout<<"E_AA: "<<E_A_dense<<"\n";
+  //sfm_data.uncertainty_structure = E_B;
   return true;
 }
 

@@ -155,7 +155,7 @@ bool SequentialSfMReconstructionEngine::Process() {
       Extrinsic_Parameter_Type::ADJUST_ALL, // Adjust camera motion
       Structure_Parameter_Type::ADJUST_ALL // Adjust scene structure
     );
-  bundle_adjustment_obj.EstimateUncertainty(sfm_data_, ba_refine_options);
+  bundle_adjustment_obj.EstimateUncertainty(sfm_data_, ba_refine_options,true);
 
 
   // Ensure there is no remaining outliers

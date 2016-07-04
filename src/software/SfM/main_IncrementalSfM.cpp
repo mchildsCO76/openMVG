@@ -217,7 +217,7 @@ int main(int argc, char **argv)
     //-- Export to disk computed scene (data & visualizable results)
     std::cout << "...Export SfM_Data to disk." << std::endl;
     Save(sfmEngine.Get_SfM_Data(),
-      stlplus::create_filespec(sOutDir, "sfm_data", ".bin"),
+      stlplus::create_filespec(sOutDir, "sfm_data", ".json"),
       ESfM_Data(ALL));
 
     Save(sfmEngine.Get_SfM_Data(),

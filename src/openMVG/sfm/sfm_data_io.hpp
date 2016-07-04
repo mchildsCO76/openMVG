@@ -10,6 +10,7 @@
 #define OPENMVG_SFM_DATA_IO_HPP
 
 #include "openMVG/sfm/sfm_data.hpp"
+#include <Eigen/Sparse>
 
 namespace openMVG {
 namespace sfm {
@@ -21,6 +22,7 @@ enum ESfM_Data
   INTRINSICS      = 0x04,
   STRUCTURE       = 0x08,
   CONTROL_POINTS  = 0x16,
+  UNCERTAINTIES  = 0x32,
   ALL = VIEWS | EXTRINSICS | INTRINSICS | STRUCTURE | CONTROL_POINTS
 };
 

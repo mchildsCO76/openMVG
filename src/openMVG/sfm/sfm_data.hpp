@@ -12,6 +12,7 @@
 #include "openMVG/sfm/sfm_landmark.hpp"
 #include "openMVG/geometry/pose3.hpp"
 #include "openMVG/cameras/cameras.hpp"
+#include "openMVG/sfm/sfm_uncertainty.hpp"
 
 namespace openMVG {
 namespace sfm {
@@ -28,6 +29,9 @@ typedef Hash_Map<IndexT, std::shared_ptr<cameras::IntrinsicBase> > Intrinsics;
 /// Define a collection of landmarks are indexed by their TrackId
 typedef Hash_Map<IndexT, Landmark> Landmarks;
 
+/// Define a collection of uncertainties of landmarks which are indexed by their TrackId
+typedef Hash_Map<IndexT, UncertaintyLandmark> UncertaintyLandmarks;
+
 /// Generic SfM data container
 /// Store structure and camera properties:
 struct SfM_Data
@@ -42,6 +46,10 @@ struct SfM_Data
   Landmarks structure;
   /// Controls points (stored as Landmarks (id_feat has no meaning here))
   Landmarks control_points;
+  /// Covariance matrices
+  UncertaintyCams uncertainty_poses_intrinsics;
+  UncertaintyLandmarks uncertainty_structure;
+
 
   /// Root Views path
   std::string s_root_path;

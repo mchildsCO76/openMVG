@@ -118,6 +118,15 @@ TARGET_LINK_LIBRARIES(openMVG_main_ComputeSfM_DataColor
   openMVG_sfm
   stlplus
   )
+  
+ADD_EXECUTABLE(openMVG_main_EstimateUncertainty main_EstimateUncertainty.cpp)
+TARGET_LINK_LIBRARIES(openMVG_main_EstimateUncertainty
+  openMVG_system
+  openMVG_image
+  openMVG_features
+  openMVG_sfm
+  stlplus
+  )
 
 # Installation rules
 SET_PROPERTY(TARGET openMVG_main_IncrementalSfM PROPERTY FOLDER OpenMVG/software)
