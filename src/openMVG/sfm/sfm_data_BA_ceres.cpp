@@ -734,7 +734,7 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
       std::cout<<"Computing E_B\n";
     }
 
-    EigenSparseMatrix E_B_sparse = (Y.transpose() * (E_A) * Y);
+    EigenSparseMatrix E_B_sparse = (Y.transpose() * (E_A) * Y) + V_inv;
     E_B_sparse.makeCompressed();
     for(int o_i=0;o_i<(total_landmark_param + total_control_param)/3;o_i++){
       UncertaintyLandmark un_landmark;
