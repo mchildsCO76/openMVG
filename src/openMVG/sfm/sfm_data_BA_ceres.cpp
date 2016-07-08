@@ -364,23 +364,6 @@ bool Bundle_Adjustment_Ceres::Adjust
   }
 }
 
-
-bool checkMatrixEquality(Eigen::Matrix3d &A, Eigen::Matrix3d &B, double error){
-  if(A.rows()!=B.rows() || A.cols()!=B.cols()){
-    return false;
-  }
-
-  for(int r=0;r<A.rows();r++){
-    for(int c=0;c<A.cols();c++){
-      if(fabs(A(r,c)-B(r,c))>error){
-    std::cout<<"Not Equal: ("<<r<<","<<c<<")\n";
-    return false;
-    }
-    }
-  }
-  return true;
-}
-
 Eigen::MatrixXd pseudoInverse(const Eigen::MatrixXd &a, double epsilon = std::numeric_limits<double>::epsilon())
 {
 	Eigen::JacobiSVD< Eigen::MatrixXd > svd(a ,Eigen::ComputeFullU | Eigen::ComputeFullV);
@@ -741,14 +724,11 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
   // Compute E_P
   // -----------------------------------------------
   if(evaluateLandmarks){
-    std::clock_t start;
-    double duration;
     if (ceres_options_.bVerbose_)
     { 
       std::cout<<"Computing E_P\n";
     }
 
-    start = std::clock();
     EigenSparseMatrix W_column,WEW;
     Eigen::Matrix3d V_inv_i;
     // Loop through landmarks and compute its variance
@@ -784,11 +764,7 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
       sfm_data.uncertainty_structure[track_id] = un_landmark;
     }
 
-    duration = ( std::clock() - start ) / (double) CLOCKS_PER_SEC;
-    std::cout<<"printf: "<< duration <<'\n';
-
   }
-  //sfm_data.uncertainty_structure = E_B;
   return true;
 }
 
