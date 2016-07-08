@@ -20,6 +20,7 @@ namespace sfm {
 struct UncertaintyLandmark
 {
   Eigen::Matrix3d covariance;
+  double meanReprojError;
 
   // Serialization
   template <class Archive>
@@ -27,6 +28,7 @@ struct UncertaintyLandmark
   {
     const std::vector<double> cov = { covariance(0,0), covariance(0,1), covariance(0,2), covariance(1,0), covariance(1,1), covariance(1,2), covariance(2,0), covariance(2,1), covariance(2,2) };
     ar(cereal::make_nvp("covariance", cov ));
+    ar(cereal::make_nvp("meanReprojError", meanReprojError ));
   }
 
   template <class Archive>
@@ -35,6 +37,7 @@ struct UncertaintyLandmark
     std::vector<double> cov(9);
     ar(cereal::make_nvp("covariance", cov ));
     covariance = Eigen::Map<const Eigen::Matrix3d>(&cov[0]);
+    ar(cereal::make_nvp("meanReprojError", meanReprojError ));
   }
 };
 

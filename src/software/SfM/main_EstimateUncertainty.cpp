@@ -98,13 +98,14 @@ int main(int argc, char **argv)
       Extrinsic_Parameter_Type::ADJUST_ALL, // Adjust camera motion
       Structure_Parameter_Type::ADJUST_ALL // Adjust scene structure
     );
+  std::cout<<"A1\n";
   bundle_adjustment_obj.EstimateUncertainty(sfm_data, ba_refine_options,bEstimateLandmarks);
-
+  std::cout<<"A2\n";
 
   //-- Export to disk computed scene (data & visualizable results)
   std::cout << "...Export SfM_Data to disk." << std::endl;
   Save(sfm_data,
-    stlplus::create_filespec(sOutDir, "sfm_data", ".json"),
+    stlplus::create_filespec(sOutDir, "sfm_data", ".bin"),
     ESfM_Data(ALL|UNCERTAINTIES));
 
 

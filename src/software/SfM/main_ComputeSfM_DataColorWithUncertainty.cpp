@@ -161,16 +161,22 @@ void GetUncertaintyStructure(const SfM_Data & sfm_data, std::vector<double> & ve
   for (UncertaintyLandmarks::const_iterator it = sfm_data.GetUncertaintyLandmarks().begin();
     it != sfm_data.GetUncertaintyLandmarks().end(); ++it, ++cpt)
   {
-
-    const IndexT landmark_id = it->first;
-    Eigen::Vector3d eigen_values = (it->second.covariance).eigenvalues().real();
+    // Compute the confidence (95%) ellipsoid and compute its volume
+    /*Eigen::Vector3d eigen_values = (it->second.covariance).eigenvalues().real();
+    // Parameters of ellipsoid
     double a_ellipsoid = sqrt(eigen_values(0)*7.815)*2;
     double b_ellipsoid = sqrt(eigen_values(1)*7.815)*2;
     double c_ellipsoid = sqrt(eigen_values(2)*7.815)*2;
+    // Volume
+    double quality = (1.33333f * M_PI * a_ellipsoid * b_ellipsoid  * c_ellipsoid) * (it->second.meanReprojError);
+    */
+    // Trace of covariance matrix
+    double quality = (it->second.covariance).trace();
+        //* (it->second.meanReprojError);
 
-    double V_ellipsoid = 1.33333 * M_PI * a_ellipsoid * b_ellipsoid  * c_ellipsoid;
+    vec_structureUncertainty.push_back(quality);
 
-    vec_structureUncertainty.push_back(V_ellipsoid);
+
 
   }
 }

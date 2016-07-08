@@ -366,7 +366,21 @@ bool Bundle_Adjustment_Ceres::Adjust
 }
 
 
+bool checkMatrixEquality(Eigen::Matrix3d &A, Eigen::Matrix3d &B, double error){
+  if(A.rows()!=B.rows() || A.cols()!=B.cols()){
+    return false;
+  }
 
+  for(int r=0;r<A.rows();r++){
+    for(int c=0;c<A.cols();c++){
+      if(fabs(A(r,c)-B(r,c))>error){
+    std::cout<<"Not Equal: ("<<r<<","<<c<<")\n";
+    return false;
+    }
+    }
+  }
+  return true;
+}
 
 Eigen::MatrixXd pseudoInverse(const Eigen::MatrixXd &a, double epsilon = std::numeric_limits<double>::epsilon())
 {
@@ -621,7 +635,7 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
   {
     std::cout<<"Computing E_x_inv\n";
   }
-  
+
   EigenSparseMatrix E_x_inv(total_observations,total_observations);
   
   {
@@ -656,7 +670,7 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
   
   EigenSparseMatrix U = (J_A.transpose() * E_x_inv * J_A).pruned(0.0);
   U.makeCompressed();
-  
+
   // -----------------------------------------------
   // Compute V_inverse
   // ----------------------------------------------- 
@@ -682,7 +696,7 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
   }
   }
   V_inv.makeCompressed();
-  
+
   // -----------------------------------------------
   // Compute W
   // ----------------------------------------------- 
@@ -693,7 +707,6 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
   
   EigenSparseMatrix W = (J_A.transpose() * E_x_inv * J_B).pruned(0.0);
   W.makeCompressed();
-  
 
   // -----------------------------------------------
   // Compute Y and W * V_inverse * W'
@@ -717,30 +730,64 @@ bool Bundle_Adjustment_Ceres::EstimateUncertainty
   // ----------------------------------------------- 
   if (ceres_options_.bVerbose_)
   { 
-    std::cout<<"Computing E_A\n";
+    std::cout<<"Computing E_C\n";
   }  
   
-  EigenSparseMatrix E_A = pseudoInverse(EigenSparseMatrix(U-WVW));
-  E_A.makeCompressed();
+  EigenSparseMatrix E_C = pseudoInverse(EigenSparseMatrix(U-WVW));
+  E_C.makeCompressed();
   
-  sfm_data.uncertainty_poses_intrinsics.covariance = E_A;
+  sfm_data.uncertainty_poses_intrinsics.covariance = E_C;
 
   // -----------------------------------------------
-  // Compute E_B
+  // Compute E_P
   // -----------------------------------------------
   if(evaluateLandmarks){
+    std::clock_t start;
+    double duration;
     if (ceres_options_.bVerbose_)
     { 
-      std::cout<<"Computing E_B\n";
+      std::cout<<"Computing E_P\n";
     }
 
-    EigenSparseMatrix E_B_sparse = (Y.transpose() * (E_A) * Y) + V_inv;
-    E_B_sparse.makeCompressed();
-    for(int o_i=0;o_i<(total_landmark_param + total_control_param)/3;o_i++){
+    start = std::clock();
+    EigenSparseMatrix W_column,WEW;
+    Eigen::Matrix3d V_inv_i;
+    // Loop through landmarks and compute its variance
+    IndexT track_id=0;
+    IndexT obs_id=0;
+    for (Landmarks::iterator iterTracks = sfm_data.structure.begin();
+      iterTracks!= sfm_data.structure.end(); ++iterTracks, ++track_id)
+    {
       UncertaintyLandmark un_landmark;
-      un_landmark.covariance = E_B_sparse.block(o_i*3,o_i*3,3,3);
-      sfm_data.uncertainty_structure[o_i] = un_landmark;
+      // Get i-th column of W (used for computing covariance
+      W_column= W.middleCols(track_id*3,3);
+      // i-th block of V
+      V_inv_i = V_inv.block(track_id*3,track_id*3,3,3);
+      // Compute E_P
+      WEW = W_column.transpose() * E_C * W_column;
+      un_landmark.covariance = (V_inv_i * WEW * V_inv_i) + V_inv_i;
+
+      double meanReprojError = 0.0;
+      const Observations & obs = iterTracks->second.obs;
+      for (Observations::const_iterator itObs = obs.begin();
+        itObs != obs.end(); ++itObs)
+      {
+        const Observation obs = itObs->second;
+        const IndexT view_id = itObs->first;
+        const View * view = sfm_data.GetViews().at(view_id).get();
+        const IntrinsicBase * cam = sfm_data.GetIntrinsics().at(view->id_intrinsic).get();
+        const Pose3 pose = sfm_data.GetPoseOrDie(view);
+
+        meanReprojError += cam->residual(pose,iterTracks->second.X,cam->get_ud_pixel(itObs->second.x)).squaredNorm();
+      }
+      un_landmark.meanReprojError = meanReprojError/obs.size();
+      std::cout<<"T "<<track_id<<" "<<un_landmark.meanReprojError<<"\n";
+      sfm_data.uncertainty_structure[track_id] = un_landmark;
     }
+
+    duration = ( std::clock() - start ) / (double) CLOCKS_PER_SEC;
+    std::cout<<"printf: "<< duration <<'\n';
+
   }
   //sfm_data.uncertainty_structure = E_B;
   return true;
