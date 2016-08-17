@@ -23,7 +23,6 @@
 #include <iomanip>
 #include <fstream>
 
-
 namespace openMVG {
 namespace sfm {
 
@@ -44,8 +43,8 @@ bool Load_Cereal(
   const bool b_extrinsics = (flags_part & EXTRINSICS) == EXTRINSICS;
   const bool b_structure = (flags_part & STRUCTURE) == STRUCTURE;
   const bool b_control_point = (flags_part & CONTROL_POINTS) == CONTROL_POINTS;
-  const bool b_uncertainties = (flags_part & UNCERTAINTIES) == UNCERTAINTIES;
-
+  // Uncertainty
+  const bool b_uncertainty = (flags_part & UNCERTAINTY) == UNCERTAINTY;
 
   //Create the stream and check it is ok
   std::ifstream stream(filename.c_str(), std::ios::binary | std::ios::in);
@@ -103,18 +102,12 @@ bool Load_Cereal(
           archive(cereal::make_nvp("control_points", control_points));
         }
     }
-
-    if (b_uncertainties){
-      archive(cereal::make_nvp("uncertainty_poses_intrinsics", data.uncertainty_poses_intrinsics));
+    if(b_uncertainty){
+      archive(cereal::make_nvp("uncertainty_poses", data.uncertainty_poses));
       archive(cereal::make_nvp("uncertainty_structure", data.uncertainty_structure));
+      archive(cereal::make_nvp("uncertainty_observations", data.uncertainty_observations));
     }
-    else
-      if (bBinary) { // Binary file require read all the member
-        UncertaintyCams uncertainty_poses_intrinsics;
-        UncertaintyLandmarks uncertainty_structure;
-        archive(cereal::make_nvp("uncertainty_poses_intrinsics", uncertainty_poses_intrinsics));
-        archive(cereal::make_nvp("uncertainty_structure", uncertainty_structure));
-      }
+
   }
   catch (const cereal::Exception & e)
   {
@@ -140,7 +133,8 @@ bool Save_Cereal(
   const bool b_extrinsics = (flags_part & EXTRINSICS) == EXTRINSICS;
   const bool b_structure = (flags_part & STRUCTURE) == STRUCTURE;
   const bool b_control_point = (flags_part & CONTROL_POINTS) == CONTROL_POINTS;
-  const bool b_uncertainties = (flags_part & UNCERTAINTIES) == UNCERTAINTIES;
+  // Uncertainty
+  const bool b_uncertainty = (flags_part & UNCERTAINTY) == UNCERTAINTY;
 
   //Create the stream and check it is ok
   std::ofstream stream(filename.c_str(), std::ios::binary | std::ios::out);
@@ -185,14 +179,10 @@ bool Save_Cereal(
         archive(cereal::make_nvp("control_points", Landmarks()));
     }
 
-    // Uncertainties
-    if (b_uncertainties){
-      archive(cereal::make_nvp("uncertainty_poses_intrinsics", data.uncertainty_poses_intrinsics));
+    if (b_uncertainty){
+      archive(cereal::make_nvp("uncertainty_poses", data.uncertainty_poses));
       archive(cereal::make_nvp("uncertainty_structure", data.uncertainty_structure));
-    }
-    else{
-      archive(cereal::make_nvp("uncertainty_poses_intrinsics", UncertaintyCams()));
-      archive(cereal::make_nvp("uncertainty_structure", UncertaintyLandmarks()));
+      archive(cereal::make_nvp("uncertainty_observations", data.uncertainty_observations));
     }
   }
   stream.close();

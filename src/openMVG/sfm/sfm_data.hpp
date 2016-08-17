@@ -29,8 +29,11 @@ typedef Hash_Map<IndexT, std::shared_ptr<cameras::IntrinsicBase> > Intrinsics;
 /// Define a collection of landmarks are indexed by their TrackId
 typedef Hash_Map<IndexT, Landmark> Landmarks;
 
-/// Define a collection of uncertainties of landmarks which are indexed by their TrackId
-typedef Hash_Map<IndexT, UncertaintyLandmark> UncertaintyLandmarks;
+/// Uncertainty data
+typedef Hash_Map<IndexT, PoseUncertainty> PosesUncertainty;
+typedef Hash_Map<IndexT, LandmarkUncertainty> LandmarksUncertainty;
+typedef Hash_Map<IndexT, ObservationUncertainty> ObservationsUncertainty;
+
 
 /// Generic SfM data container
 /// Store structure and camera properties:
@@ -46,10 +49,11 @@ struct SfM_Data
   Landmarks structure;
   /// Controls points (stored as Landmarks (id_feat has no meaning here))
   Landmarks control_points;
-  /// Covariance matrices
-  UncertaintyCams uncertainty_poses_intrinsics;
-  UncertaintyLandmarks uncertainty_structure;
 
+  /// Uncertainty data
+  LandmarksUncertainty uncertainty_structure;
+  PosesUncertainty uncertainty_poses;
+  ObservationsUncertainty uncertainty_observations;
 
   /// Root Views path
   std::string s_root_path;
@@ -62,7 +66,10 @@ struct SfM_Data
   const Intrinsics & GetIntrinsics() const {return intrinsics;}
   const Landmarks & GetLandmarks() const {return structure;}
   const Landmarks & GetControl_Points() const {return control_points;}
-  const UncertaintyLandmarks & GetUncertaintyLandmarks() const {return uncertainty_structure;}
+
+  const LandmarksUncertainty & GetLandmarksUncertainty() const {return uncertainty_structure;}
+  const PosesUncertainty & GetPosesUncertainty() const {return uncertainty_poses;}
+  const ObservationsUncertainty & GetObservationUncertainty() const {return uncertainty_observations;}
 
   /// Check if the View have defined intrinsic and pose
   bool IsPoseAndIntrinsicDefined(const View * view) const

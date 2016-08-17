@@ -11,6 +11,7 @@
 #include "openMVG/cameras/cameras.hpp"
 #include "openMVG/sfm/sfm_data_io.hpp"
 #include "openMVG/cameras/Cameras_Common_command_line_helper.hpp"
+#include "openMVG/sfm/sfm_uncertainty.hpp"
 
 
 using namespace openMVG;
@@ -28,12 +29,14 @@ int main(int argc, char **argv)
 
   std::string sSfM_Data_Filename;
   std::string sIntrinsic_refinement_options = "ADJUST_ALL";
-  bool bEstimateLandmarks = false;
+  bool bLoadUncertainties = false;
+  bool bEstimateLandmarks = true;
   std::string sOutDir = "";
 
   cmd.add( make_option('i', sSfM_Data_Filename, "sfmdata") );
   cmd.add( make_option('f', sIntrinsic_refinement_options, "refineIntrinsics") );
   cmd.add( make_option('l', bEstimateLandmarks, "estimateLandmarks") );
+  cmd.add( make_option('u', bLoadUncertainties, "loadUncertainties") );
   cmd.add( make_option('o', sOutDir, "outdir") );
 
   try {
@@ -55,7 +58,8 @@ int main(int argc, char **argv)
         <<      "\t\t-> refine the focal length & the distortion coefficient(s) (if any)\n"
         << "\t ADJUST_PRINCIPAL_POINT|ADJUST_DISTORTION\n"
         <<      "\t\t-> refine the principal point position & the distortion coefficient(s) (if any)\n"
-      << "[-l|--estimateLandmarks] estimate uncertainty of landmarks\n"
+      << "[-l|--estimateLandmarks] estimate uncertainty of landmarks (default true)\n"
+      << "[-u|--loadUncertainties] load previously estimated uncertainties (default false)\n"
       << "[-o|--outdir] path\n"
       << std::endl;
 
@@ -74,13 +78,20 @@ int main(int argc, char **argv)
   std::cout << " You called : " <<std::endl
             << argv[0] << std::endl
             << "--sfmdata " << sSfM_Data_Filename << std::endl
-            << "--outdir " << sOutDir << std::endl;
+            << "--outdir " << sOutDir << std::endl
+            << "--estimateLandmarks "<< bEstimateLandmarks << std::endl
+            << "--loadUcertainties "<< bLoadUncertainties << std::endl;
 
   // Create output dir
   if (!stlplus::folder_exists(sOutDir))
     stlplus::folder_create( sOutDir );
 
   // Read the SfM scene
+  // Determine what data is loaded (if uncertainties are loaded)
+  ESfM_Data load_options = ALL;
+  if(bLoadUncertainties)
+    load_options = ESfM_Data(ALL|UNCERTAINTY);
+
   SfM_Data sfm_data;
   if (!Load(sfm_data, sSfM_Data_Filename, ESfM_Data(ALL))) {
     std::cerr << std::endl
@@ -98,13 +109,13 @@ int main(int argc, char **argv)
       Extrinsic_Parameter_Type::ADJUST_ALL, // Adjust camera motion
       Structure_Parameter_Type::ADJUST_ALL // Adjust scene structure
     );
-  bundle_adjustment_obj.EstimateUncertainty(sfm_data, ba_refine_options,bEstimateLandmarks);
-
+  EstimateUncertainty(sfm_data,bundle_adjustment_obj, ba_refine_options,bEstimateLandmarks);
+  std::cout<<"Structure: "<<sfm_data.uncertainty_structure.size()<<"\n";
   //-- Export to disk computed scene (data & visualizable results)
   std::cout << "...Export SfM_Data to disk." << std::endl;
   Save(sfm_data,
     stlplus::create_filespec(sOutDir, "sfm_data", ".bin"),
-    ESfM_Data(ALL|UNCERTAINTIES));
+    ESfM_Data(ALL|UNCERTAINTY));
 
 
   return EXIT_SUCCESS;

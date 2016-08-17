@@ -152,6 +152,8 @@ SET_PROPERTY(TARGET openMVG_main_ComputeSfM_DataColor PROPERTY FOLDER OpenMVG/so
 INSTALL(TARGETS openMVG_main_ComputeSfM_DataColor DESTINATION bin/)
 SET_PROPERTY(TARGET openMVG_main_ComputeSfM_DataColorWithUncertainty PROPERTY FOLDER OpenMVG/software)
 INSTALL(TARGETS openMVG_main_ComputeSfM_DataColorWithUncertainty DESTINATION bin/)
+SET_PROPERTY(TARGET openMVG_main_EstimateUncertainty PROPERTY FOLDER OpenMVG/software)
+INSTALL(TARGETS openMVG_main_EstimateUncertainty DESTINATION bin/)
 
 ###
 # SfM tools to visualize feature tracking data

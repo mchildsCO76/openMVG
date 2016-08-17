@@ -5,6 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 #include "openMVG/sfm/sfm.hpp"
+#include "openMVG/sfm/sfm_uncertainty.hpp"
 #include "openMVG/stl/stl.hpp"
 #include "software/SfM/SfMPlyHelper.hpp"
 
@@ -17,6 +18,8 @@
 using namespace openMVG;
 using namespace openMVG::image;
 using namespace openMVG::sfm;
+using namespace openMVG::cameras;
+using namespace openMVG::geometry;
 
 /// Find the color of the SfM_Data Landmarks/structure
 bool ColorizeTracks(
@@ -153,26 +156,46 @@ void GetCameraPositions(const SfM_Data & sfm_data, std::vector<Vec3> & vec_camPo
     }
   }
 }
-
+/*
 /// Export uncertainty of points as double vector
 void GetUncertaintyStructure(const SfM_Data & sfm_data, std::vector<double> & vec_structureUncertainty)
 {
   IndexT cpt = 0;
-  for (UncertaintyLandmarks::const_iterator it = sfm_data.GetUncertaintyLandmarks().begin();
-    it != sfm_data.GetUncertaintyLandmarks().end(); ++it, ++cpt)
+  for (Landmarks::const_iterator it = sfm_data.GetLandmarks().begin();
+    it != sfm_data.GetLandmarks().end(); ++it, ++cpt)
   {
     // Compute the confidence (95%) ellipsoid and compute its volume
-    /*Eigen::Vector3d eigen_values = (it->second.covariance).eigenvalues().real();
+    Eigen::Vector3d eigen_values = (it->second.covariance).eigenvalues().real();
     // Parameters of ellipsoid
     double a_ellipsoid = sqrt(eigen_values(0)*7.815)*2;
     double b_ellipsoid = sqrt(eigen_values(1)*7.815)*2;
     double c_ellipsoid = sqrt(eigen_values(2)*7.815)*2;
     // Volume
-    double quality = (1.33333f * M_PI * a_ellipsoid * b_ellipsoid  * c_ellipsoid) * (it->second.meanReprojError);
-    */
+    double quality = (1.33333f * M_PI * a_ellipsoid * b_ellipsoid  * c_ellipsoid);
+    
+    /*
     // Trace of covariance matrix
     double quality = (it->second.covariance).trace();
+    //double qualityB = sfm_data.structure.at(cpt).covariance.trace();
+    std::cout<<"TT: "<<quality<<" :: "<<"\n";
         //* (it->second.meanReprojError);
+    */
+/*
+    double meanReprojError = 0.0;
+    const Observations & obs = it->second.obs;
+    for (Observations::const_iterator itObs = obs.begin();
+      itObs != obs.end(); ++itObs)
+    {
+      const Observation obs = itObs->second;
+      const IndexT view_id = itObs->first;
+      const View * view = sfm_data.GetViews().at(view_id).get();
+      const IntrinsicBase * cam = sfm_data.GetIntrinsics().at(view->id_intrinsic).get();
+      const Pose3 pose = sfm_data.GetPoseOrDie(view);
+      meanReprojError += cam->residual(pose,it->second.X,cam->get_ud_pixel(itObs->second.x)).squaredNorm();
+    }
+    meanReprojError /=obs.size();
+  
+    quality = quality * meanReprojError;
 
     vec_structureUncertainty.push_back(quality);
 
@@ -180,7 +203,7 @@ void GetUncertaintyStructure(const SfM_Data & sfm_data, std::vector<double> & ve
 
   }
 }
-
+*/
 // Convert from a SfM_Data format to another
 int main(int argc, char **argv)
 {
@@ -215,7 +238,7 @@ int main(int argc, char **argv)
 
   // Load input SfM_Data scene
   SfM_Data sfm_data;
-  if (!Load(sfm_data, sSfM_Data_Filename_In, ESfM_Data(ALL|UNCERTAINTIES)))
+  if (!Load(sfm_data, sSfM_Data_Filename_In, ESfM_Data(ALL|UNCERTAINTY)))
   {
     std::cerr << std::endl
       << "The input SfM_Data file \"" << sSfM_Data_Filename_In << "\" cannot be read." << std::endl;
@@ -224,14 +247,14 @@ int main(int argc, char **argv)
 
   // Compute the scene structure color
   std::vector<Vec3> vec_3dPoints, vec_tracksColor, vec_camPosition;
-  std::vector<double> vec_structureUncertainty;
+  std::vector<double> vec_structureQuality;
   if (ColorizeTracks(sfm_data, vec_3dPoints, vec_tracksColor))
   {
     GetCameraPositions(sfm_data, vec_camPosition);
-    GetUncertaintyStructure(sfm_data,vec_structureUncertainty);
+    EstimateQualityOfStructure(sfm_data,vec_structureQuality);
 
     // Export the SfM_Data scene in the expected format
-    if (plyHelper::exportToPly(vec_3dPoints, vec_camPosition, sOutputPLY_Out, &vec_tracksColor,&vec_structureUncertainty))
+    if (plyHelper::exportToPly(vec_3dPoints, vec_camPosition, sOutputPLY_Out, &vec_tracksColor,&vec_structureQuality))
     {
       return EXIT_SUCCESS;
     }

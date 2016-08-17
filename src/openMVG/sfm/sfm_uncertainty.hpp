@@ -7,107 +7,154 @@
 #ifndef OPENMVG_SFM_UNCERTAINTY_HPP
 #define OPENMVG_SFM_UNCERTAINTY_HPP
 
-#include "openMVG/types.hpp"
+#include "openMVG/sfm/sfm_data_BA.hpp"
+#include "openMVG/sfm/sfm_data_BA_ceres.hpp"
 #include "openMVG/numeric/numeric.h"
+#include "ceres/types.h"
+#include "ceres/cost_function.h"
 
+#include "openMVG/types.hpp"
 #include <cereal/cereal.hpp> // Serialization
 
 namespace openMVG {
 namespace sfm {
 
+struct SfM_Data;
 
-/// Define a landmark (a 3D point, with it's 2d observations)
-struct UncertaintyLandmark
+struct ObservationUncertainty
 {
-  Eigen::Matrix3d covariance;
-  double meanReprojError;
+  ObservationUncertainty():id_observation(UndefinedIndexT), covariance(Eigen::Matrix<double, 2, 2>::Zero()) { }
+  ObservationUncertainty(IndexT idObservation): id_observation(idObservation), covariance(Eigen::Matrix<double, 2, 2>::Zero()) {}
+
+  IndexT id_observation;
+  Eigen::Matrix<double, 2, 2> covariance;
 
   // Serialization
   template <class Archive>
   void save( Archive & ar) const
   {
-    const std::vector<double> cov = { covariance(0,0), covariance(0,1), covariance(0,2), covariance(1,0), covariance(1,1), covariance(1,2), covariance(2,0), covariance(2,1), covariance(2,2) };
-    ar(cereal::make_nvp("covariance", cov ));
-    ar(cereal::make_nvp("meanReprojError", meanReprojError ));
+    ar(cereal::make_nvp("id_observation", id_observation ));
+
+    const std::vector<std::vector<double>> mat =
+    {
+      { covariance( 0, 0 ), covariance( 0, 1 ),
+       covariance( 1, 0 ), covariance( 1, 1 )}
+    };
+    ar( cereal::make_nvp( "covariance", mat ) );
   }
 
+  // Serialization
   template <class Archive>
   void load( Archive & ar)
   {
-    std::vector<double> cov(9);
-    ar(cereal::make_nvp("covariance", cov ));
-    covariance = Eigen::Map<const Eigen::Matrix3d>(&cov[0]);
-    ar(cereal::make_nvp("meanReprojError", meanReprojError ));
+    ar(cereal::make_nvp("id_observation", id_observation ));
+
+    std::vector<std::vector<double>> mat( 2, std::vector<double>( 2 ) );
+    ar( cereal::make_nvp( "covariance", mat ) );
+    // copy back to the covariance
+      covariance.row( 0 ) = Eigen::Map<const Eigen::Matrix<double, 2, 1>>( &( mat[0][0] ) );
+      covariance.row( 1 ) = Eigen::Map<const Eigen::Matrix<double, 2, 1>>( &( mat[0][3] ) );
   }
 };
 
-typedef Eigen::SparseMatrix<double, Eigen::RowMajor> EigenSparseMatrix;
-
-struct UncertaintyCams
+struct PoseUncertainty
 {
-  EigenSparseMatrix covariance;
+  PoseUncertainty():id_pose(UndefinedIndexT),covariance(Eigen::Matrix<double, 6, 6>::Zero()) { }
+  PoseUncertainty(IndexT idPose): id_pose(idPose), covariance(Eigen::Matrix<double, 6, 6>::Zero()) {}
+
+  IndexT id_pose;
+  Eigen::Matrix<double, 6, 6> covariance;
 
   // Serialization
   template <class Archive>
   void save( Archive & ar) const
   {
-	const int n_rows = covariance.rows();
-	const int n_cols = covariance.cols();
-	ar(cereal::make_nvp("rows", n_rows ));
-	ar(cereal::make_nvp("cols", n_cols ));
-	
-	// CRS Matrix
-	std::vector<int> m_rows;
-	std::vector<int> m_cols;
-	std::vector<double>m_values;
-	
-	int n_element = 0;
-	for(int i=0; i < n_rows; ++i) {
-	  m_rows.push_back(n_element);
-	  for(typename EigenSparseMatrix::InnerIterator it(covariance,i); it; ++it) {
-	    m_cols.push_back(it.col());
-	    m_values.push_back(it.value());
-	    n_element++;
-	  }
-	}
-	
-	const std::vector<int> r_const(m_rows.begin(),m_rows.end());
-  const std::vector<int> c_const(m_cols.begin(),m_cols.end());
-  const std::vector<double> v_const(m_values.begin(),m_values.end());
+    ar(cereal::make_nvp("id_pose", id_pose ));
 
-	ar(cereal::make_nvp("n_elements", n_element ));
-	ar(cereal::make_nvp("rows_data", r_const ));
-	ar(cereal::make_nvp("cols_data", c_const ));
-	ar(cereal::make_nvp("values_data", v_const ));
-	
+    const std::vector<std::vector<double>> mat =
+    {
+      { covariance( 0, 0 ), covariance( 0, 1 ), covariance( 0, 2 ), covariance( 0, 3 ), covariance( 0, 4 ), covariance( 0, 5 ),
+       covariance( 1, 0 ), covariance( 1, 1 ), covariance( 1, 2 ), covariance( 1, 3 ), covariance( 1, 4 ), covariance( 1, 5 ) ,
+       covariance( 2, 0 ), covariance( 2, 1 ), covariance( 2, 2 ), covariance( 2, 3 ), covariance( 2, 4 ), covariance( 2, 5 ) ,
+       covariance( 3, 0 ), covariance( 3, 1 ), covariance( 3, 2 ), covariance( 3, 3 ), covariance( 3, 4 ), covariance( 3, 5 ) ,
+       covariance( 4, 0 ), covariance( 4, 1 ), covariance( 4, 2 ), covariance( 4, 3 ), covariance( 4, 4 ), covariance( 4, 5 ) ,
+       covariance( 5, 0 ), covariance( 5, 1 ), covariance( 5, 2 ), covariance( 5, 3 ), covariance( 5, 4 ), covariance( 5, 5 ) }
+    };
+    ar( cereal::make_nvp( "covariance", mat ) );
   }
 
+  // Serialization
   template <class Archive>
   void load( Archive & ar)
   {
-	int n_rows;
-	int n_cols;
-	int n_element;
-	ar(cereal::make_nvp("rows", n_rows ));
-	ar(cereal::make_nvp("cols", n_cols ));
-	ar(cereal::make_nvp("n_elements", n_element ));
-	
-	std::vector<int> m_rows(n_rows+1);
-	std::vector<int> m_cols(n_element);
-	std::vector<double>m_values(n_element);
-  ar(cereal::make_nvp("rows_data", m_rows ));
-  ar(cereal::make_nvp("cols_data", m_cols ));
-  ar(cereal::make_nvp("values_data", m_values ));
+    ar(cereal::make_nvp("id_pose", id_pose ));
 
-  covariance = Eigen::MappedSparseMatrix<double, Eigen::RowMajor>(
-  	n_rows, n_cols,
-  	static_cast<int>(n_element),
-  	m_rows.data(), m_cols.data(), m_values.data());
-
+    std::vector<std::vector<double>> mat( 6, std::vector<double>( 6 ) );
+    ar( cereal::make_nvp( "covariance", mat ) );
+    // copy back to the covariance
+    covariance.row( 0 ) = Eigen::Map<const Eigen::Matrix<double, 6, 1> >( &( mat[0][0] ) );
+    covariance.row( 1 ) = Eigen::Map<const Eigen::Matrix<double, 6, 1> >( &( mat[0][6] ) );
+    covariance.row( 2 ) = Eigen::Map<const Eigen::Matrix<double, 6, 1> >( &( mat[0][12] ) );
+    covariance.row( 3 ) = Eigen::Map<const Eigen::Matrix<double, 6, 1> >( &( mat[0][18] ) );
+    covariance.row( 4 ) = Eigen::Map<const Eigen::Matrix<double, 6, 1> >( &( mat[0][24] ) );
+    covariance.row( 5 ) = Eigen::Map<const Eigen::Matrix<double, 6, 1> >( &( mat[0][30] ) );
   }
 };
 
+struct LandmarkUncertainty
+{
+  LandmarkUncertainty():id_landmark(UndefinedIndexT),covariance(Eigen::Matrix<double, 3, 3>::Zero()) { }
+  LandmarkUncertainty(IndexT idLandmark): id_landmark(idLandmark), covariance(Eigen::Matrix<double, 3, 3>::Zero()) {}
 
+  IndexT id_landmark;
+  Eigen::Matrix<double, 3, 3> covariance;
+
+  // Serialization
+  template <class Archive>
+  void save( Archive & ar) const
+  {
+    ar(cereal::make_nvp("id_landmark", id_landmark ));
+
+    const std::vector<std::vector<double>> mat =
+    {
+      { covariance( 0, 0 ), covariance( 0, 1 ), covariance( 0, 2 ) ,
+       covariance( 1, 0 ), covariance( 1, 1 ), covariance( 1, 2 ) ,
+       covariance( 2, 0 ), covariance( 2, 1 ), covariance( 2, 2 ) }
+    };
+    ar( cereal::make_nvp( "covariance", mat ) );
+  }
+
+  // Serialization
+  template <class Archive>
+  void load( Archive & ar)
+  {
+    ar(cereal::make_nvp("id_landmark", id_landmark ));
+
+    std::vector<std::vector<double>> mat( 3, std::vector<double>( 3 ) );
+    ar( cereal::make_nvp( "covariance", mat ) );
+    // copy back to the covariance
+      covariance.row( 0 ) = Eigen::Map<const Vec3>( &( mat[0][0] ) );
+      covariance.row( 1 ) = Eigen::Map<const Vec3>( &( mat[0][3] ) );
+      covariance.row( 2 ) = Eigen::Map<const Vec3>( &( mat[0][6] ) );
+  }
+};
+
+bool EstimateUncertainty
+(
+  // the SfM scene to refine
+  SfM_Data & sfm_data,
+  // Bundle adjustment object
+  Bundle_Adjustment_Ceres &bundle_adjustment_obj,
+  // tell which parameter needs to be adjusted
+  const Optimize_Options &options,
+  const bool estimateLandmarks = false
+);
+
+void EstimateQualityOfStructure
+(
+  const SfM_Data & sfm_data,
+  std::vector<double> & vec_structureUncertainty
+);
 
 } // namespace sfm
 } // namespace openMVG
