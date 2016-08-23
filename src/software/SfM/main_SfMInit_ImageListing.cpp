@@ -157,7 +157,7 @@ int main(int argc, char **argv)
       << "[-g|--group_camera_model]\n"
       << "\t 0-> each view have it's own camera intrinsic parameters,\n"
       << "\t 1-> (default) view can share some camera intrinsic parameters\n"
-      << "[-r|--regex] Regex: \"[regex;camera_model;focal;ppx;ppy;]{1,...n}\"\n"
+      << "[-r|--regex] Regex: \"{regex;camera_model;K(0,0);K(0,1);...;K(2,2);]{1,n}\"\n"
       << std::endl;
 
       std::cerr << s << std::endl;
