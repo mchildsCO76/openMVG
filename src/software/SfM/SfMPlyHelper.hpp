@@ -18,8 +18,13 @@ namespace openMVG{
 namespace plyHelper{
 
 /// Export 3D point vector to PLY format
-static bool exportToPly(const std::vector<Vec3> & vec_points,
-  const std::string & sFileName)
+inline
+bool
+exportToPly
+(
+  const std::vector<Vec3> & vec_points,
+  const std::string & sFileName
+)
 {
   std::ofstream outfile(sFileName.c_str());
   if (!outfile.is_open())
@@ -50,16 +55,19 @@ static bool exportToPly(const std::vector<Vec3> & vec_points,
 }
 
 /// Export 3D point vector and camera position to PLY format
-static bool exportToPly(const std::vector<Vec3> & vec_points,
+inline
+bool
+exportToPly
+(
+  const std::vector<Vec3> & vec_points,
   const std::vector<Vec3> & vec_camPos,
   const std::string & sFileName,
-  const std::vector<Vec3> * vec_coloredPoints = NULL,
+  const std::vector<Vec3> * vec_coloredPoints = nullptr,
   const std::vector<double> * vec_structureUncertainty = NULL)
 {
   std::ofstream outfile(sFileName.c_str());
   if (!outfile.is_open())
     return false;
-
 
   outfile << "ply"
     << '\n' << "format ascii 1.0"
@@ -83,7 +91,7 @@ static bool exportToPly(const std::vector<Vec3> & vec_points,
       << vec_points[i](1) << ' '
       << vec_points[i](2) << ' ';
 
-    if (vec_coloredPoints == NULL){
+    if (vec_coloredPoints == nullptr){
       outfile << "255 255 255";
     }else{
       outfile
@@ -92,7 +100,7 @@ static bool exportToPly(const std::vector<Vec3> & vec_points,
           << (*vec_coloredPoints)[i](2);
     }
 
-    if(vec_structureUncertainty == NULL){
+    if(vec_structureUncertainty == nullptr){
       outfile<<'\n';
     }
     else{
@@ -106,14 +114,19 @@ static bool exportToPly(const std::vector<Vec3> & vec_points,
       << vec_camPos[i](0) << ' '
       << vec_camPos[i](1) << ' '
       << vec_camPos[i](2) << ' '
-      << "0 255 0 0.0 " << "\n";
+      << "0 255 0";
+    if(vec_structureUncertainty == nullptr){
+      outfile<<'\n';
+    }
+    else{
+      outfile << ' ' << "0.0" <<'\n';
+    }
   }
   outfile.flush();
   const bool bOk = outfile.good();
   outfile.close();
   return bOk;
 }
-
 
 } // namespace plyHelper
 } // namespace openMVG
