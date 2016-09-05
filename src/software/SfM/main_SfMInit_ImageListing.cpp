@@ -178,7 +178,7 @@ int main(int argc, char **argv)
   // Expected properties for each image
   double width = -1, height = -1, focal = -1, ppx = -1,  ppy = -1;
 
-  const EINTRINSIC e_User_camera_model = EINTRINSIC(i_User_camera_model);
+  EINTRINSIC e_User_camera_model = EINTRINSIC(i_User_camera_model);
 
   if ( !stlplus::folder_exists( sImageDir ) )
   {
@@ -303,6 +303,8 @@ int main(int argc, char **argv)
             continue;
           }
           bImageMatched = true;
+          // Set the desired camera model
+          e_User_camera_model = EINTRINSIC(std::get<1>(*iter_cParam));
           break;
         }
       }
@@ -352,6 +354,7 @@ int main(int argc, char **argv)
           }
         }
       }
+      e_User_camera_model = EINTRINSIC(i_User_camera_model);
     }
     // Build intrinsic parameter related to the view
     std::shared_ptr<IntrinsicBase> intrinsic (NULL);
