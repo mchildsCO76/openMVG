@@ -59,30 +59,35 @@ bool checkIntrinsicStringValidity(const std::string & Kmatrix, double & focal, d
 }
 
 
-typedef tuple <string, EINTRINSIC, string> camParam;
+typedef tuple <string, EINTRINSIC, std::vector<double> > camParam;
 /// Check that sCamsParamsRegex is a string like "imgRegex;camType;Kmatrix"
 bool checkCamsRegexStringValidity(const std::string & camsRegex, std::vector<camParam> & vecCamParams)
 {
   std::vector<std::string> vec_str;
   stl::split(camsRegex, ';', vec_str);
-  // Number of parameters have to be multiple of 11 (regex+type+Kmatrix ~ 1+1+9)
-  if (vec_str.size()%11!=0)  {
-    std::cerr << "\n Missing ';' character" << std::endl;
-    return false;
-  }
-  // Loop through all camParam sets
-  for (size_t i = 0; i< vec_str.size()/11; ++i){
+  
+  // Start looping through elements
+  for (size_t i = 0; i< vec_str.size();){
+    // Go to camera type element (second in the element)
     camParam camP;
     EINTRINSIC camType;
     std::stringstream ss;
-
-    // CamType: Check if string is integer
+    
+    // Check if there is enough parameters for at least one basic camera
+    if((vec_str.size()-i)<5){
+      std::cerr << "\n Not enough elements in the regex string" << std::endl;
+      return false;	  
+    }
+    std::get<0>(camP) = vec_str[i];
+    // Cam Type
+    i=i+1;    
+    // Check if string is integer
     char * p ;
-    std::strtol(vec_str[i*11+1].c_str(), &p, 10);
+    std::strtol(vec_str[i].c_str(), &p, 10);
     if(*p==0){
       // Convert to string and EINTRINSIC
       int iCamType;
-      ss.str(vec_str[i*11+1]);
+      ss.str(vec_str[i]);
       ss >> iCamType;
       camType = EINTRINSIC(iCamType);
     }
@@ -90,22 +95,63 @@ bool checkCamsRegexStringValidity(const std::string & camsRegex, std::vector<cam
       std::cerr << "\n Used an invalid not a number character in camera type" << std::endl;
       return false;
     }
-
-    // Check that all K matrix value are valid numbers
-    std::stringstream Kmatrix;
-    for (size_t k = 2; k < 11; ++k) {
-      Kmatrix<<vec_str[i*11+k]<<";";
+    std::get<1>(camP) = camType;
+    
+    // f,ppx,ppy
+    i = i+1;
+    double param;
+    for(int p_i = 0;p_i<3;p_i++){
+	  std::get<2>(camP).push_back(std::stod(vec_str[i+p_i]));
+	}
+	
+	// Distortion params
+    i = i+3;
+	int n_dist_param = 0;
+	// Check if there is enough elements for distortion parameters
+	switch(camType)
+	{
+	  case PINHOLE_CAMERA:
+	    n_dist_param = 0;
+	  break;
+	  case PINHOLE_CAMERA_RADIAL1:
+	    n_dist_param = 1;
+	  break;
+	  case PINHOLE_CAMERA_RADIAL3:
+	    n_dist_param = 3;
+	  break;
+	  case PINHOLE_CAMERA_BROWN:
+	    n_dist_param = 5;
+	  break;
+	  case PINHOLE_CAMERA_FISHEYE:
+	    n_dist_param = 4;
+	  break;
+	  default:
+	  std::cerr << "Error: unknown camera model: " << (int) camType << std::endl;
+	  return EXIT_FAILURE;
+	}
+	
+	// Check if there is sufficient number of parameters
+	if((vec_str.size()-i)<n_dist_param){
+      std::cerr << "\n Not enough elements in the regex string" << std::endl;
+      return false;	  
     }
-    double f,ppx,ppy;
-    if(!checkIntrinsicStringValidity(Kmatrix.str(),f,ppx,ppy))
-      return false;
-
-    camP = std::make_tuple(vec_str[i*11],camType,Kmatrix.str());
+    for(int p_i = 0;p_i<n_dist_param;p_i++){
+	  std::get<2>(camP).push_back(std::stod(vec_str[i+p_i]));
+	}
+	i=i+n_dist_param;
+    
+    std::cout << "\nCamera model: " << (int) camType << std::endl;
+	std::cout << "F: " << std::get<2>(camP).at(0)<<" PPX: "<< std::get<2>(camP).at(1)<<" PPY: "<< std::get<2>(camP).at(2)<< std::endl;
+	std::cout << "Distortion: ";
+	for(int p_i=0;p_i<n_dist_param;p_i++){
+	  std::cout<<std::get<2>(camP).at(3+p_i) << " ";
+	}
+    std::cout << "\nRegex: "<<std::get<0>(camP) << std::endl;
+    
+    //camP = std::make_tuple(vec_str[i*11],camType,Kmatrix.str());
     vecCamParams.push_back(camP);
-
   }
   return true;
-
 }
 
 
@@ -157,7 +203,7 @@ int main(int argc, char **argv)
       << "[-g|--group_camera_model]\n"
       << "\t 0-> each view have it's own camera intrinsic parameters,\n"
       << "\t 1-> (default) view can share some camera intrinsic parameters\n"
-      << "[-r|--regex] Regex: \"{regex;camera_model;K(0,0);K(0,1);...;K(2,2);]{1,n}\"\n"
+      << "[-r|--regex] Regex: \"{regex;camera_model;f;ppx;ppy;{dist param 1;dist param 2;etc.};]{1,n}\"\n"
       << std::endl;
 
       std::cerr << s << std::endl;
@@ -290,6 +336,7 @@ int main(int argc, char **argv)
 
     // Check if image fits any regex patterns
     bool bImageMatched = false;
+    std::vector<double> cam_image_param;
     if(vecCamParams.size()>0){
       // Loop through regex patterns
       for(std::vector<camParam>::const_iterator iter_cParam = vecCamParams.begin();iter_cParam!=vecCamParams.end(); ++iter_cParam){
@@ -297,19 +344,26 @@ int main(int argc, char **argv)
         std::smatch smBaseCamMatch;
         // Check if it match the regex
         if (std::regex_match(*iter_image, smBaseCamMatch, imgNameRegex)) {
+          e_User_camera_model = EINTRINSIC(std::get<1>(*iter_cParam));
           // Get focal, ppx, ppy
-          if (!checkIntrinsicStringValidity(std::get<2>(*iter_cParam), focal, ppx, ppy)){
+          cam_image_param = std::get<2>(*iter_cParam);
+          bImageMatched = true;
+          break;
+          /*if (!checkIntrinsicStringValidity(std::get<2>(*iter_cParam), focal, ppx, ppy)){
             bImageMatched = false;
             continue;
           }
           bImageMatched = true;
           // Set the desired camera model
           e_User_camera_model = EINTRINSIC(std::get<1>(*iter_cParam));
-          break;
+          break;*/
         }
       }
     }
 
+    // Build intrinsic parameter related to the view
+    std::shared_ptr<IntrinsicBase> intrinsic (NULL);
+    
     // Image has not been matched with regex
     if(!bImageMatched){
       // Consider the case where the focal is provided manually
@@ -355,40 +409,77 @@ int main(int argc, char **argv)
         }
       }
       e_User_camera_model = EINTRINSIC(i_User_camera_model);
-    }
-    // Build intrinsic parameter related to the view
-    std::shared_ptr<IntrinsicBase> intrinsic (NULL);
-
-    if (focal > 0 && ppx > 0 && ppy > 0 && width > 0 && height > 0)
-    {
-      // Create the desired camera type
-      switch(e_User_camera_model)
+      
+      
+      if (focal > 0 && ppx > 0 && ppy > 0 && width > 0 && height > 0)
       {
-        case PINHOLE_CAMERA:
+        // Create the desired camera type
+        switch(e_User_camera_model)
+        {
+          case PINHOLE_CAMERA:
           intrinsic = std::make_shared<Pinhole_Intrinsic>
-            (width, height, focal, ppx, ppy);
-        break;
-        case PINHOLE_CAMERA_RADIAL1:
-          intrinsic = std::make_shared<Pinhole_Intrinsic_Radial_K1>
-            (width, height, focal, ppx, ppy, 0.0); // setup no distortion as initial guess
-        break;
-        case PINHOLE_CAMERA_RADIAL3:
-          intrinsic = std::make_shared<Pinhole_Intrinsic_Radial_K3>
-            (width, height, focal, ppx, ppy, 0.0, 0.0, 0.0);  // setup no distortion as initial guess
-        break;
-        case PINHOLE_CAMERA_BROWN:
-          intrinsic =std::make_shared<Pinhole_Intrinsic_Brown_T2>
-            (width, height, focal, ppx, ppy, 0.0, 0.0, 0.0, 0.0, 0.0); // setup no distortion as initial guess
-        break;
-        case PINHOLE_CAMERA_FISHEYE:
-          intrinsic =std::make_shared<Pinhole_Intrinsic_Fisheye>
-            (width, height, focal, ppx, ppy, 0.0, 0.0, 0.0, 0.0); // setup no distortion as initial guess
-        break;
-        default:
-          std::cerr << "Error: unknown camera model: " << (int) e_User_camera_model << std::endl;
-          return EXIT_FAILURE;
+              (width, height, focal, ppx, ppy);
+          break;
+          case PINHOLE_CAMERA_RADIAL1:
+            intrinsic = std::make_shared<Pinhole_Intrinsic_Radial_K1>
+              (width, height, focal, ppx, ppy, 0.0); // setup no distortion as initial guess
+          break;
+          case PINHOLE_CAMERA_RADIAL3:
+            intrinsic = std::make_shared<Pinhole_Intrinsic_Radial_K3>
+              (width, height, focal, ppx, ppy, 0.0, 0.0, 0.0);  // setup no distortion as initial guess
+          break;
+          case PINHOLE_CAMERA_BROWN:
+            intrinsic =std::make_shared<Pinhole_Intrinsic_Brown_T2>
+              (width, height, focal, ppx, ppy, 0.0, 0.0, 0.0, 0.0, 0.0); // setup no distortion as initial guess
+          break;
+          case PINHOLE_CAMERA_FISHEYE:
+            intrinsic =std::make_shared<Pinhole_Intrinsic_Fisheye>
+              (width, height, focal, ppx, ppy, 0.0, 0.0, 0.0, 0.0); // setup no distortion as initial guess
+          break;
+          default:
+            std::cerr << "Error: unknown camera model: " << (int) e_User_camera_model << std::endl;
+            return EXIT_FAILURE;
+        }
       }
     }
+    else{
+	  focal = cam_image_param.at(0);
+	  ppx = cam_image_param.at(1);
+	  ppy = cam_image_param.at(2);
+      if (focal > 0 && ppx > 0 && ppy > 0 && width > 0 && height > 0)
+      {
+        // Create the desired camera type
+        switch(e_User_camera_model)
+        {
+          case PINHOLE_CAMERA:
+          intrinsic = std::make_shared<Pinhole_Intrinsic>
+              (width, height, focal, ppx, ppy);
+          break;
+          case PINHOLE_CAMERA_RADIAL1:
+            intrinsic = std::make_shared<Pinhole_Intrinsic_Radial_K1>
+              (width, height, focal, ppx, ppy, cam_image_param.at(3)); // setup no distortion as initial guess
+          break;
+          case PINHOLE_CAMERA_RADIAL3:
+            intrinsic = std::make_shared<Pinhole_Intrinsic_Radial_K3>
+              (width, height, focal, ppx, ppy, cam_image_param.at(3), cam_image_param.at(4), cam_image_param.at(5));  // setup no distortion as initial guess
+          break;
+          case PINHOLE_CAMERA_BROWN:
+            intrinsic =std::make_shared<Pinhole_Intrinsic_Brown_T2>
+              (width, height, focal, ppx, ppy, cam_image_param.at(3), cam_image_param.at(4), cam_image_param.at(5), cam_image_param.at(6), cam_image_param.at(7)); // setup no distortion as initial guess
+          break;
+          case PINHOLE_CAMERA_FISHEYE:
+            intrinsic =std::make_shared<Pinhole_Intrinsic_Fisheye>
+              (width, height, focal, ppx, ppy, cam_image_param.at(3), cam_image_param.at(4), cam_image_param.at(5), cam_image_param.at(6)); // setup no distortion as initial guess
+          break;
+          default:
+            std::cerr << "Error: unknown camera model: " << (int) e_User_camera_model << std::endl;
+            return EXIT_FAILURE;
+        }
+      }
+		
+		
+	}
+
 
     // Build the view corresponding to the image
     View v(*iter_image, views.size(), views.size(), views.size(), width, height);
