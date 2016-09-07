@@ -77,7 +77,7 @@ private:
   double ComputeResidualsHistogram(Histogram<double> * histo);
 
   /// List the images that the greatest number of matches to the current 3D reconstruction.
-  bool FindImagesWithPossibleResection(std::vector<size_t> & vec_possible_indexes);
+  bool FindImagesWithPossibleResection(std::vector<IndexT> & vec_possible_indexes);
 
   /// Add a single Image to the scene and triangulate new possible tracks.
   bool Resection(const size_t imageIndex);
@@ -108,10 +108,10 @@ private:
   openMVG::tracks::STLMAPTracks map_tracks_; // putative landmark tracks (visibility per 3D point)
   Hash_Map<IndexT, double> map_ACThreshold_; // Per camera confidence (A contrario estimated threshold error)
 
-  std::set<size_t> set_remaining_view_id_;     // Remaining camera index that can be used for resection
+  std::set<IndexT> set_remaining_view_id_;     // Remaining camera index that can be used for resection
 
-  std::set<size_t> set_reconstructed_view_id_;     // Remaining camera index that can be used for resection
-  std::set<size_t> set_remaining_view_id_subset_;     // Remaining camera index that can be used for resection
+  std::set<IndexT> set_reconstructed_view_id_;     // Remaining camera index that can be used for resection
+  std::set<IndexT> set_remaining_view_id_subset_;     // Remaining camera index that can be used for resection
   bool bRestricted_window_SfM_ = false;
   size_t sfm_slide_window_size_ = 0;
 

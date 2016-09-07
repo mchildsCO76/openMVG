@@ -21,6 +21,7 @@
 #include "openMVG/graph/connectedComponent.hpp"
 #include "openMVG/stl/stl.hpp"
 #include "openMVG/system/timer.hpp"
+#include "openMVG/sfm/sfm_filters.hpp"
 
 #include "third_party/htmlDoc/htmlDoc.hpp"
 #include "third_party/progress/progress.hpp"
@@ -87,6 +88,29 @@ void SequentialSfMReconstructionEngine::SetMatchesProvider(Matches_Provider * pr
 bool SequentialSfMReconstructionEngine::Process() {
 
   //-------------------
+  // Keep only the largest biedge connected subgraph
+  //-------------------
+  {
+    const Pair_Set pairs = matches_provider_->getPairs();
+    std::set<IndexT> set_remainingIds = graph::CleanGraph_KeepLargestBiEdge_Nodes<Pair_Set, IndexT>(pairs);
+    if(set_remainingIds.empty())
+    {
+      std::cout << "Invalid input image graph for incremental SfM" << std::endl;
+      return false;
+    }
+    KeepOnlyReferencedElement(set_remainingIds, matches_provider_->pairWise_matches_);
+  
+    //-------------------
+    // Filter
+    //-------------------
+    set_remaining_view_id_.swap(set_remainingIds);
+    std::cout << "\n" << "Number of kept viewIds: "<<set_remaining_view_id_->size() << std::endl;
+
+
+  }
+
+
+  //-------------------
   //-- Incremental reconstruction
   //-------------------
 
@@ -114,7 +138,7 @@ bool SequentialSfMReconstructionEngine::Process() {
   // Compute robust Resection of remaining images
   // - group of images will be selected and resection + scene completion will be tried
   size_t resectionGroupIndex = 0;
-  std::vector<size_t> vec_possible_resection_indexes;
+  std::vector<IndexT> vec_possible_resection_indexes;
 
   // Set initial pair as reconstructed views
   if(bRestricted_window_SfM_){
@@ -126,7 +150,7 @@ bool SequentialSfMReconstructionEngine::Process() {
   {
     bool bImageAdded = false;
     // Add images to the 3D reconstruction
-    for (std::vector<size_t>::const_iterator iter = vec_possible_resection_indexes.begin();
+    for (std::vector<IndexT>::const_iterator iter = vec_possible_resection_indexes.begin();
       iter != vec_possible_resection_indexes.end(); ++iter)
     {
       bImageAdded |= Resection(*iter);
@@ -778,9 +802,9 @@ struct sort_pair_second {
  *  0.75 * #correspondences(I) common correspondences to the reconstruction.
  */
 bool SequentialSfMReconstructionEngine::FindImagesWithPossibleResection(
-  std::vector<size_t> & vec_possible_indexes)
+  std::vector<IndexT> & vec_possible_indexes)
 {
-  std::set<size_t>* set_remaining_view_id_active_set;
+  std::set<IndexT>* set_remaining_view_id_active_set;
   // Threshold used to select the best images
   static const float dThresholdGroup = 0.75f;
 
@@ -801,10 +825,10 @@ bool SequentialSfMReconstructionEngine::FindImagesWithPossibleResection(
       max_subset_i = (max_subset_i>sfm_data_.GetViews().size())? max_subset_i=sfm_data_.GetViews().size() : max_subset_i + sfm_slide_window_size_;
 
       // Add all views that have not been yet recovered and are in the interval
-      for (std::set<size_t>::const_iterator iter = set_remaining_view_id_.begin();
+      for (std::set<IndexT>::const_iterator iter = set_remaining_view_id_.begin();
         iter != set_remaining_view_id_.end(); ++iter)
       {
-          const size_t viewId = *iter;
+          const IndexT viewId = *iter;
           if(viewId>=min_subset_i && viewId<=max_subset_i){
             set_remaining_view_id_subset_.insert(viewId);
             set_remaining_view_id_.erase(viewId);
@@ -817,25 +841,27 @@ bool SequentialSfMReconstructionEngine::FindImagesWithPossibleResection(
     set_remaining_view_id_active_set = &set_remaining_view_id_;
   }
 
-
+    std::cout << "\n" << "Number of active viewIds: "<<set_remaining_view_id_active_set->size() << std::endl;
+    std::cout << "Number of remaining viewIds: "<<set_remaining_view_id_.size() << std::endl;
   // Collect tracksIds
   std::set<size_t> reconstructed_trackId;
   std::transform(sfm_data_.GetLandmarks().begin(), sfm_data_.GetLandmarks().end(),
     std::inserter(reconstructed_trackId, reconstructed_trackId.begin()),
     stl::RetrieveKey());
+    std::cout << "Number of reconstructed tracks: "<<reconstructed_trackId.size() << std::endl;
 
   Pair_Vec vec_putative; // ImageId, NbPutativeCommonPoint
 #ifdef OPENMVG_USE_OPENMP
   #pragma omp parallel
 #endif
-  for (std::set<size_t>::const_iterator iter = set_remaining_view_id_active_set->begin();
+  for (std::set<IndexT>::const_iterator iter = set_remaining_view_id_active_set->begin();
         iter != set_remaining_view_id_active_set->end(); ++iter)
   {
 #ifdef OPENMVG_USE_OPENMP
   #pragma omp single nowait
 #endif
     {
-      const size_t viewId = *iter;
+      const IndexT viewId = *iter;
 
       // Compute 2D - 3D possible content
       openMVG::tracks::STLMAPTracks map_tracksCommon;
@@ -893,10 +919,10 @@ bool SequentialSfMReconstructionEngine::FindImagesWithPossibleResection(
         max_subset_i = (max_subset_i>sfm_data_.GetViews().size())? max_subset_i=sfm_data_.GetViews().size() : max_subset_i + sfm_slide_window_size_;
 
         // Add all views that have not been yet recovered and are in the interval
-        for (std::set<size_t>::const_iterator iter = set_remaining_view_id_.begin();
+        for (std::set<IndexT>::const_iterator iter = set_remaining_view_id_.begin();
           iter != set_remaining_view_id_.end(); ++iter)
         {
-            const size_t viewId = *iter;
+            const IndexT viewId = *iter;
             if(viewId>=min_subset_i && viewId<=max_subset_i){
               set_remaining_view_id_subset_.insert(viewId);
               set_remaining_view_id_.erase(viewId);
