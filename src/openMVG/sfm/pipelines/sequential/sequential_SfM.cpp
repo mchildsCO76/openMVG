@@ -817,23 +817,28 @@ bool SequentialSfMReconstructionEngine::FindImagesWithPossibleResection(
     // If possible reconstruction subset is empty we expand it with new views (from area around current reconstruction)
     if(set_remaining_view_id_subset_.empty()){
       // Find limits of current reconstruction
-      //auto min_subset_it = min_element(set_reconstructed_view_id_.begin(),set_reconstructed_view_id_.end());
-      //auto max_subset_it = max_element(set_reconstructed_view_id_.begin(),set_reconstructed_view_id_.end());
+      size_t window_size = sfm_slide_window_size_;
+
       size_t min_subset_i = *(min_element(set_reconstructed_view_id_.begin(),set_reconstructed_view_id_.end()));
       size_t max_subset_i = *(max_element(set_reconstructed_view_id_.begin(),set_reconstructed_view_id_.end()));
-      min_subset_i = (min_subset_i<sfm_slide_window_size_)? 0 : min_subset_i - sfm_slide_window_size_;
-      max_subset_i = (max_subset_i>sfm_data_.GetViews().size())? max_subset_i=sfm_data_.GetViews().size() : max_subset_i + sfm_slide_window_size_;
+      
+      while(set_remaining_view_id_subset_.empty()){
+        min_subset_i = (min_subset_i<window_size)? 0 : min_subset_i - window_size;
+        max_subset_i = (max_subset_i>sfm_data_.GetViews().size())? max_subset_i=sfm_data_.GetViews().size() : max_subset_i + window_size;
 
-      // Add all views that have not been yet recovered and are in the interval
-      for (std::set<IndexT>::const_iterator iter = set_remaining_view_id_.begin();
-        iter != set_remaining_view_id_.end(); ++iter)
-      {
-          const IndexT viewId = *iter;
-          if(viewId>=min_subset_i && viewId<=max_subset_i){
-            set_remaining_view_id_subset_.insert(viewId);
-            set_remaining_view_id_.erase(viewId);
-          }
-      }  
+        // Add all views that have not been yet recovered and are in the interval
+        for (std::set<IndexT>::const_iterator iter = set_remaining_view_id_.begin();
+          iter != set_remaining_view_id_.end(); ++iter)
+        {
+            const IndexT viewId = *iter;
+            if(viewId>=min_subset_i && viewId<=max_subset_i){
+              set_remaining_view_id_subset_.insert(viewId);
+              set_remaining_view_id_.erase(viewId);
+            }
+        }
+        // increase the size of search window if there is no new views
+        window_size*=2;
+      }
     }
     set_remaining_view_id_active_set = &set_remaining_view_id_subset_;
   }
@@ -913,20 +918,32 @@ bool SequentialSfMReconstructionEngine::FindImagesWithPossibleResection(
       else{
         // None of the views in the subset are suitable so we extend the search window
         // Find limits of current reconstruction
-        size_t min_subset_i = *(min_element(set_remaining_view_id_subset_.begin(),set_remaining_view_id_subset_.end()));
-        size_t max_subset_i = *(max_element(set_remaining_view_id_subset_.begin(),set_remaining_view_id_subset_.end()));
-        min_subset_i = (min_subset_i<sfm_slide_window_size_)? 0 : min_subset_i - sfm_slide_window_size_;
-        max_subset_i = (max_subset_i>sfm_data_.GetViews().size())? max_subset_i=sfm_data_.GetViews().size() : max_subset_i + sfm_slide_window_size_;
+        size_t window_size = sfm_slide_window_size_;
 
-        // Add all views that have not been yet recovered and are in the interval
-        for (std::set<IndexT>::const_iterator iter = set_remaining_view_id_.begin();
-          iter != set_remaining_view_id_.end(); ++iter)
-        {
-            const IndexT viewId = *iter;
-            if(viewId>=min_subset_i && viewId<=max_subset_i){
-              set_remaining_view_id_subset_.insert(viewId);
-              set_remaining_view_id_.erase(viewId);
+        // If not empty we try to spread around all already considered
+        if(!set_remaining_view_id_subset_.empty()){
+          size_t min_subset_i = *(min_element(set_remaining_view_id_subset_.begin(),set_remaining_view_id_subset_.end()));
+          size_t max_subset_i = *(max_element(set_remaining_view_id_subset_.begin(),set_remaining_view_id_subset_.end()));
+          
+          bool bNew_views_added = false;
+
+          while(!bNew_views_added){       
+            min_subset_i = (min_subset_i<window_size)? 0 : min_subset_i - window_size;
+            max_subset_i = (max_subset_i>sfm_data_.GetViews().size())? max_subset_i=sfm_data_.GetViews().size() : max_subset_i + window_size;
+
+            // Add all views that have not been yet recovered and are in the interval
+            for (std::set<IndexT>::const_iterator iter = set_remaining_view_id_.begin();
+              iter != set_remaining_view_id_.end(); ++iter)
+            {
+                const IndexT viewId = *iter;
+                if(viewId>=min_subset_i && viewId<=max_subset_i){
+                  set_remaining_view_id_subset_.insert(viewId);
+                  set_remaining_view_id_.erase(viewId);
+                  bNew_views_added = true;
+                }
             }
+            window_size*=2;
+          }
         }
         return true;
       }
