@@ -104,7 +104,7 @@ bool SequentialSfMReconstructionEngine::Process() {
     // Filter
     //-------------------
     set_remaining_view_id_.swap(set_remainingIds);
-    std::cout << "\n" << "Number of kept viewIds: "<<set_remaining_view_id_->size() << std::endl;
+    std::cout << "\n" << "Number of kept viewIds: "<<set_remaining_view_id_.size() << std::endl;
 
 
   }
