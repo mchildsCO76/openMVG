@@ -115,6 +115,13 @@ bool SequentialSfMReconstructionEngine::Process() {
   // - group of images will be selected and resection + scene completion will be tried
   size_t resectionGroupIndex = 0;
   std::vector<size_t> vec_possible_resection_indexes;
+
+  // Set initial pair as reconstructed views
+  if(bRestricted_window_SfM_){
+    set_reconstructed_view_id_.insert(initial_pair_.first);
+    set_reconstructed_view_id_.insert(initial_pair_.second);
+  }
+
   while (FindImagesWithPossibleResection(vec_possible_resection_indexes))
   {
     bool bImageAdded = false;
@@ -124,6 +131,10 @@ bool SequentialSfMReconstructionEngine::Process() {
     {
       bImageAdded |= Resection(*iter);
       set_remaining_view_id_.erase(*iter);
+      if(bRestricted_window_SfM_){
+        set_remaining_view_id_subset_.erase(*iter);
+        set_reconstructed_view_id_.insert(*iter);
+      }
     }
 
     if (bImageAdded)
@@ -137,9 +148,13 @@ bool SequentialSfMReconstructionEngine::Process() {
       do
       {
         BundleAdjustment();
+        std::cout << "\n" << "Bad Track Rejector" << std::endl;
+        
       }
       while (badTrackRejector(4.0, 50));
+      std::cout << "\n" << "Unstable poses and observations eliminator" << std::endl;
       eraseUnstablePosesAndObservations(sfm_data_);
+      std::cout << "\n" << "Find candidates for Resection" << std::endl;
     }
     ++resectionGroupIndex;
   }
@@ -765,13 +780,43 @@ struct sort_pair_second {
 bool SequentialSfMReconstructionEngine::FindImagesWithPossibleResection(
   std::vector<size_t> & vec_possible_indexes)
 {
+  std::set<size_t>* set_remaining_view_id_active_set;
   // Threshold used to select the best images
   static const float dThresholdGroup = 0.75f;
 
   vec_possible_indexes.clear();
 
-  if (set_remaining_view_id_.empty() || sfm_data_.GetLandmarks().empty())
+  if ((set_remaining_view_id_.empty() && set_remaining_view_id_subset_.empty()) || sfm_data_.GetLandmarks().empty())
     return false;
+
+  if(bRestricted_window_SfM_){
+    // If possible reconstruction subset is empty we expand it with new views (from area around current reconstruction)
+    if(set_remaining_view_id_subset_.empty()){
+      // Find limits of current reconstruction
+      //auto min_subset_it = min_element(set_reconstructed_view_id_.begin(),set_reconstructed_view_id_.end());
+      //auto max_subset_it = max_element(set_reconstructed_view_id_.begin(),set_reconstructed_view_id_.end());
+      size_t min_subset_i = *(min_element(set_reconstructed_view_id_.begin(),set_reconstructed_view_id_.end()));
+      size_t max_subset_i = *(max_element(set_reconstructed_view_id_.begin(),set_reconstructed_view_id_.end()));
+      min_subset_i = (min_subset_i<sfm_slide_window_size_)? 0 : min_subset_i - sfm_slide_window_size_;
+      max_subset_i = (max_subset_i>sfm_data_.GetViews().size())? max_subset_i=sfm_data_.GetViews().size() : max_subset_i + sfm_slide_window_size_;
+
+      // Add all views that have not been yet recovered and are in the interval
+      for (std::set<size_t>::const_iterator iter = set_remaining_view_id_.begin();
+        iter != set_remaining_view_id_.end(); ++iter)
+      {
+          const size_t viewId = *iter;
+          if(viewId>=min_subset_i && viewId<=max_subset_i){
+            set_remaining_view_id_subset_.insert(viewId);
+            set_remaining_view_id_.erase(viewId);
+          }
+      }  
+    }
+    set_remaining_view_id_active_set = &set_remaining_view_id_subset_;
+  }
+  else{
+    set_remaining_view_id_active_set = &set_remaining_view_id_;
+  }
+
 
   // Collect tracksIds
   std::set<size_t> reconstructed_trackId;
@@ -783,8 +828,8 @@ bool SequentialSfMReconstructionEngine::FindImagesWithPossibleResection(
 #ifdef OPENMVG_USE_OPENMP
   #pragma omp parallel
 #endif
-  for (std::set<size_t>::const_iterator iter = set_remaining_view_id_.begin();
-        iter != set_remaining_view_id_.end(); ++iter)
+  for (std::set<size_t>::const_iterator iter = set_remaining_view_id_active_set->begin();
+        iter != set_remaining_view_id_active_set->end(); ++iter)
   {
 #ifdef OPENMVG_USE_OPENMP
   #pragma omp single nowait
@@ -827,9 +872,39 @@ bool SequentialSfMReconstructionEngine::FindImagesWithPossibleResection(
   // -> (no resection will be possible)
   if (vec_putative.empty() || vec_putative[0].second == 0)
   {
-    // All remaining images cannot be used for pose estimation
-    set_remaining_view_id_.clear();
-    return false;
+    if(!bRestricted_window_SfM_){
+      // All remaining images cannot be used for pose estimation
+      set_remaining_view_id_.clear();
+      return false;
+    }
+    else{
+      // All remaining images cannot be used for pose estimation
+      if(set_remaining_view_id_.empty()){
+        set_remaining_view_id_.clear();
+        set_remaining_view_id_subset_.clear();
+        return false;
+      }
+      else{
+        // None of the views in the subset are suitable so we extend the search window
+        // Find limits of current reconstruction
+        size_t min_subset_i = *(min_element(set_remaining_view_id_subset_.begin(),set_remaining_view_id_subset_.end()));
+        size_t max_subset_i = *(max_element(set_remaining_view_id_subset_.begin(),set_remaining_view_id_subset_.end()));
+        min_subset_i = (min_subset_i<sfm_slide_window_size_)? 0 : min_subset_i - sfm_slide_window_size_;
+        max_subset_i = (max_subset_i>sfm_data_.GetViews().size())? max_subset_i=sfm_data_.GetViews().size() : max_subset_i + sfm_slide_window_size_;
+
+        // Add all views that have not been yet recovered and are in the interval
+        for (std::set<size_t>::const_iterator iter = set_remaining_view_id_.begin();
+          iter != set_remaining_view_id_.end(); ++iter)
+        {
+            const size_t viewId = *iter;
+            if(viewId>=min_subset_i && viewId<=max_subset_i){
+              set_remaining_view_id_subset_.insert(viewId);
+              set_remaining_view_id_.erase(viewId);
+            }
+        }
+        return true;
+      }
+    }
   }
 
   // Add the image view index that share the most of 2D-3D correspondences
@@ -845,6 +920,7 @@ bool SequentialSfMReconstructionEngine::FindImagesWithPossibleResection(
   }
   return true;
 }
+
 
 /**
  * @brief Add one image to the 3D reconstruction. To the resectioning of
@@ -863,6 +939,7 @@ bool SequentialSfMReconstructionEngine::Resection(const size_t viewIndex)
 {
   using namespace tracks;
 
+    std::cout << "\n" << "Start Resection view: "<<viewIndex << std::endl;
   // A. Compute 2D/3D matches
   // A1. list tracks ids used by the view
   openMVG::tracks::STLMAPTracks map_tracksCommon;

@@ -70,6 +70,8 @@ int main(int argc, char **argv)
   std::string sIntrinsic_refinement_options = "ADJUST_ALL";
   int i_User_camera_model = PINHOLE_CAMERA_RADIAL3;
 
+  int i_SfM_WindowSlide=0;
+
   cmd.add( make_option('i', sSfM_Data_Filename, "input_file") );
   cmd.add( make_option('m', sMatchesDir, "matchdir") );
   cmd.add( make_option('o', sOutDir, "outdir") );
@@ -77,6 +79,7 @@ int main(int argc, char **argv)
   cmd.add( make_option('b', initialPairString.second, "initialPairB") );
   cmd.add( make_option('c', i_User_camera_model, "camera_model") );
   cmd.add( make_option('f', sIntrinsic_refinement_options, "refineIntrinsics") );
+  cmd.add( make_option('w', i_SfM_WindowSlide, "windowSlideSize") );
 
   try {
     if (argc == 1) throw std::string("Invalid parameter.");
@@ -174,6 +177,8 @@ int main(int argc, char **argv)
     }
   }
 
+  
+
   //---------------------------------------
   // Sequential reconstruction process
   //---------------------------------------
@@ -203,6 +208,12 @@ int main(int argc, char **argv)
       return EXIT_FAILURE;
     }
     sfmEngine.setInitialPair(initialPairIndex);
+  }
+
+  // Check if we want a sliding window SfM
+  if(i_SfM_WindowSlide>0){
+    sfmEngine.setRestrictedWindowSfM(true,i_SfM_WindowSlide);
+    std::cout<<"...Sliding window SfM enabled!!!...\n";
   }
 
   if (sfmEngine.Process())

@@ -63,6 +63,11 @@ public:
     cam_type_ = camType;
   }
 
+  void setRestrictedWindowSfM(const bool &bRestricted, const size_t &window_size)
+  {
+    sfm_slide_window_size_ = window_size;
+    bRestricted_window_SfM_ = bRestricted;
+  }
 protected:
 
 
@@ -104,6 +109,12 @@ private:
   Hash_Map<IndexT, double> map_ACThreshold_; // Per camera confidence (A contrario estimated threshold error)
 
   std::set<size_t> set_remaining_view_id_;     // Remaining camera index that can be used for resection
+
+  std::set<size_t> set_reconstructed_view_id_;     // Remaining camera index that can be used for resection
+  std::set<size_t> set_remaining_view_id_subset_;     // Remaining camera index that can be used for resection
+  bool bRestricted_window_SfM_ = false;
+  size_t sfm_slide_window_size_ = 0;
+
 };
 
 } // namespace sfm
