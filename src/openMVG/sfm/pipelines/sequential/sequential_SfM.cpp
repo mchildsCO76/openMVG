@@ -88,11 +88,11 @@ void SequentialSfMReconstructionEngine::SetMatchesProvider(Matches_Provider * pr
 bool SequentialSfMReconstructionEngine::Process() {
 
   //-------------------
-  // Keep only the largest biedge connected subgraph
+  // Keep only the largest edge connected subgraph
   //-------------------
   {
     const Pair_Set pairs = matches_provider_->getPairs();
-    std::set<IndexT> set_remainingIds = graph::CleanGraph_KeepLargestBiEdge_Nodes<Pair_Set, IndexT>(pairs);
+    std::set<IndexT> set_remainingIds = graph::KeepLargestCC_Nodes<Pair_Set, IndexT>(pairs);
     if(set_remainingIds.empty())
     {
       std::cout << "Invalid input image graph for incremental SfM" << std::endl;
