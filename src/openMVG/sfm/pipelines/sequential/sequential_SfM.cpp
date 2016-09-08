@@ -151,7 +151,7 @@ bool SequentialSfMReconstructionEngine::Process() {
     size_t size_pre_resection = sfm_data_.GetLandmarks().size();
     bool bImageAdded = false;
     // Add images to the 3D reconstruction
-    for (std::vector<size_t>::const_iterator iter = vec_possible_resection_indexes.begin();
+    for (std::vector<IndexT>::const_iterator iter = vec_possible_resection_indexes.begin();
       iter != vec_possible_resection_indexes.end(); ++iter)
     {
       bImageAdded |= Resection(*iter);
