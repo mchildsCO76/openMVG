@@ -148,6 +148,7 @@ bool SequentialSfMReconstructionEngine::Process() {
 
   while (FindImagesWithPossibleResection(vec_possible_resection_indexes))
   {
+    size_t size_pre_resection = sfm_data_.GetLandmarks().size();
     bool bImageAdded = false;
     // Add images to the 3D reconstruction
     for (std::vector<IndexT>::const_iterator iter = vec_possible_resection_indexes.begin();
@@ -160,25 +161,28 @@ bool SequentialSfMReconstructionEngine::Process() {
         set_reconstructed_view_id_.insert(*iter);
       }
     }
+    size_t n_resection_size= sfm_data_.GetLandmarks().size()-size_pre_resection;
 
-    if (bImageAdded)
+    if (bImageAdded )
     {
       // Scene logging as ply for visual debug
       std::ostringstream os;
       os << std::setw(8) << std::setfill('0') << resectionGroupIndex << "_Resection";
       Save(sfm_data_, stlplus::create_filespec(sOut_directory_, os.str(), ".ply"), ESfM_Data(ALL));
-
-      // Perform BA until all point are under the given precision
-      do
-      {
-        BundleAdjustment();
-        std::cout << "\n" << "Bad Track Rejector" << std::endl;
-        
+      if(n_resection_size>500 || set_remaining_view_id_.empty()){
+        // Perform BA until all point are under the given precision
+        do
+        {
+          BundleAdjustment();
+          std::cout << "\n" << "Bad Track Rejector" << std::endl;
+          
+        }
+        while (badTrackRejector(4.0, 50));
+        std::cout << "\n" << "Unstable poses and observations eliminator" << std::endl;
+        eraseUnstablePosesAndObservations(sfm_data_);
       }
-      while (badTrackRejector(4.0, 50));
-      std::cout << "\n" << "Unstable poses and observations eliminator" << std::endl;
-      eraseUnstablePosesAndObservations(sfm_data_);
       std::cout << "\n" << "Find candidates for Resection" << std::endl;
+      
     }
     ++resectionGroupIndex;
   }
@@ -818,11 +822,13 @@ bool SequentialSfMReconstructionEngine::FindImagesWithPossibleResection(
     if(set_remaining_view_id_subset_.empty()){
       // Find limits of current reconstruction
       size_t window_size = sfm_slide_window_size_;
+      size_t nAdded_views = 0;
 
       size_t min_subset_i = *(min_element(set_reconstructed_view_id_.begin(),set_reconstructed_view_id_.end()));
       size_t max_subset_i = *(max_element(set_reconstructed_view_id_.begin(),set_reconstructed_view_id_.end()));
       
-      while(set_remaining_view_id_subset_.empty()){
+      // Add at least window_size views or stop when there is no more possible views
+      while(nAdded_views<sfm_slide_window_size_ && !set_remaining_view_id_.empty()){
         min_subset_i = (min_subset_i<window_size)? 0 : min_subset_i - window_size;
         max_subset_i = (max_subset_i>sfm_data_.GetViews().size())? max_subset_i=sfm_data_.GetViews().size() : max_subset_i + window_size;
 
@@ -834,6 +840,7 @@ bool SequentialSfMReconstructionEngine::FindImagesWithPossibleResection(
             if(viewId>=min_subset_i && viewId<=max_subset_i){
               set_remaining_view_id_subset_.insert(viewId);
               set_remaining_view_id_.erase(viewId);
+              nAdded_views++;
             }
         }
         // increase the size of search window if there is no new views
@@ -919,6 +926,7 @@ bool SequentialSfMReconstructionEngine::FindImagesWithPossibleResection(
         // None of the views in the subset are suitable so we extend the search window
         // Find limits of current reconstruction
         size_t window_size = sfm_slide_window_size_;
+        size_t nAdded_views = 0;
 
         // If not empty we try to spread around all already considered
         if(!set_remaining_view_id_subset_.empty()){
@@ -927,7 +935,7 @@ bool SequentialSfMReconstructionEngine::FindImagesWithPossibleResection(
           
           bool bNew_views_added = false;
 
-          while(!bNew_views_added){       
+          while(nAdded_views<sfm_slide_window_size_ && !set_remaining_view_id_.empty()){       
             min_subset_i = (min_subset_i<window_size)? 0 : min_subset_i - window_size;
             max_subset_i = (max_subset_i>sfm_data_.GetViews().size())? max_subset_i=sfm_data_.GetViews().size() : max_subset_i + window_size;
 
@@ -939,6 +947,7 @@ bool SequentialSfMReconstructionEngine::FindImagesWithPossibleResection(
                 if(viewId>=min_subset_i && viewId<=max_subset_i){
                   set_remaining_view_id_subset_.insert(viewId);
                   set_remaining_view_id_.erase(viewId);
+                  nAdded_views++;
                   bNew_views_added = true;
                 }
             }
