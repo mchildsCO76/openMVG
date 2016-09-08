@@ -990,6 +990,7 @@ bool SequentialSfMReconstructionEngine::FindImagesWithPossibleResection(
 bool SequentialSfMReconstructionEngine::Resection(const size_t viewIndex)
 {
   using namespace tracks;
+    system::Timer timer;
 
     std::cout << "\n" << "Start Resection view: "<<viewIndex << std::endl;
   // A. Compute 2D/3D matches
@@ -999,12 +1000,14 @@ bool SequentialSfMReconstructionEngine::Resection(const size_t viewIndex)
   TracksUtilsMap::GetTracksInImages(set_viewIndex, map_tracks_, map_tracksCommon);
   std::set<size_t> set_tracksIds;
   TracksUtilsMap::GetTracksIdVector(map_tracksCommon, &set_tracksIds);
+    std::cout << "A1 (s): " << timer.elapsed() << std::endl;
 
   // A2. intersects the track list with the reconstructed
   std::set<size_t> reconstructed_trackId;
   std::transform(sfm_data_.GetLandmarks().begin(), sfm_data_.GetLandmarks().end(),
     std::inserter(reconstructed_trackId, reconstructed_trackId.begin()),
     stl::RetrieveKey());
+    std::cout << "A2 (s): " << timer.elapsed() << std::endl;
 
   // Get the ids of the already reconstructed tracks
   std::set<size_t> set_trackIdForResection;
@@ -1012,6 +1015,7 @@ bool SequentialSfMReconstructionEngine::Resection(const size_t viewIndex)
     reconstructed_trackId.begin(),
     reconstructed_trackId.end(),
     std::inserter(set_trackIdForResection, set_trackIdForResection.begin()));
+    std::cout << "A3 (s): " << timer.elapsed() << std::endl;
 
   if (set_trackIdForResection.empty())
   {
@@ -1036,6 +1040,7 @@ bool SequentialSfMReconstructionEngine::Resection(const size_t viewIndex)
   Image_Localizer_Match_Data resection_data;
   resection_data.pt2D.resize(2, set_trackIdForResection.size());
   resection_data.pt3D.resize(3, set_trackIdForResection.size());
+    std::cout << "A4 (s): " << timer.elapsed() << std::endl;
 
   // B. Look if intrinsic data is known or not
   const View * view_I = sfm_data_.GetViews().at(viewIndex).get();
@@ -1044,6 +1049,7 @@ bool SequentialSfMReconstructionEngine::Resection(const size_t viewIndex)
   {
     optional_intrinsic = sfm_data_.GetIntrinsics().at(view_I->id_intrinsic);
   }
+    std::cout << "B1 (s): " << timer.elapsed() << std::endl;
 
   Mat2X pt2D_original(2, set_trackIdForResection.size());
   size_t cpt = 0;
@@ -1062,6 +1068,7 @@ bool SequentialSfMReconstructionEngine::Resection(const size_t viewIndex)
     }
   }
 
+    std::cout << "B2 (s): " << timer.elapsed() << std::endl;
   // C. Do the resectioning: compute the camera pose.
   std::cout << std::endl
     << "-------------------------------" << std::endl
@@ -1077,6 +1084,7 @@ bool SequentialSfMReconstructionEngine::Resection(const size_t viewIndex)
   );
   resection_data.pt2D = std::move(pt2D_original); // restore original image domain points
 
+    std::cout << "C1 (s): " << timer.elapsed() << std::endl;
   if (!sLogging_file_.empty())
   {
     using namespace htmlDocument;
@@ -1163,6 +1171,7 @@ bool SequentialSfMReconstructionEngine::Resection(const size_t viewIndex)
       return false;
     }
 
+    std::cout << "D1 (s): " << timer.elapsed() << std::endl;
     // E. Update the global scene with the new found camera pose, intrinsic (if not defined)
     if (b_new_intrinsic)
     {
@@ -1185,6 +1194,7 @@ bool SequentialSfMReconstructionEngine::Resection(const size_t viewIndex)
     sfm_data_.poses[view_I->id_pose] = pose;
     map_ACThreshold_.insert(std::make_pair(viewIndex, resection_data.error_max));
   }
+    std::cout << "E1 (s): " << timer.elapsed() << std::endl;
 
   // F. Update the observations into the global scene structure
   // - Add the new 2D observations to the reconstructed tracks
@@ -1201,6 +1211,7 @@ bool SequentialSfMReconstructionEngine::Resection(const size_t viewIndex)
       sfm_data_.structure[*iterTrackId].obs[viewIndex] = Observation(x, vec_featIdForResection[i]);
     }
   }
+    std::cout << "F1 (s): " << timer.elapsed() << std::endl;
 
   // G. Triangulate new possible 2D tracks
   // List tracks that share content with this view and add observations and new 3D track if required.
@@ -1323,6 +1334,7 @@ bool SequentialSfMReconstructionEngine::Resection(const size_t viewIndex)
       }
 */
     }
+    std::cout << "G1 (s): " << timer.elapsed() << std::endl;
   }
   return true;
 }
