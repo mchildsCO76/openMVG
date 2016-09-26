@@ -220,10 +220,11 @@ void SequentialSfMReconstructionEngine::DetectLoopClosureProblems() {
     for (const std::pair< IndexT, IndexT >& trackView_I_It : track_views)
     {
       const IndexT & I = trackView_I_It.first;
-      if(valid_views.count(I)==0)
+      if(valid_views.count(I)!=0)
         track_valid_views.insert(I);
     }
-    
+    if(track_valid_views.size()==0)
+      continue;
     // Triangulated point of the scene
     std::vector<Vec3> triangulated_points_per_track;
     std::vector<std::set<IndexT> > triangulated_points_view_sets_per_track;
@@ -234,18 +235,23 @@ void SequentialSfMReconstructionEngine::DetectLoopClosureProblems() {
     {
       Vec3 X = Vec3::Zero();
       std::set<IndexT> views_used;
-      
+      bNew_triangulated_point = false;
       // Go through the views that observe this track & look if a successful triangulation can be done
-      for (const IndexT& I : track_valid_views)
+      for (std::set<IndexT>::const_iterator iter_I = track_valid_views.begin();
+      iter_I != track_valid_views.end() && bNew_triangulated_point==false; ++iter_I)
       {
+        const IndexT I = *iter_I;      
         const View * view_I = sfm_data_.GetViews().at(I).get();
         const IntrinsicBase * cam_I = sfm_data_.GetIntrinsics().at(view_I->id_intrinsic).get();
         const Pose3 pose_I = sfm_data_.GetPoseOrDie(view_I);
         const Vec2 xI = features_provider_->feats_per_view.at(I)[track_views.at(I)].coords().cast<double>();
-
         // Go through the views that observe this track & look if a successful triangulation can be done
-        for (const IndexT& J : track_valid_views)
-        {        
+        for (std::set<IndexT>::const_iterator iter_J = track_valid_views.begin();
+        iter_J != track_valid_views.end() && bNew_triangulated_point==false; ++iter_J)
+        {
+          const IndexT J = *iter_J;
+          if(I==J)
+            continue;
           const View * view_J = sfm_data_.GetViews().at(J).get();
           const IntrinsicBase * cam_J = sfm_data_.GetIntrinsics().at(view_J->id_intrinsic).get();
           const Pose3 pose_J = sfm_data_.GetPoseOrDie(view_J);
@@ -277,7 +283,6 @@ void SequentialSfMReconstructionEngine::DetectLoopClosureProblems() {
           {
             // Save triangulated point and views used
             //triangulated_points_per_track.push_back(X);
-            
             views_used.insert(I);
             views_used.insert(J);
             //triangulated_points_view_sets_per_track.push_back(views_used);
@@ -285,11 +290,9 @@ void SequentialSfMReconstructionEngine::DetectLoopClosureProblems() {
             track_valid_views.erase(I);
             track_valid_views.erase(J);
             bNew_triangulated_point = true;
-            break;
           }// Triangulation sucessful
         }
       }
-      
       // Check if we even got a new triangulation point
       if(bNew_triangulated_point){
         // Go throught the rest of the views and see which could be also triangulated at the same point
@@ -321,6 +324,7 @@ void SequentialSfMReconstructionEngine::DetectLoopClosureProblems() {
     
     if(triangulated_points_per_track.size()>1)
     {
+      std::cout<<"Track ID: "<<trackId<<"\n";
       std::cout<<"MULTIPLE TRIANGULATIONS IN A POINT!!\n";
       for(int i=0;i<triangulated_points_per_track.size();i++)
       {
@@ -328,6 +332,10 @@ void SequentialSfMReconstructionEngine::DetectLoopClosureProblems() {
       }
       std::cout<<"\n";
     }
+    else{
+      //std::cout<<"Track ID: "<<trackId<<" ONE\n";
+    }
+      
   }
 }
 
