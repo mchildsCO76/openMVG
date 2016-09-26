@@ -140,9 +140,10 @@ bool SequentialSfMReconstructionEngine::Process() {
       }
       while (badTrackRejector(4.0, 50));
       std::cout<<"DETECT LOOP CLOSURE: \n";
-      DetectLoopClosureProblems();
+      Hash_Map<size_t, std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > > drifted_points;
+      DetectLoopClosureProblems(drifted_points);
       
-      std::cout<<"END DETECT LOOP CLOSURE: \n";
+      std::cout<<"END DETECT LOOP CLOSURE: "<<drifted_points.size()<<"\n";
       eraseUnstablePosesAndObservations(sfm_data_);
     }
     ++resectionGroupIndex;
@@ -201,12 +202,12 @@ bool SequentialSfMReconstructionEngine::Process() {
 }
 
 /// Check for loop closures
-void SequentialSfMReconstructionEngine::DetectLoopClosureProblems() {
-  Landmarks second_structure;
+void SequentialSfMReconstructionEngine::DetectLoopClosureProblems(Hash_Map<size_t, std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > > &drifted_points) {
   
   // Vector of all already reconstructed views
   const std::set<IndexT> valid_views = Get_Valid_Views(sfm_data_);
 
+  //Hash_Map<size_t, std::vector<Vec3> > drifted_points_X;
   // Go through each track and look if we must add new view observations or new 3D points
   for (const std::pair< size_t, tracks::submapTrack >& trackIt : map_tracks_)
   {
@@ -226,15 +227,18 @@ void SequentialSfMReconstructionEngine::DetectLoopClosureProblems() {
     if(track_valid_views.size()==0)
       continue;
     // Triangulated point of the scene
-    std::vector<Vec3> triangulated_points_per_track;
-    std::vector<std::set<IndexT> > triangulated_points_view_sets_per_track;
+    
+    std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >triangulated_points_per_track;
+    
+    //std::vector<Vec3> triangulated_points_per_track;
+    //std::vector<std::set<IndexT> > triangulated_points_view_sets_per_track;
 
     bool bNew_triangulated_point = false;
 
     do
     {
       Vec3 X = Vec3::Zero();
-      std::set<IndexT> views_used;
+      std::map<IndexT,Vec2> views_used;
       bNew_triangulated_point = false;
       // Go through the views that observe this track & look if a successful triangulation can be done
       for (std::set<IndexT>::const_iterator iter_I = track_valid_views.begin();
@@ -283,8 +287,8 @@ void SequentialSfMReconstructionEngine::DetectLoopClosureProblems() {
           {
             // Save triangulated point and views used
             //triangulated_points_per_track.push_back(X);
-            views_used.insert(I);
-            views_used.insert(J);
+            views_used.insert(std::make_pair(I,xI));
+            views_used.insert(std::make_pair(J,xJ));
             //triangulated_points_view_sets_per_track.push_back(views_used);
             // Remove used views from potential new views
             track_valid_views.erase(I);
@@ -309,14 +313,30 @@ void SequentialSfMReconstructionEngine::DetectLoopClosureProblems() {
              )
           {
             // Add view to views of triangulation of the point
-            views_used.insert(I);
+            views_used.insert(std::make_pair(I,xI));
             track_valid_views.erase(I);
           }
         }
         
+        // Triangulate point from all usable views
+        Triangulation trianObj;
+        for (std::map<IndexT,Vec2>::const_iterator iter_V = views_used.begin();
+        iter_V != views_used.end(); ++iter_V)
+        {
+          const View * view_I = sfm_data_.GetViews().at(iter_V->first).get();
+          const IntrinsicBase * cam_I = sfm_data_.GetIntrinsics().at(view_I->id_intrinsic).get();
+          const Pose3 pose_I = sfm_data_.GetPoseOrDie(view_I);
+          const Vec2 xI = iter_V->second;
+          trianObj.add(
+          cam_I->get_projective_equivalent(pose_I),
+          cam_I->get_ud_pixel(xI));
+        }
+        X = trianObj.compute();
+        
         // Save triangulated point and views used
-        triangulated_points_view_sets_per_track.push_back(views_used);
-        triangulated_points_per_track.push_back(X);
+        triangulated_points_per_track.push_back(std::make_pair(X,views_used));
+        //triangulated_points_view_sets_per_track.push_back(views_used);
+        //triangulated_points_per_track.push_back(X);
       }      
       
     }while(bNew_triangulated_point == true);
@@ -324,18 +344,41 @@ void SequentialSfMReconstructionEngine::DetectLoopClosureProblems() {
     
     if(triangulated_points_per_track.size()>1)
     {
+      /*
       std::cout<<"Track ID: "<<trackId<<"\n";
       std::cout<<"MULTIPLE TRIANGULATIONS IN A POINT!!\n";
-      for(int i=0;i<triangulated_points_per_track.size();i++)
+      for (std::list<std::pair<Vec3, std::set<IndexT> > >::const_iterator iter_L = triangulated_points_per_track.begin();
+        iter_L != triangulated_points_per_track.end() ;++iter_L)
       {
-        std::cout<<"P "<<i<<" : "<<triangulated_points_per_track.at(i)<<"\n";        
+        std::cout<<"P : \n"<<(*iter_L).first<<"\n";  
+        std::cout<<"Views: ";
+        for (const IndexT& I : (*iter_L).second)
+        {
+          std::cout<<" "<<I;
+        }
+        std::cout<<"\n";      
       }
-      std::cout<<"\n";
-    }
-    else{
-      //std::cout<<"Track ID: "<<trackId<<" ONE\n";
-    }
+      */
+      drifted_points.insert(std::pair<size_t,std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > >(trackId,triangulated_points_per_track));
+      /*
+      if (sfm_data_.structure.count(trackId) != 0
+         )
+      {
+        Landmark & landmark = sfm_data_.structure[trackId];
+        const Observations & obs = landmark.obs;
+        std::cout<<"L "<<" : \n"<<landmark.X<<"\n";   
+        std::cout<<"L Views: ";
+        for( const auto& n : obs )
+        {
+          std::cout<<" "<<n.first;
+        }
+        std::cout<<"\n";
+           
+      }
       
+      std::cout<<"\n";
+      */
+    } 
   }
 }
 
@@ -1351,6 +1394,34 @@ bool SequentialSfMReconstructionEngine::BundleAdjustment()
       Structure_Parameter_Type::ADJUST_ALL // Adjust scene structure
     );
   return bundle_adjustment_obj.Adjust(sfm_data_, ba_refine_options);
+}
+
+
+/// Bundle adjustment to refine Structure; Motion and Intrinsics
+bool SequentialSfMReconstructionEngine::BundleAdjustmentDriftCompensation(Hash_Map<size_t, std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > > &drifted_points)
+{
+  Bundle_Adjustment_Ceres::BA_Ceres_options options;
+  if ( sfm_data_.GetPoses().size() > 100 &&
+      (ceres::IsSparseLinearAlgebraLibraryTypeAvailable(ceres::SUITE_SPARSE) ||
+       ceres::IsSparseLinearAlgebraLibraryTypeAvailable(ceres::CX_SPARSE) ||
+       ceres::IsSparseLinearAlgebraLibraryTypeAvailable(ceres::EIGEN_SPARSE))
+      )
+  // Enable sparse BA only if a sparse lib is available and if there more than 100 poses
+  {
+    options.preconditioner_type_ = ceres::JACOBI;
+    options.linear_solver_type_ = ceres::SPARSE_SCHUR;
+  }
+  else
+  {
+    options.linear_solver_type_ = ceres::DENSE_SCHUR;
+  }
+  Bundle_Adjustment_Ceres bundle_adjustment_obj(options);
+  const Optimize_Options ba_refine_options
+    ( ReconstructionEngine::intrinsic_refinement_options_,
+      Extrinsic_Parameter_Type::ADJUST_ALL, // Adjust camera motion
+      Structure_Parameter_Type::ADJUST_ALL // Adjust scene structure
+    );
+  return bundle_adjustment_obj.AdjustWithDriftCompensation(sfm_data_, ba_refine_options, drifted_points);
 }
 
 /**

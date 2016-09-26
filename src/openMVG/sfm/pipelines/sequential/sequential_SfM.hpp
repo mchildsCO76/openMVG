@@ -14,6 +14,7 @@
 
 #include "third_party/htmlDoc/htmlDoc.hpp"
 #include "third_party/histogram/histogram.hpp"
+#include <list> 
 
 namespace openMVG {
 namespace sfm {
@@ -43,7 +44,7 @@ public:
   /// Initialize tracks
   bool InitLandmarkTracks();
 
-  void DetectLoopClosureProblems();
+  void DetectLoopClosureProblems(Hash_Map<size_t, std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > > &drifted_points);
 
   /// Select a candidate initial pair
   bool ChooseInitialPair(Pair & initialPairIndex) const;
@@ -81,6 +82,10 @@ private:
 
   /// Bundle adjustment to refine Structure; Motion and Intrinsics
   bool BundleAdjustment();
+
+  /// Bundle adjustment to refine Structure; Motion and Intrinsics with drift compensation
+  bool BundleAdjustmentDriftCompensation(Hash_Map<size_t, std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > > &drifted_points);
+
 
   /// Discard track with too large residual error
   bool badTrackRejector(double dPrecision, size_t count = 0);
