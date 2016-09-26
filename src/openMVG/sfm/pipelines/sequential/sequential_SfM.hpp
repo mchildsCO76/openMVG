@@ -43,6 +43,8 @@ public:
   /// Initialize tracks
   bool InitLandmarkTracks();
 
+  void DetectLoopClosureProblems();
+
   /// Select a candidate initial pair
   bool ChooseInitialPair(Pair & initialPairIndex) const;
 

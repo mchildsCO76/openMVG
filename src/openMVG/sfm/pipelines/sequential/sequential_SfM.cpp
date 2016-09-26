@@ -139,6 +139,10 @@ bool SequentialSfMReconstructionEngine::Process() {
         BundleAdjustment();
       }
       while (badTrackRejector(4.0, 50));
+      std::cout<<"DETECT LOOP CLOSURE: \n";
+      DetectLoopClosureProblems();
+      
+      std::cout<<"END DETECT LOOP CLOSURE: \n";
       eraseUnstablePosesAndObservations(sfm_data_);
     }
     ++resectionGroupIndex;
@@ -195,6 +199,139 @@ bool SequentialSfMReconstructionEngine::Process() {
   }
   return true;
 }
+
+/// Check for loop closures
+void SequentialSfMReconstructionEngine::DetectLoopClosureProblems() {
+  Landmarks second_structure;
+  
+  // Vector of all already reconstructed views
+  const std::set<IndexT> valid_views = Get_Valid_Views(sfm_data_);
+
+  // Go through each track and look if we must add new view observations or new 3D points
+  for (const std::pair< size_t, tracks::submapTrack >& trackIt : map_tracks_)
+  {
+    // Track ID
+    const size_t trackId = trackIt.first;
+    // List the potential view observations of the track
+    const tracks::submapTrack & track_views = map_tracks_[trackId];
+    
+    // Get track valid views
+    std::set<IndexT> track_valid_views;
+    for (const std::pair< IndexT, IndexT >& trackView_I_It : track_views)
+    {
+      const IndexT & I = trackView_I_It.first;
+      if(valid_views.count(I)==0)
+        track_valid_views.insert(I);
+    }
+    
+    // Triangulated point of the scene
+    std::vector<Vec3> triangulated_points_per_track;
+    std::vector<std::set<IndexT> > triangulated_points_view_sets_per_track;
+
+    bool bNew_triangulated_point = false;
+
+    do
+    {
+      Vec3 X = Vec3::Zero();
+      std::set<IndexT> views_used;
+      
+      // Go through the views that observe this track & look if a successful triangulation can be done
+      for (const IndexT& I : track_valid_views)
+      {
+        const View * view_I = sfm_data_.GetViews().at(I).get();
+        const IntrinsicBase * cam_I = sfm_data_.GetIntrinsics().at(view_I->id_intrinsic).get();
+        const Pose3 pose_I = sfm_data_.GetPoseOrDie(view_I);
+        const Vec2 xI = features_provider_->feats_per_view.at(I)[track_views.at(I)].coords().cast<double>();
+
+        // Go through the views that observe this track & look if a successful triangulation can be done
+        for (const IndexT& J : track_valid_views)
+        {        
+          const View * view_J = sfm_data_.GetViews().at(J).get();
+          const IntrinsicBase * cam_J = sfm_data_.GetIntrinsics().at(view_J->id_intrinsic).get();
+          const Pose3 pose_J = sfm_data_.GetPoseOrDie(view_J);
+          const Vec2 xJ = features_provider_->feats_per_view.at(J)[track_views.at(J)].coords().cast<double>();
+
+          // Try to triangulate a 3D point from views I and J
+          // Triangulate it
+          const Vec2 xI_ud = cam_I->get_ud_pixel(xI);
+          const Vec2 xJ_ud = cam_J->get_ud_pixel(xJ);
+          const Mat34 P_I = cam_I->get_projective_equivalent(pose_I);
+          const Mat34 P_J = cam_J->get_projective_equivalent(pose_J);
+          
+          TriangulateDLT(P_I, xI_ud, P_J, xJ_ud, &X);
+          
+          // Check triangulation result
+          const double angle = AngleBetweenRay(pose_I, cam_I, pose_J, cam_J, xI, xJ);
+          const Vec2 residual_I = cam_I->residual(pose_I, X, xI);
+          const Vec2 residual_J = cam_J->residual(pose_J, X, xJ);
+          if (
+              //  - Check angle (small angle leads to imprecise triangulation)
+              angle > 2.0 &&
+              //  - Check positive depth
+              pose_I.depth(X) > 0 &&
+              pose_J.depth(X) > 0 &&
+              //  - Check residual values (must be inferior to the found view's AContrario threshold)
+              residual_I.norm() < std::max(4.0, map_ACThreshold_.at(I)) &&
+              residual_J.norm() < std::max(4.0, map_ACThreshold_.at(J))
+             )
+          {
+            // Save triangulated point and views used
+            //triangulated_points_per_track.push_back(X);
+            
+            views_used.insert(I);
+            views_used.insert(J);
+            //triangulated_points_view_sets_per_track.push_back(views_used);
+            // Remove used views from potential new views
+            track_valid_views.erase(I);
+            track_valid_views.erase(J);
+            bNew_triangulated_point = true;
+            break;
+          }// Triangulation sucessful
+        }
+      }
+      
+      // Check if we even got a new triangulation point
+      if(bNew_triangulated_point){
+        // Go throught the rest of the views and see which could be also triangulated at the same point
+        for (const IndexT& I : track_valid_views)
+        {
+          const View * view_I = sfm_data_.GetViews().at(I).get();
+          const IntrinsicBase * cam_I = sfm_data_.GetIntrinsics().at(view_I->id_intrinsic).get();
+          const Pose3 pose_I = sfm_data_.GetPoseOrDie(view_I);
+          const Vec2 xI = features_provider_->feats_per_view.at(I)[track_views.at(I)].coords().cast<double>();
+
+          const Vec2 residual = cam_I->residual(pose_I, X, xI);
+          if (pose_I.depth(X) > 0 &&
+              residual.norm() < std::max(4.0, map_ACThreshold_.at(I))
+             )
+          {
+            // Add view to views of triangulation of the point
+            views_used.insert(I);
+            track_valid_views.erase(I);
+          }
+        }
+        
+        // Save triangulated point and views used
+        triangulated_points_view_sets_per_track.push_back(views_used);
+        triangulated_points_per_track.push_back(X);
+      }      
+      
+    }while(bNew_triangulated_point == true);
+    
+    
+    if(triangulated_points_per_track.size()>1)
+    {
+      std::cout<<"MULTIPLE TRIANGULATIONS IN A POINT!!\n";
+      for(int i=0;i<triangulated_points_per_track.size();i++)
+      {
+        std::cout<<"P "<<i<<" : "<<triangulated_points_per_track.at(i)<<"\n";        
+      }
+      std::cout<<"\n";
+    }
+  }
+}
+
+
 
 /// Select a candidate initial pair
 bool SequentialSfMReconstructionEngine::ChooseInitialPair(Pair & initialPairIndex) const
