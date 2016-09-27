@@ -179,6 +179,17 @@ bool SequentialSfMReconstructionEngine::Process() {
         }
         while (badTrackRejector(4.0, 50));
         std::cout << "\n" << "Unstable poses and observations eliminator" << std::endl;
+        std::ostringstream osA;
+        osA << std::setw(8) << std::setfill('0') << resectionGroupIndex << "_ResectionA";
+        Save(sfm_data_, stlplus::create_filespec(sOut_directory_, osA.str(), ".ply"), ESfM_Data(ALL));
+        std::cout<<"DETECT LOOP CLOSURE: \n";
+        Hash_Map<size_t, std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > > drifted_points;
+        DetectLoopClosureProblems(drifted_points);
+        BundleAdjustmentDriftCompensation(drifted_points);
+        std::cout<<"END DETECT LOOP CLOSURE: "<<drifted_points.size()<<"\n";
+        std::ostringstream osB;
+        osB << std::setw(8) << std::setfill('0') << resectionGroupIndex << "_ResectionB";
+        Save(sfm_data_, stlplus::create_filespec(sOut_directory_, osB.str(), ".ply"), ESfM_Data(ALL));
         eraseUnstablePosesAndObservations(sfm_data_);
       }
       std::cout << "\n" << "Find candidates for Resection" << std::endl;
@@ -238,6 +249,189 @@ bool SequentialSfMReconstructionEngine::Process() {
   }
   return true;
 }
+
+/// Check for loop closures
+void SequentialSfMReconstructionEngine::DetectLoopClosureProblems(Hash_Map<size_t, std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > > &drifted_points) {
+  
+  // Vector of all already reconstructed views
+  const std::set<IndexT> valid_views = Get_Valid_Views(sfm_data_);
+
+  //Hash_Map<size_t, std::vector<Vec3> > drifted_points_X;
+  // Go through each track and look if we must add new view observations or new 3D points
+  for (const std::pair< size_t, tracks::submapTrack >& trackIt : map_tracks_)
+  {
+    // Track ID
+    const size_t trackId = trackIt.first;
+    // List the potential view observations of the track
+    const tracks::submapTrack & track_views = map_tracks_[trackId];
+    
+    // Get track valid views
+    std::set<IndexT> track_valid_views;
+    for (const std::pair< IndexT, IndexT >& trackView_I_It : track_views)
+    {
+      const IndexT & I = trackView_I_It.first;
+      if(valid_views.count(I)!=0)
+        track_valid_views.insert(I);
+    }
+    if(track_valid_views.size()==0)
+      continue;
+    // Triangulated point of the scene
+    
+    std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >triangulated_points_per_track;
+    
+    //std::vector<Vec3> triangulated_points_per_track;
+    //std::vector<std::set<IndexT> > triangulated_points_view_sets_per_track;
+
+    bool bNew_triangulated_point = false;
+
+    do
+    {
+      Vec3 X = Vec3::Zero();
+      std::map<IndexT,Vec2> views_used;
+      bNew_triangulated_point = false;
+      // Go through the views that observe this track & look if a successful triangulation can be done
+      for (std::set<IndexT>::const_iterator iter_I = track_valid_views.begin();
+      iter_I != track_valid_views.end() && bNew_triangulated_point==false; ++iter_I)
+      {
+        const IndexT I = *iter_I;      
+        const View * view_I = sfm_data_.GetViews().at(I).get();
+        const IntrinsicBase * cam_I = sfm_data_.GetIntrinsics().at(view_I->id_intrinsic).get();
+        const Pose3 pose_I = sfm_data_.GetPoseOrDie(view_I);
+        const Vec2 xI = features_provider_->feats_per_view.at(I)[track_views.at(I)].coords().cast<double>();
+        // Go through the views that observe this track & look if a successful triangulation can be done
+        for (std::set<IndexT>::const_iterator iter_J = track_valid_views.begin();
+        iter_J != track_valid_views.end() && bNew_triangulated_point==false; ++iter_J)
+        {
+          const IndexT J = *iter_J;
+          if(I==J)
+            continue;
+          const View * view_J = sfm_data_.GetViews().at(J).get();
+          const IntrinsicBase * cam_J = sfm_data_.GetIntrinsics().at(view_J->id_intrinsic).get();
+          const Pose3 pose_J = sfm_data_.GetPoseOrDie(view_J);
+          const Vec2 xJ = features_provider_->feats_per_view.at(J)[track_views.at(J)].coords().cast<double>();
+
+          // Try to triangulate a 3D point from views I and J
+          // Triangulate it
+          const Vec2 xI_ud = cam_I->get_ud_pixel(xI);
+          const Vec2 xJ_ud = cam_J->get_ud_pixel(xJ);
+          const Mat34 P_I = cam_I->get_projective_equivalent(pose_I);
+          const Mat34 P_J = cam_J->get_projective_equivalent(pose_J);
+          
+          TriangulateDLT(P_I, xI_ud, P_J, xJ_ud, &X);
+          
+          // Check triangulation result
+          const double angle = AngleBetweenRay(pose_I, cam_I, pose_J, cam_J, xI, xJ);
+          const Vec2 residual_I = cam_I->residual(pose_I, X, xI);
+          const Vec2 residual_J = cam_J->residual(pose_J, X, xJ);
+          if (
+              //  - Check angle (small angle leads to imprecise triangulation)
+              angle > 2.0 &&
+              //  - Check positive depth
+              pose_I.depth(X) > 0 &&
+              pose_J.depth(X) > 0 &&
+              //  - Check residual values (must be inferior to the found view's AContrario threshold)
+              residual_I.norm() < std::max(4.0, map_ACThreshold_.at(I)) &&
+              residual_J.norm() < std::max(4.0, map_ACThreshold_.at(J))
+             )
+          {
+            // Save triangulated point and views used
+            //triangulated_points_per_track.push_back(X);
+            views_used.insert(std::make_pair(I,xI));
+            views_used.insert(std::make_pair(J,xJ));
+            //triangulated_points_view_sets_per_track.push_back(views_used);
+            // Remove used views from potential new views
+            track_valid_views.erase(I);
+            track_valid_views.erase(J);
+            bNew_triangulated_point = true;
+          }// Triangulation sucessful
+        }
+      }
+      // Check if we even got a new triangulation point
+      if(bNew_triangulated_point){
+        // Go throught the rest of the views and see which could be also triangulated at the same point
+        for (const IndexT& I : track_valid_views)
+        {
+          const View * view_I = sfm_data_.GetViews().at(I).get();
+          const IntrinsicBase * cam_I = sfm_data_.GetIntrinsics().at(view_I->id_intrinsic).get();
+          const Pose3 pose_I = sfm_data_.GetPoseOrDie(view_I);
+          const Vec2 xI = features_provider_->feats_per_view.at(I)[track_views.at(I)].coords().cast<double>();
+
+          const Vec2 residual = cam_I->residual(pose_I, X, xI);
+          if (pose_I.depth(X) > 0 &&
+              residual.norm() < std::max(4.0, map_ACThreshold_.at(I))
+             )
+          {
+            // Add view to views of triangulation of the point
+            views_used.insert(std::make_pair(I,xI));
+            track_valid_views.erase(I);
+          }
+        }
+        
+        // Triangulate point from all usable views
+        Triangulation trianObj;
+        for (std::map<IndexT,Vec2>::const_iterator iter_V = views_used.begin();
+        iter_V != views_used.end(); ++iter_V)
+        {
+          const View * view_I = sfm_data_.GetViews().at(iter_V->first).get();
+          const IntrinsicBase * cam_I = sfm_data_.GetIntrinsics().at(view_I->id_intrinsic).get();
+          const Pose3 pose_I = sfm_data_.GetPoseOrDie(view_I);
+          const Vec2 xI = iter_V->second;
+          trianObj.add(
+          cam_I->get_projective_equivalent(pose_I),
+          cam_I->get_ud_pixel(xI));
+        }
+        X = trianObj.compute();
+        
+        // Save triangulated point and views used
+        triangulated_points_per_track.push_back(std::make_pair(X,views_used));
+        //triangulated_points_view_sets_per_track.push_back(views_used);
+        //triangulated_points_per_track.push_back(X);
+      }      
+      
+    }while(bNew_triangulated_point == true);
+    
+    
+    if(triangulated_points_per_track.size()>1)
+    {
+      /*
+      std::cout<<"Track ID: "<<trackId<<"\n";
+      std::cout<<"MULTIPLE TRIANGULATIONS IN A POINT!!\n";
+      for (std::list<std::pair<Vec3, std::set<IndexT> > >::const_iterator iter_L = triangulated_points_per_track.begin();
+        iter_L != triangulated_points_per_track.end() ;++iter_L)
+      {
+        std::cout<<"P : \n"<<(*iter_L).first<<"\n";  
+        std::cout<<"Views: ";
+        for (const IndexT& I : (*iter_L).second)
+        {
+          std::cout<<" "<<I;
+        }
+        std::cout<<"\n";      
+      }
+      */
+      drifted_points.insert(std::pair<size_t,std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > >(trackId,triangulated_points_per_track));
+      /*
+      if (sfm_data_.structure.count(trackId) != 0
+         )
+      {
+        Landmark & landmark = sfm_data_.structure[trackId];
+        const Observations & obs = landmark.obs;
+        std::cout<<"L "<<" : \n"<<landmark.X<<"\n";   
+        std::cout<<"L Views: ";
+        for( const auto& n : obs )
+        {
+          std::cout<<" "<<n.first;
+        }
+        std::cout<<"\n";
+           
+      }
+      
+      std::cout<<"\n";
+      */
+    } 
+  }
+}
+
+
 
 /// Select a candidate initial pair
 bool SequentialSfMReconstructionEngine::ChooseInitialPair(Pair & initialPairIndex) const
@@ -1364,6 +1558,34 @@ bool SequentialSfMReconstructionEngine::BundleAdjustment()
       Structure_Parameter_Type::ADJUST_ALL // Adjust scene structure
     );
   return bundle_adjustment_obj.Adjust(sfm_data_, ba_refine_options);
+}
+
+
+/// Bundle adjustment to refine Structure; Motion and Intrinsics
+bool SequentialSfMReconstructionEngine::BundleAdjustmentDriftCompensation(Hash_Map<size_t, std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > > &drifted_points)
+{
+  Bundle_Adjustment_Ceres::BA_Ceres_options options;
+  if ( sfm_data_.GetPoses().size() > 100 &&
+      (ceres::IsSparseLinearAlgebraLibraryTypeAvailable(ceres::SUITE_SPARSE) ||
+       ceres::IsSparseLinearAlgebraLibraryTypeAvailable(ceres::CX_SPARSE) ||
+       ceres::IsSparseLinearAlgebraLibraryTypeAvailable(ceres::EIGEN_SPARSE))
+      )
+  // Enable sparse BA only if a sparse lib is available and if there more than 100 poses
+  {
+    options.preconditioner_type_ = ceres::JACOBI;
+    options.linear_solver_type_ = ceres::SPARSE_SCHUR;
+  }
+  else
+  {
+    options.linear_solver_type_ = ceres::DENSE_SCHUR;
+  }
+  Bundle_Adjustment_Ceres bundle_adjustment_obj(options);
+  const Optimize_Options ba_refine_options
+    ( ReconstructionEngine::intrinsic_refinement_options_,
+      Extrinsic_Parameter_Type::ADJUST_ALL, // Adjust camera motion
+      Structure_Parameter_Type::ADJUST_ALL // Adjust scene structure
+    );
+  return bundle_adjustment_obj.AdjustWithDriftCompensation(sfm_data_, ba_refine_options, drifted_points);
 }
 
 /**

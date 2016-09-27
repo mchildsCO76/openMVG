@@ -11,6 +11,12 @@
 #include "openMVG/numeric/numeric.h"
 #include "ceres/types.h"
 #include "ceres/cost_function.h"
+#include <list> 
+
+
+//#include "openMVG/sfm/pipelines/sfm_engine.hpp"
+#include "openMVG/types.hpp"
+
 
 namespace openMVG {
 
@@ -62,6 +68,15 @@ class Bundle_Adjustment_Ceres : public Bundle_Adjustment
     // tell which parameter needs to be adjusted
     const Optimize_Options options
   ) override;
+  
+  bool AdjustWithDriftCompensation
+  (
+    // the SfM scene to refine
+    SfM_Data & sfm_data,
+    // tell which parameter needs to be adjusted
+    const Optimize_Options options,
+    Hash_Map<size_t, std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > > &drifted_points
+  );
 };
 
 } // namespace sfm
