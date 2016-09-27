@@ -520,6 +520,7 @@ bool Bundle_Adjustment_Ceres::AdjustWithDriftCompensation
   {
     const size_t trackId = itDriftPoint->first;
     std::cout<<"Pre T: "<<trackId<<"\n";
+    std::cout<<"Pre N: "<<sfm_data.structure.count(trackId)<<"\n";
     std::cout<<"Pre L: "<<sfm_data.structure[trackId].X<<"\n";
     // If landmark is already in the structure
     // Add residuals to all the views it uses and
@@ -574,6 +575,7 @@ bool Bundle_Adjustment_Ceres::AdjustWithDriftCompensation
       std::cout<<"Empty str A\n";
     }
       
+      std::cout<<"A\n";
     // Add all residuals to other possible triangulation points from all views
     for(std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangPoint = itDriftPoint->second.begin();
     itTriangPoint != itDriftPoint->second.end(); ++itTriangPoint)
@@ -631,6 +633,7 @@ bool Bundle_Adjustment_Ceres::AdjustWithDriftCompensation
       }
     }
       
+      std::cout<<"B\n";
       
 max_norm_landmarks = 1.0;
     const double weight_drift_element = 1000000.0;
@@ -661,6 +664,7 @@ max_norm_landmarks = 1.0;
       std::cout<<"Empty str C\n";
     }
     
+      std::cout<<"C\n";
     // All possible triangulate points have to be close to eachother
     for(std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangPoint_A = itDriftPoint->second.begin();
     itTriangPoint_A != itDriftPoint->second.end(); ++itTriangPoint_A)
@@ -686,6 +690,8 @@ max_norm_landmarks = 1.0;
             itTriangPoint_B->first.data());
       }
     }
+    
+      std::cout<<"D\n";
   }
   
 
