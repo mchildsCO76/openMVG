@@ -570,6 +570,9 @@ bool Bundle_Adjustment_Ceres::AdjustWithDriftCompensation
         }
       }
     }
+    else{
+      std::cout<<"Empty str A\n";
+    }
       
     // Add all residuals to other possible triangulation points from all views
     for(std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangPoint = itDriftPoint->second.begin();
@@ -600,6 +603,9 @@ bool Bundle_Adjustment_Ceres::AdjustWithDriftCompensation
               &map_poses[view->id_pose][0],
               itTriangPoint->first.data());
         }      
+      }
+      else{
+        std::cout<<"Empty str B\n";
       }
       
       // Residuals from views that are used in possible triangulation points
@@ -650,6 +656,9 @@ max_norm_landmarks = 1.0;
             landmark.X.data(),
             itTriangPoint_A->first.data());
       }
+    }
+    else{
+      std::cout<<"Empty str C\n";
     }
     
     // All possible triangulate points have to be close to eachother
