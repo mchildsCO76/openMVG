@@ -139,11 +139,18 @@ bool SequentialSfMReconstructionEngine::Process() {
         BundleAdjustment();
       }
       while (badTrackRejector(4.0, 50));
+
+      std::ostringstream osA;
+      osA << std::setw(8) << std::setfill('0') << resectionGroupIndex << "_ResectionA";
+      Save(sfm_data_, stlplus::create_filespec(sOut_directory_, osA.str(), ".ply"), ESfM_Data(ALL));
       std::cout<<"DETECT LOOP CLOSURE: \n";
       Hash_Map<size_t, std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > > drifted_points;
       DetectLoopClosureProblems(drifted_points);
-      
+      BundleAdjustmentDriftCompensation(drifted_points);
       std::cout<<"END DETECT LOOP CLOSURE: "<<drifted_points.size()<<"\n";
+      std::ostringstream osB;
+      osB << std::setw(8) << std::setfill('0') << resectionGroupIndex << "_ResectionB";
+      Save(sfm_data_, stlplus::create_filespec(sOut_directory_, osB.str(), ".ply"), ESfM_Data(ALL));
       eraseUnstablePosesAndObservations(sfm_data_);
     }
     ++resectionGroupIndex;

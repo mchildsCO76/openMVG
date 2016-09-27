@@ -12,6 +12,8 @@
 #include "ceres/ceres.h"
 #include "ceres/rotation.h"
 
+#include "openMVG/sfm/sfm_data_BA_ceres_drift_functor.hpp"
+
 namespace openMVG {
 namespace sfm {
 
@@ -474,6 +476,8 @@ bool Bundle_Adjustment_Ceres::AdjustWithDriftCompensation
       new ceres::HuberLoss(Square(4.0))
       : nullptr;
 
+  Vec3 max_point_landmarks;
+  double max_norm_landmarks=std::numeric_limits<double>::min();
   // For all visibility add reprojections errors:
   for (Landmarks::iterator iterTracks = sfm_data.structure.begin();
     iterTracks!= sfm_data.structure.end(); ++iterTracks)
@@ -505,12 +509,22 @@ bool Bundle_Adjustment_Ceres::AdjustWithDriftCompensation
       if (options.structure_opt == Structure_Parameter_Type::NONE)
         problem.SetParameterBlockConstant(iterTracks->second.X.data());
     }
+
+    if(iterTracks->second.X.squaredNorm()>max_norm_landmarks){
+      max_norm_landmarks = iterTracks->second.X.squaredNorm();
+      max_point_landmarks = iterTracks->second.X;
+    }
+
   }
   
   for(Hash_Map<size_t, std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > >::iterator itDriftPoint = drifted_points.begin();
   itDriftPoint != drifted_points.end(); ++itDriftPoint)
   {
     const size_t trackId = itDriftPoint->first;
+
+      //std::cout<<"T: "<<trackId<<"\n";
+      //std::cout<<"L: "<<sfm_data.structure[trackId].X<<"\n";
+
     for(std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangPoint = itDriftPoint->second.begin();
     itTriangPoint != itDriftPoint->second.end(); ++itTriangPoint)
     {
@@ -529,10 +543,33 @@ bool Bundle_Adjustment_Ceres::AdjustWithDriftCompensation
             &map_intrinsics[view->id_intrinsic][0],
             &map_poses[view->id_pose][0],
             itTriangPoint->first.data());
+
+
       }
       if (options.structure_opt == Structure_Parameter_Type::NONE)
         problem.SetParameterBlockConstant(itTriangPoint->first.data());
     }  
+max_norm_landmarks = 1.0;
+    const double weight_drift_element = 10000.0;
+    for(std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangPoint_A = itDriftPoint->second.begin();
+    itTriangPoint_A != itDriftPoint->second.end(); ++itTriangPoint_A)
+    {
+      std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangPoint_B = itTriangPoint_A;
+      std::advance(itTriangPoint_B,1);
+      for(;
+      itTriangPoint_B != itDriftPoint->second.end(); ++itTriangPoint_B)
+      {
+        ceres::CostFunction* cost_function = ResidualErrorFunctor_Drift_Point::Create(max_norm_landmarks, weight_drift_element);
+
+        if (cost_function)
+          problem.AddResidualBlock(cost_function,
+            nullptr,
+            itTriangPoint_A->first.data(),
+            itTriangPoint_B->first.data());
+
+      //std::cout<<"C: "<<itTriangPoint_A->first<<" :: "<<itTriangPoint_B->first<<"\n";
+      }
+    }
   }
   
 
@@ -645,6 +682,21 @@ bool Bundle_Adjustment_Ceres::AdjustWithDriftCompensation
       }
     }
     // Structure is already updated directly if needed (no data wrapping)
+    /*std::cout<<"------------------ddsdsa--------------------\n";
+    for(Hash_Map<size_t, std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > >::iterator itDriftPoint = drifted_points.begin();
+    itDriftPoint != drifted_points.end(); ++itDriftPoint)
+    {
+      const size_t trackId = itDriftPoint->first;
+      std::cout<<"T: "<<trackId<<"\n";
+      std::cout<<"L: "<<sfm_data.structure[trackId].X<<"\n";
+      for(std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangPoint = itDriftPoint->second.begin();
+      itTriangPoint != itDriftPoint->second.end(); ++itTriangPoint)
+      {
+        std::cout<<"P: "<<itTriangPoint->first<<"\n";
+      }
+    }*/
+
+
     return true;
   }
 }
