@@ -521,7 +521,8 @@ bool Bundle_Adjustment_Ceres::AdjustWithDriftCompensation
     const size_t trackId = itDriftPoint->first;
     std::cout<<"Pre T: "<<trackId<<"\n";
     std::cout<<"Pre N: "<<sfm_data.structure.count(trackId)<<"\n";
-    std::cout<<"Pre L: "<<sfm_data.structure[trackId].X<<"\n";
+    if(sfm_data.structure.count(trackId) != 0)
+      std::cout<<"Pre L: "<<sfm_data.structure[trackId].X<<"\n";
     // If landmark is already in the structure
     // Add residuals to all the views it uses and
     // To all other views that sucessfully triangulate to another point (all have to be connected)

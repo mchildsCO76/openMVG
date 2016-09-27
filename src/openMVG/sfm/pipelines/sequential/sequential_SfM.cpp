@@ -140,20 +140,24 @@ bool SequentialSfMReconstructionEngine::Process() {
       }
       while (badTrackRejector(4.0, 50));
 
-      std::ostringstream osA;
-      osA << std::setw(8) << std::setfill('0') << resectionGroupIndex << "_ResectionA";
-      Save(sfm_data_, stlplus::create_filespec(sOut_directory_, osA.str(), ".ply"), ESfM_Data(ALL));
       std::cout<<"DETECT LOOP CLOSURE: \n";
+
       Hash_Map<size_t, std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > > drifted_points;
       DetectLoopClosureProblems(drifted_points);
-      if(drifted_points.size()>0)
+      if(drifted_points.size()>0){
+        std::ostringstream osA;
+        osA << std::setw(8) << std::setfill('0') << resectionGroupIndex << "_ResectionA";
+        Save(sfm_data_, stlplus::create_filespec(sOut_directory_, osA.str(), ".ply"), ESfM_Data(ALL));
+
         BundleAdjustmentDriftCompensation(drifted_points);
+        std::ostringstream osB;
+        osB << std::setw(8) << std::setfill('0') << resectionGroupIndex << "_ResectionB";
+        Save(sfm_data_, stlplus::create_filespec(sOut_directory_, osB.str(), ".ply"), ESfM_Data(ALL));
+      }
       std::cout<<"END DETECT LOOP CLOSURE: "<<drifted_points.size()<<"\n";
-      std::ostringstream osB;
-      osB << std::setw(8) << std::setfill('0') << resectionGroupIndex << "_ResectionB";
-      Save(sfm_data_, stlplus::create_filespec(sOut_directory_, osB.str(), ".ply"), ESfM_Data(ALL));
       eraseUnstablePosesAndObservations(sfm_data_);
     }
+    std::cout << "\n" << "Find candidates for Resection" << std::endl;
     ++resectionGroupIndex;
   }
   // Ensure there is no remaining outliers
@@ -1444,21 +1448,71 @@ bool SequentialSfMReconstructionEngine::BundleAdjustmentDriftCompensation(Hash_M
       const size_t trackId = itDriftPoint->first;    
       // List the potential view observations of the track
       const tracks::submapTrack & track_views = map_tracks_[trackId];
-      // Landmark created from the structure
-      Landmark & landmark = sfm_data_.structure[trackId];
       
       std::cout<<"Post T: "<<trackId<<"\n";
-      std::cout<<"Post L: "<<landmark.X<<"\n";
-      std::cout<<"V: ";
-      const Observations & obs = landmark.obs;
-      for(Observations::const_iterator itObs = obs.begin();
-        itObs != obs.end(); ++itObs)
+      // Landmark created from the structure
+      if(sfm_data_.structure.count(trackId) != 0)
       {
-        std::cout<<" "<<itObs->first;
+        Landmark & landmark = sfm_data_.structure[trackId];
+        
+        std::cout<<"Post L: "<<landmark.X<<"\n";
+        std::cout<<"V: ";
+        const Observations & obs = landmark.obs;
+        for(Observations::const_iterator itObs = obs.begin();
+          itObs != obs.end(); ++itObs)
+        {
+          std::cout<<" "<<itObs->first;
+        }
+        std::cout<<"\n";
       }
-      std::cout<<"\n";
+      else if(itDriftPoint->second.size()>0){
+        // Find the best triangulated point (most views)
+        std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator best_Triangulated_point;
+        size_t n_used_views;
+        best_Triangulated_point = itDriftPoint->second.begin();
+        n_used_views = best_Triangulated_point->second.size();
+        
+        std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangPoint = itDriftPoint->second.begin();
+        std::advance(itTriangPoint,1);
+        for(;itTriangPoint != itDriftPoint->second.end(); ++itTriangPoint)
+        {
+          if(itTriangPoint->second.size()>n_used_views)
+          {
+            best_Triangulated_point = itTriangPoint;
+            n_used_views = itTriangPoint->second.size();
+          }
+        }
+        
+        Landmark & landmark = sfm_data_.structure[trackId];
+        landmark.X = best_Triangulated_point->first;
+        
+        
+        for(std::map<IndexT,Vec2>::iterator itView = best_Triangulated_point->second.begin();
+        itView != best_Triangulated_point->second.end(); ++itView)
+        {
+          const IndexT viewId = itView->first;
+          landmark.obs[viewId] = Observation(itView->second, track_views.at(viewId));
+        }
+        
+        itDriftPoint->second.erase(best_Triangulated_point);
+        
+                
+        std::cout<<"Post New L: "<<landmark.X<<"\n";
+        std::cout<<"VV: ";
+        const Observations & obs = landmark.obs;
+        for(Observations::const_iterator itObs = obs.begin();
+          itObs != obs.end(); ++itObs)
+        {
+          std::cout<<" "<<itObs->first;
+        }
+        std::cout<<"\n";
+        
+      }
+      else{
+        continue;
+      }
       
-      
+      Landmark & landmark = sfm_data_.structure[trackId];
       // Check the rest of possible triangulation sets to join them if they are close enough
       for(std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangPoint = itDriftPoint->second.begin();
       itTriangPoint != itDriftPoint->second.end(); ++itTriangPoint)
@@ -1473,7 +1527,7 @@ bool SequentialSfMReconstructionEngine::BundleAdjustmentDriftCompensation(Hash_M
           const Vec2 xI = itView->second;
                     
           const Vec2 residual = cam_I->residual(pose_I, landmark.X, xI);
-          std::cout<<"New View "<<viewId<<" :: "<<residual<<"\n";
+          std::cout<<"New View "<<viewId<<" :: "<<residual.norm()<<"\n";
           if (pose_I.depth(landmark.X) > 0 &&
               residual.norm() < std::max(4.0, map_ACThreshold_.at(viewId))
              )
@@ -1484,6 +1538,8 @@ bool SequentialSfMReconstructionEngine::BundleAdjustmentDriftCompensation(Hash_M
       }    
         
       std::cout<<"AV: ";
+      
+      const Observations & obs = landmark.obs;
       for(Observations::const_iterator itObs = obs.begin();
         itObs != obs.end(); ++itObs)
       {
