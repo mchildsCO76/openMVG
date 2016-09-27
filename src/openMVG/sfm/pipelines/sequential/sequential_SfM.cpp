@@ -233,13 +233,20 @@ void SequentialSfMReconstructionEngine::DetectLoopClosureProblems(Hash_Map<size_
     }
     if(track_valid_views.size()==0)
       continue;
-    // Triangulated point of the scene
     
+    if(sfm_data_.structure.count(trackId)!=0){
+      Landmark & landmark = sfm_data_.structure[trackId];
+      const Observations & obs = landmark.obs;
+      for(Observations::const_iterator itObs = obs.begin();
+        itObs != obs.end(); ++itObs)
+      {
+        track_valid_views.erase(itObs->first);
+      }
+    }
+    
+    // Triangulated point of the scene
     std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >triangulated_points_per_track;
     
-    //std::vector<Vec3> triangulated_points_per_track;
-    //std::vector<std::set<IndexT> > triangulated_points_view_sets_per_track;
-
     bool bNew_triangulated_point = false;
 
     do
@@ -247,6 +254,7 @@ void SequentialSfMReconstructionEngine::DetectLoopClosureProblems(Hash_Map<size_
       Vec3 X = Vec3::Zero();
       std::map<IndexT,Vec2> views_used;
       bNew_triangulated_point = false;
+           
       // Go through the views that observe this track & look if a successful triangulation can be done
       for (std::set<IndexT>::const_iterator iter_I = track_valid_views.begin();
       iter_I != track_valid_views.end() && bNew_triangulated_point==false; ++iter_I)
@@ -342,8 +350,6 @@ void SequentialSfMReconstructionEngine::DetectLoopClosureProblems(Hash_Map<size_
         
         // Save triangulated point and views used
         triangulated_points_per_track.push_back(std::make_pair(X,views_used));
-        //triangulated_points_view_sets_per_track.push_back(views_used);
-        //triangulated_points_per_track.push_back(X);
       }      
       
     }while(bNew_triangulated_point == true);
@@ -1428,7 +1434,78 @@ bool SequentialSfMReconstructionEngine::BundleAdjustmentDriftCompensation(Hash_M
       Extrinsic_Parameter_Type::ADJUST_ALL, // Adjust camera motion
       Structure_Parameter_Type::ADJUST_ALL // Adjust scene structure
     );
-  return bundle_adjustment_obj.AdjustWithDriftCompensation(sfm_data_, ba_refine_options, drifted_points);
+  if(bundle_adjustment_obj.AdjustWithDriftCompensation(sfm_data_, ba_refine_options, drifted_points))
+  {
+    std::cout<<"------------------ddsdsa--------------------\n";
+    for(Hash_Map<size_t, std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > >::iterator itDriftPoint = drifted_points.begin();
+    itDriftPoint != drifted_points.end(); ++itDriftPoint)
+    {
+      const size_t trackId = itDriftPoint->first;    
+      // List the potential view observations of the track
+      const tracks::submapTrack & track_views = map_tracks_[trackId];
+      // Landmark created from the structure
+      Landmark & landmark = sfm_data_.structure[trackId];
+      
+      std::cout<<"T: "<<trackId<<"\n";
+      std::cout<<"L: "<<landmark.X<<"\n";
+      std::cout<<"V: ";
+      const Observations & obs = landmark.obs;
+      for(Observations::const_iterator itObs = obs.begin();
+        itObs != obs.end(); ++itObs)
+      {
+        std::cout<<" "<<itObs->first;
+      }
+      std::cout<<"\n";
+      
+      
+      // Check the rest of possible triangulation sets to join them if they are close enough
+      for(std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangPoint = itDriftPoint->second.begin();
+      itTriangPoint != itDriftPoint->second.end(); ++itTriangPoint)
+      {
+        for(std::map<IndexT,Vec2>::iterator itView = itTriangPoint->second.begin();
+        itView != itTriangPoint->second.end(); ++itView)
+        {
+          const IndexT viewId = itView->first;
+          const View * view_I = sfm_data_.GetViews().at(viewId).get();
+          const IntrinsicBase * cam_I = sfm_data_.GetIntrinsics().at(view_I->id_intrinsic).get();
+          const Pose3 pose_I = sfm_data_.GetPoseOrDie(view_I);
+          const Vec2 xI = itView->second;
+                    
+          const Vec2 residual = cam_I->residual(pose_I, landmark.X, xI);
+          if (pose_I.depth(landmark.X) > 0 &&
+              residual.norm() < std::max(4.0, map_ACThreshold_.at(viewId))
+             )
+          {
+            landmark.obs[viewId] = Observation(itView->second, track_views.at(viewId));
+          }
+        }        
+      }    
+        
+      std::cout<<"AV: ";
+      for(Observations::const_iterator itObs = obs.begin();
+        itObs != obs.end(); ++itObs)
+      {
+        std::cout<<" "<<itObs->first;
+      }
+      std::cout<<"\n";
+      
+      for(std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangPoint = itDriftPoint->second.begin();
+      itTriangPoint != itDriftPoint->second.end(); ++itTriangPoint)
+      {
+        std::cout<<"P: "<<itTriangPoint->first<<"\n";
+      }
+    }
+    
+    
+  }
+  else
+  {
+    return false;
+  }
+  
+  
+  
+  ;
 }
 
 /**
