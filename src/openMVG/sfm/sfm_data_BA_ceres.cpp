@@ -525,7 +525,9 @@ bool Bundle_Adjustment_Ceres::AdjustWithDriftCompensation
     // If landmark is already in the structure
     // Add residuals to all the views it uses and
     // To all other views that sucessfully triangulate to another point (all have to be connected)
-    if(sfm_data.structure.count(trackId)!=0)
+    bool bAA = sfm_data.structure.count(trackId)!=0;
+    std::cout<<"AA: "<<sfm_data.structure.count(trackId)<<" :: "<<bAA<<"\n";
+    if(sfm_data.structure.count(trackId) != 0)
     {
       Landmark & landmark = sfm_data.structure[trackId];
       const Observations & obs = landmark.obs;
@@ -581,7 +583,7 @@ bool Bundle_Adjustment_Ceres::AdjustWithDriftCompensation
     itTriangPoint != itDriftPoint->second.end(); ++itTriangPoint)
     {
       // Residuals from the views that are already in reconstruction
-      if(sfm_data.structure.count(trackId)!=0)
+      if(sfm_data.structure.count(trackId) != 0)
       {
         Landmark & landmark = sfm_data.structure[trackId];
         const Observations & obs = landmark.obs;
@@ -639,7 +641,7 @@ max_norm_landmarks = 1.0;
     const double weight_drift_element = 1000000.0;
     
     // If point exists in the structure we want all other possible triangulation points to be close to it
-    if(sfm_data.structure.count(trackId)!=0)
+    if(sfm_data.structure.count(trackId) != 0)
     {
       Landmark & landmark = sfm_data.structure[trackId];
       const Observations & obs = landmark.obs;

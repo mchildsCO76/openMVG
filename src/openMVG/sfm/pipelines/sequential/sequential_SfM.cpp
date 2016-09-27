@@ -146,7 +146,8 @@ bool SequentialSfMReconstructionEngine::Process() {
       std::cout<<"DETECT LOOP CLOSURE: \n";
       Hash_Map<size_t, std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > > drifted_points;
       DetectLoopClosureProblems(drifted_points);
-      BundleAdjustmentDriftCompensation(drifted_points);
+      if(drifted_points.size()>0)
+        BundleAdjustmentDriftCompensation(drifted_points);
       std::cout<<"END DETECT LOOP CLOSURE: "<<drifted_points.size()<<"\n";
       std::ostringstream osB;
       osB << std::setw(8) << std::setfill('0') << resectionGroupIndex << "_ResectionB";
