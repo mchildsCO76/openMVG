@@ -1446,8 +1446,8 @@ bool SequentialSfMReconstructionEngine::BundleAdjustmentDriftCompensation(Hash_M
       // Landmark created from the structure
       Landmark & landmark = sfm_data_.structure[trackId];
       
-      std::cout<<"T: "<<trackId<<"\n";
-      std::cout<<"L: "<<landmark.X<<"\n";
+      std::cout<<"Post T: "<<trackId<<"\n";
+      std::cout<<"Post L: "<<landmark.X<<"\n";
       std::cout<<"V: ";
       const Observations & obs = landmark.obs;
       for(Observations::const_iterator itObs = obs.begin();
@@ -1472,6 +1472,7 @@ bool SequentialSfMReconstructionEngine::BundleAdjustmentDriftCompensation(Hash_M
           const Vec2 xI = itView->second;
                     
           const Vec2 residual = cam_I->residual(pose_I, landmark.X, xI);
+          std::cout<<"New View "<<viewId<<" :: "<<residual<<"\n";
           if (pose_I.depth(landmark.X) > 0 &&
               residual.norm() < std::max(4.0, map_ACThreshold_.at(viewId))
              )
