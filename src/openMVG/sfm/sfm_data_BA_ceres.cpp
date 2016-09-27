@@ -506,8 +506,6 @@ bool Bundle_Adjustment_Ceres::AdjustWithDriftCompensation
             &map_poses[view->id_pose][0],
             iterTracks->second.X.data());
       }
-      if (options.structure_opt == Structure_Parameter_Type::NONE)
-        problem.SetParameterBlockConstant(iterTracks->second.X.data());
     }
 
     if(iterTracks->second.X.squaredNorm()>max_norm_landmarks){
@@ -521,39 +519,166 @@ bool Bundle_Adjustment_Ceres::AdjustWithDriftCompensation
   itDriftPoint != drifted_points.end(); ++itDriftPoint)
   {
     const size_t trackId = itDriftPoint->first;
-
-      //std::cout<<"T: "<<trackId<<"\n";
-      //std::cout<<"L: "<<sfm_data.structure[trackId].X<<"\n";
-
-    for(std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangPoint = itDriftPoint->second.begin();
-    itTriangPoint != itDriftPoint->second.end(); ++itTriangPoint)
+    std::cout<<"Pre T: "<<trackId<<"\n";
+    std::cout<<"Pre N: "<<sfm_data.structure.count(trackId)<<"\n";
+    if(sfm_data.structure.count(trackId) != 0)
+      std::cout<<"Pre L: "<<sfm_data.structure[trackId].X<<"\n";
+    // If landmark is already in the structure
+    // Add residuals to all the views it uses and
+    // To all other views that sucessfully triangulate to another point (all have to be connected)
+    bool bAA = sfm_data.structure.count(trackId)!=0;
+    std::cout<<"AA: "<<sfm_data.structure.count(trackId)<<" :: "<<bAA<<"\n";
+    if(sfm_data.structure.count(trackId) != 0)
     {
-      std::map<IndexT,Vec2> &views_used = itTriangPoint->second;
-      for(std::map<IndexT,Vec2>::iterator itView = views_used.begin();
-      itView != views_used.end(); ++itView)
+      Landmark & landmark = sfm_data.structure[trackId];
+      const Observations & obs = landmark.obs;
+
+      for (Observations::const_iterator itObs = obs.begin();
+        itObs != obs.end(); ++itObs)
       {
-        const View * view = sfm_data.views.at(itView->first).get();
-        
+        // Build the residual block corresponding to the track observation:
+        const View * view = sfm_data.views.at(itObs->first).get();
+
+        // Each Residual block takes a point and a camera as input and outputs a 2
+        // dimensional residual. Internally, the cost function stores the observed
+        // image location and compares the reprojection against the observation.
         ceres::CostFunction* cost_function =
-          IntrinsicsToCostFunction(sfm_data.intrinsics[view->id_intrinsic].get(), itView->second);
-        
+          IntrinsicsToCostFunction(sfm_data.intrinsics[view->id_intrinsic].get(), itObs->second.x);
+
         if (cost_function)
           problem.AddResidualBlock(cost_function,
             p_LossFunction,
             &map_intrinsics[view->id_intrinsic][0],
             &map_poses[view->id_pose][0],
-            itTriangPoint->first.data());
-
-
+            landmark.X.data());
       }
-      if (options.structure_opt == Structure_Parameter_Type::NONE)
-        problem.SetParameterBlockConstant(itTriangPoint->first.data());
-    }  
+      
+      for(std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangViews = itDriftPoint->second.begin();
+      itTriangViews != itDriftPoint->second.end(); ++itTriangViews)
+      {
+        std::map<IndexT,Vec2> &views_used = itTriangViews->second;
+      
+        for(std::map<IndexT,Vec2>::iterator itView = views_used.begin();
+        itView != views_used.end(); ++itView)
+        {
+          const View * view = sfm_data.views.at(itView->first).get();
+          ceres::CostFunction* cost_function =
+          IntrinsicsToCostFunction(sfm_data.intrinsics[view->id_intrinsic].get(), itView->second);
+        
+          if (cost_function)
+            problem.AddResidualBlock(cost_function,
+              p_LossFunction,
+              &map_intrinsics[view->id_intrinsic][0],
+              &map_poses[view->id_pose][0],
+              landmark.X.data());
+        }
+      }
+    }
+    else{
+      std::cout<<"Empty str A\n";
+    }
+      
+      std::cout<<"A\n";
+    // Add all residuals to other possible triangulation points from all views
+    for(std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangPoint = itDriftPoint->second.begin();
+    itTriangPoint != itDriftPoint->second.end(); ++itTriangPoint)
+    {
+      // Residuals from the views that are already in reconstruction
+      if(sfm_data.structure.count(trackId) != 0)
+      {
+        Landmark & landmark = sfm_data.structure[trackId];
+        const Observations & obs = landmark.obs;
+
+        for (Observations::const_iterator itObs = obs.begin();
+          itObs != obs.end(); ++itObs)
+        {
+          // Build the residual block corresponding to the track observation:
+          const View * view = sfm_data.views.at(itObs->first).get();
+
+          // Each Residual block takes a point and a camera as input and outputs a 2
+          // dimensional residual. Internally, the cost function stores the observed
+          // image location and compares the reprojection against the observation.
+          ceres::CostFunction* cost_function =
+            IntrinsicsToCostFunction(sfm_data.intrinsics[view->id_intrinsic].get(), itObs->second.x);
+
+          if (cost_function)
+            problem.AddResidualBlock(cost_function,
+              p_LossFunction,
+              &map_intrinsics[view->id_intrinsic][0],
+              &map_poses[view->id_pose][0],
+              itTriangPoint->first.data());
+        }      
+      }
+      else{
+        std::cout<<"Empty str B\n";
+      }
+      
+      // Residuals from views that are used in possible triangulation points
+      for(std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangViews = itDriftPoint->second.begin();
+      itTriangViews != itDriftPoint->second.end(); ++itTriangViews)
+      {
+        std::map<IndexT,Vec2> &views_used = itTriangViews->second;
+      
+        for(std::map<IndexT,Vec2>::iterator itView = views_used.begin();
+        itView != views_used.end(); ++itView)
+        {
+          const View * view = sfm_data.views.at(itView->first).get();
+          ceres::CostFunction* cost_function =
+          IntrinsicsToCostFunction(sfm_data.intrinsics[view->id_intrinsic].get(), itView->second);
+        
+          if (cost_function)
+            problem.AddResidualBlock(cost_function,
+              p_LossFunction,
+              &map_intrinsics[view->id_intrinsic][0],
+              &map_poses[view->id_pose][0],
+              itTriangPoint->first.data());
+        }
+      }
+    }
+      
+      std::cout<<"B\n";
+      
 max_norm_landmarks = 1.0;
-    const double weight_drift_element = 10000.0;
+    const double weight_drift_element = 1000000.0;
+    
+    // If point exists in the structure we want all other possible triangulation points to be close to it
+    if(sfm_data.structure.count(trackId) != 0)
+    {
+      Landmark & landmark = sfm_data.structure[trackId];
+      const Observations & obs = landmark.obs;
+      const IndexT viewId = obs.begin()->first;
+      const View * view_I = sfm_data.GetViews().at(viewId).get();
+      const IntrinsicBase * cam_I = sfm_data.GetIntrinsics().at(view_I->id_intrinsic).get();
+      const Pose3 pose_I = sfm_data.GetPoseOrDie(view_I);
+      max_norm_landmarks = pose_I.depth(landmark.X);
+      
+      for(std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangPoint_A = itDriftPoint->second.begin();
+      itTriangPoint_A != itDriftPoint->second.end(); ++itTriangPoint_A)
+      {
+        ceres::CostFunction* cost_function = ResidualErrorFunctor_Drift_Point::Create(max_norm_landmarks, weight_drift_element);
+        if (cost_function)
+          problem.AddResidualBlock(cost_function,
+            nullptr,
+            landmark.X.data(),
+            itTriangPoint_A->first.data());
+      }
+    }
+    else{
+      std::cout<<"Empty str C\n";
+    }
+    
+      std::cout<<"C\n";
+    // All possible triangulate points have to be close to eachother
     for(std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangPoint_A = itDriftPoint->second.begin();
     itTriangPoint_A != itDriftPoint->second.end(); ++itTriangPoint_A)
     {
+      // Get distance to the first view on the list      
+      const IndexT viewId = itTriangPoint_A->second.begin()->first;
+      const View * view_I = sfm_data.GetViews().at(viewId).get();
+      const IntrinsicBase * cam_I = sfm_data.GetIntrinsics().at(view_I->id_intrinsic).get();
+      const Pose3 pose_I = sfm_data.GetPoseOrDie(view_I);
+      max_norm_landmarks = pose_I.depth(itTriangPoint_A->first);
+      
       std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangPoint_B = itTriangPoint_A;
       std::advance(itTriangPoint_B,1);
       for(;
@@ -566,10 +691,10 @@ max_norm_landmarks = 1.0;
             nullptr,
             itTriangPoint_A->first.data(),
             itTriangPoint_B->first.data());
-
-      //std::cout<<"C: "<<itTriangPoint_A->first<<" :: "<<itTriangPoint_B->first<<"\n";
       }
     }
+    
+      std::cout<<"D\n";
   }
   
 
@@ -686,7 +811,11 @@ max_norm_landmarks = 1.0;
     for(Hash_Map<size_t, std::list<std::pair<Vec3, std::map<IndexT,Vec2> > > >::iterator itDriftPoint = drifted_points.begin();
     itDriftPoint != drifted_points.end(); ++itDriftPoint)
     {
-      const size_t trackId = itDriftPoint->first;
+      const size_t trackId = itDriftPoint->first;      
+      Landmark & landmark = sfm_data_.structure[trackId];
+      landmark.X = itDriftPoint->second.begin()->first;
+      
+      
       std::cout<<"T: "<<trackId<<"\n";
       std::cout<<"L: "<<sfm_data.structure[trackId].X<<"\n";
       for(std::list<std::pair<Vec3, std::map<IndexT,Vec2> > >::iterator itTriangPoint = itDriftPoint->second.begin();

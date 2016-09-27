@@ -96,12 +96,15 @@ struct ResidualErrorFunctor_Drift_Point
 
     // Compute and return the error is the difference between the predicted
     //  and observed position
-    out_residuals[0] = error_3d_x+error_3d_y+error_3d_z;
+    double sqr_dist = (*m_pointcloud_norm_scale)*(*m_pointcloud_norm_scale);
+    out_residuals[0] = error_3d_x/sqr_dist;
+    out_residuals[1] = error_3d_y/sqr_dist;
+    out_residuals[2] = error_3d_z/sqr_dist;
     
     return true;
   }
 
-  static int num_residuals() { return 1; }
+  static int num_residuals() { return 3; }
 
   // Factory to hide the construction of the CostFunction object from
   // the client code.
@@ -115,7 +118,7 @@ struct ResidualErrorFunctor_Drift_Point
     {
       return
         (new ceres::AutoDiffCostFunction
-          <ResidualErrorFunctor_Drift_Point, 1, 3, 3>(
+          <ResidualErrorFunctor_Drift_Point, 3, 3, 3>(
             new ResidualErrorFunctor_Drift_Point(&norm_scale)));
     }
     else
