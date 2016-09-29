@@ -22,14 +22,16 @@
 #include <string>
 #include <vector>
 #include <tuple>
+
+#ifdef OPENMVG_USE_CXX11
 #include <regex>
+#endif
 
 using namespace openMVG;
 using namespace openMVG::cameras;
 using namespace openMVG::exif;
 using namespace openMVG::image;
 using namespace openMVG::sfm;
-
 
 
 /// Check that Kmatrix is a string like "f;0;ppx;0;f;ppy;0;0;1"
@@ -59,32 +61,38 @@ bool checkIntrinsicStringValidity(const std::string & Kmatrix, double & focal, d
 }
 
 
-typedef tuple <string, EINTRINSIC, std::vector<double> > camParam;
+#ifdef OPENMVG_USE_CXX11
+typedef tuple <string, EINTRINSIC, std::vector<double> > Regex_Camera_Parameters;
 /// Check that sCamsParamsRegex is a string like "imgRegex;camType;Kmatrix"
-bool checkCamsRegexStringValidity(const std::string & camsRegex, std::vector<camParam> & vecCamParams)
+bool checkCamsRegexStringValidity(const std::string & camsRegex, std::vector<Regex_Camera_Parameters> & vecCamParams)
 {
   std::vector<std::string> vec_str;
   stl::split(camsRegex, ';', vec_str);
   
   // Start looping through elements
-  for (size_t i = 0; i< vec_str.size();){
+  for (size_t i = 0; i< vec_str.size();)
+  {
     // Go to camera type element (second in the element)
-    camParam camP;
+    Regex_Camera_Parameters regex_camParams;
     EINTRINSIC camType;
     std::stringstream ss;
     
     // Check if there is enough parameters for at least one basic camera
-    if((vec_str.size()-i)<5){
+    if((vec_str.size()-i)<5)
+    {
       std::cerr << "\n Not enough elements in the regex string" << std::endl;
       return false;	  
     }
-    std::get<0>(camP) = vec_str[i];
-    // Cam Type
+    // Set regex string to the camera unit
+    std::get<0>(regex_camParams) = vec_str[i];
+    
+    // Read camera type
     i=i+1;    
     // Check if string is integer
     char * p ;
     std::strtol(vec_str[i].c_str(), &p, 10);
-    if(*p==0){
+    if(*p==0)
+    {
       // Convert to string and EINTRINSIC
       int iCamType;
       ss.str(vec_str[i]);
@@ -95,65 +103,71 @@ bool checkCamsRegexStringValidity(const std::string & camsRegex, std::vector<cam
       std::cerr << "\n Used an invalid not a number character in camera type" << std::endl;
       return false;
     }
-    std::get<1>(camP) = camType;
+    std::get<1>(regex_camParams) = camType;
     
-    // f,ppx,ppy
+    // Read f,ppx,ppy
     i = i+1;
     double param;
-    for(int p_i = 0;p_i<3;p_i++){
-	  std::get<2>(camP).push_back(std::stod(vec_str[i+p_i]));
-	}
-	
-	// Distortion params
+    for(int p_i = 0;p_i<3;p_i++)
+    {
+      std::get<2>(regex_camParams).push_back(std::stod(vec_str[i+p_i]));
+    }
+
+    // Read distortion params
     i = i+3;
-	int n_dist_param = 0;
-	// Check if there is enough elements for distortion parameters
-	switch(camType)
-	{
-	  case PINHOLE_CAMERA:
-	    n_dist_param = 0;
-	  break;
-	  case PINHOLE_CAMERA_RADIAL1:
-	    n_dist_param = 1;
-	  break;
-	  case PINHOLE_CAMERA_RADIAL3:
-	    n_dist_param = 3;
-	  break;
-	  case PINHOLE_CAMERA_BROWN:
-	    n_dist_param = 5;
-	  break;
-	  case PINHOLE_CAMERA_FISHEYE:
-	    n_dist_param = 4;
-	  break;
-	  default:
-	  std::cerr << "Error: unknown camera model: " << (int) camType << std::endl;
-	  return EXIT_FAILURE;
-	}
-	
-	// Check if there is sufficient number of parameters
-	if((vec_str.size()-i)<n_dist_param){
+    int n_dist_param = 0;
+    // Check if there is enough elements in the regex string for distortion parameters
+    switch(camType)
+    {
+      case PINHOLE_CAMERA:
+        n_dist_param = 0;
+      break;
+      case PINHOLE_CAMERA_RADIAL1:
+        n_dist_param = 1;
+      break;
+      case PINHOLE_CAMERA_RADIAL3:
+        n_dist_param = 3;
+      break;
+      case PINHOLE_CAMERA_BROWN:
+        n_dist_param = 5;
+      break;
+      case PINHOLE_CAMERA_FISHEYE:
+        n_dist_param = 4;
+      break;
+      default:
+      std::cerr << "Error: unknown camera model: " << (int) camType << std::endl;
+      return EXIT_FAILURE;
+    }
+
+    // Check if there is sufficient number of parameters
+    if((vec_str.size()-i)<n_dist_param)
+    {
       std::cerr << "\n Not enough elements in the regex string" << std::endl;
       return false;	  
     }
-    for(int p_i = 0;p_i<n_dist_param;p_i++){
-	  std::get<2>(camP).push_back(std::stod(vec_str[i+p_i]));
-	}
-	i=i+n_dist_param;
+    // Add all distortion parameters  
+    for(int p_i = 0;p_i<n_dist_param;p_i++)
+    {
+      std::get<2>(regex_camParams).push_back(std::stod(vec_str[i+p_i]));
+    }
+    i=i+n_dist_param;
     
+    // Add the regex unit to the list
+    vecCamParams.push_back(regex_camParams);
+    
+    // Print the summary of the regex camera unit
     std::cout << "\nCamera model: " << (int) camType << std::endl;
-	std::cout << "F: " << std::get<2>(camP).at(0)<<" PPX: "<< std::get<2>(camP).at(1)<<" PPY: "<< std::get<2>(camP).at(2)<< std::endl;
-	std::cout << "Distortion: ";
-	for(int p_i=0;p_i<n_dist_param;p_i++){
-	  std::cout<<std::get<2>(camP).at(3+p_i) << " ";
-	}
-    std::cout << "\nRegex: "<<std::get<0>(camP) << std::endl;
-    
-    //camP = std::make_tuple(vec_str[i*11],camType,Kmatrix.str());
-    vecCamParams.push_back(camP);
+    std::cout << "F: " << std::get<2>(regex_camParams).at(0)<<" PPX: "<< std::get<2>(regex_camParams).at(1)<<" PPY: "<< std::get<2>(regex_camParams).at(2)<< std::endl;
+    std::cout << "Distortion: ";
+    for(int p_i=0;p_i<n_dist_param;p_i++)
+    {
+      std::cout<<std::get<2>(regex_camParams).at(3+p_i) << " ";
+    }
+    std::cout << "\nRegex: "<<std::get<0>(regex_camParams) << std::endl;
   }
   return true;
 }
-
+#endif
 
 //
 // Create the description of an input image dataset for OpenMVG toolsuite
@@ -166,8 +180,10 @@ int main(int argc, char **argv)
   std::string sImageDir,
     sfileDatabase = "",
     sOutputDir = "",
-    sKmatrix,
-    sCamsParamsRegex;
+    sKmatrix;
+#ifdef OPENMVG_USE_CXX11
+  std::string sCamsParamsRegex;
+#endif
 
   int i_User_camera_model = PINHOLE_CAMERA_RADIAL3;
 
@@ -182,8 +198,9 @@ int main(int argc, char **argv)
   cmd.add( make_option('k', sKmatrix, "intrinsics") );
   cmd.add( make_option('c', i_User_camera_model, "camera_model") );
   cmd.add( make_option('g', b_Group_camera_model, "group_camera_model") );
+#ifdef OPENMVG_USE_CXX11
   cmd.add( make_option('r', sCamsParamsRegex, "regex") );
-
+#endif
   try {
       if (argc == 1) throw std::string("Invalid command line parameter.");
       cmd.process(argc, argv);
@@ -203,7 +220,9 @@ int main(int argc, char **argv)
       << "[-g|--group_camera_model]\n"
       << "\t 0-> each view have it's own camera intrinsic parameters,\n"
       << "\t 1-> (default) view can share some camera intrinsic parameters\n"
+#ifdef OPENMVG_USE_CXX11
       << "[-r|--regex] Regex: \"{regex;camera_model;f;ppx;ppy;{dist param 1;dist param 2;etc.};]{1,n}\"\n"
+#endif
       << std::endl;
 
       std::cerr << s << std::endl;
@@ -219,7 +238,9 @@ int main(int argc, char **argv)
             << "--intrinsics " << sKmatrix << std::endl
             << "--camera_model " << i_User_camera_model << std::endl
             << "--group_camera_model " << b_Group_camera_model << std::endl
+#ifdef OPENMVG_USE_CXX11
             << "--regex " << sCamsParamsRegex << std::endl;
+#endif
 
   // Expected properties for each image
   double width = -1, height = -1, focal = -1, ppx = -1,  ppy = -1;
@@ -246,14 +267,15 @@ int main(int argc, char **argv)
       return EXIT_FAILURE;
     }
   }
-
-  std::vector<camParam> vecCamParams;
+#ifdef OPENMVG_USE_CXX11
+  std::vector<Regex_Camera_Parameters> vecCamParams;
   if(sCamsParamsRegex.size()>0){
     if(!checkCamsRegexStringValidity(sCamsParamsRegex,vecCamParams)){
       std::cerr << "\nInvalid Cameras parameters regex string input" << std::endl;
       return EXIT_FAILURE;
     }
   }
+#endif
 
   if (sKmatrix.size() > 0 &&
     !checkIntrinsicStringValidity(sKmatrix, focal, ppx, ppy) )
@@ -334,38 +356,38 @@ int main(int argc, char **argv)
       exifReader->doesHaveExifInfo()
       && !exifReader->getModel().empty();
 
-    // Check if image fits any regex patterns
+#ifdef OPENMVG_USE_CXX11
     bool bImageMatched = false;
+    // Check if image fits any regex patterns
     std::vector<double> cam_image_param;
-    if(vecCamParams.size()>0){
+    if(vecCamParams.size()>0)
+    {
       // Loop through regex patterns
-      for(std::vector<camParam>::const_iterator iter_cParam = vecCamParams.begin();iter_cParam!=vecCamParams.end(); ++iter_cParam){
+      for(std::vector<Regex_Camera_Parameters>::const_iterator iter_cParam = vecCamParams.begin();iter_cParam!=vecCamParams.end(); ++iter_cParam)
+      {
         const std::regex imgNameRegex(std::get<0>(*iter_cParam),std::regex_constants::extended);
         std::smatch smBaseCamMatch;
         // Check if it match the regex
-        if (std::regex_match(*iter_image, smBaseCamMatch, imgNameRegex)) {
+        if (std::regex_match(*iter_image, smBaseCamMatch, imgNameRegex))
+        {
           e_User_camera_model = EINTRINSIC(std::get<1>(*iter_cParam));
-          // Get focal, ppx, ppy
+          // Get intrinsic parameters of the model
           cam_image_param = std::get<2>(*iter_cParam);
           bImageMatched = true;
           break;
-          /*if (!checkIntrinsicStringValidity(std::get<2>(*iter_cParam), focal, ppx, ppy)){
-            bImageMatched = false;
-            continue;
-          }
-          bImageMatched = true;
-          // Set the desired camera model
-          e_User_camera_model = EINTRINSIC(std::get<1>(*iter_cParam));
-          break;*/
         }
       }
     }
+#endif
 
     // Build intrinsic parameter related to the view
     std::shared_ptr<IntrinsicBase> intrinsic (NULL);
-    
+
+#ifdef OPENMVG_USE_CXX11    
     // Image has not been matched with regex
-    if(!bImageMatched){
+    if(!bImageMatched)
+    {
+#endif
       // Consider the case where the focal is provided manually
       if ( !bHaveValidExifMetadata || focal_pixels != -1)
       {
@@ -441,11 +463,13 @@ int main(int argc, char **argv)
             return EXIT_FAILURE;
         }
       }
+#ifdef OPENMVG_USE_CXX11
     }
-    else{
-	  focal = cam_image_param.at(0);
-	  ppx = cam_image_param.at(1);
-	  ppy = cam_image_param.at(2);
+    else
+    {
+      focal = cam_image_param.at(0);
+      ppx = cam_image_param.at(1);
+      ppy = cam_image_param.at(2);
       if (focal > 0 && ppx > 0 && ppy > 0 && width > 0 && height > 0)
       {
         // Create the desired camera type
@@ -476,10 +500,8 @@ int main(int argc, char **argv)
             return EXIT_FAILURE;
         }
       }
-		
-		
-	}
-
+    }
+#endif
 
     // Build the view corresponding to the image
     View v(*iter_image, views.size(), views.size(), views.size(), width, height);
