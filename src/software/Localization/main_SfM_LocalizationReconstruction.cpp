@@ -19,6 +19,7 @@
 #include "openMVG/sfm/sfm_data_BA_ceres.hpp"
 #include "openMVG/sfm/sfm_data_BA_ceres_camera_functor.hpp"
 #include "openMVG/cameras/Cameras_Common_command_line_helper.hpp"
+#include "openMVG/sfm/sfm_data_filters.hpp"
 
 using namespace openMVG;
 using namespace openMVG::sfm;
@@ -314,6 +315,15 @@ bool AdjustReconstructionWithSomeFixedCameras
         intrinsic_it.second.get()->updateFromParams(vec_params);
       }
     }
+    
+    size_t nbOutliers_residualErr;
+    size_t nbOutliers_angleErr;
+    do
+    {
+      nbOutliers_residualErr = RemoveOutliers_PixelResidualError(sfm_data, 4.0, 2);
+      nbOutliers_angleErr = RemoveOutliers_AngleError(sfm_data, 2.0);
+    }while((nbOutliers_residualErr + nbOutliers_angleErr) > 0);
+    
     return true;
   }
 }
@@ -659,6 +669,7 @@ int main(int argc, char **argv)
     // Compute the registration:
     Similarity3 sim;
     std::vector<Vec3> X_B, X_B_A;
+    // Add original and new estimated poses
     for (const auto & view_it : poses_estimated)
     {
       const IndexT view_id = view_it.first;    
@@ -666,44 +677,95 @@ int main(int argc, char **argv)
       X_B_A.push_back(view_it.second.center() );
     }
     
-    const Mat X_B_Mat = Eigen::Map<Mat>(X_B[0].data(),3, X_B.size());
-    const Mat X_B_A_Mat = Eigen::Map<Mat>(X_B_A[0].data(),3, X_B_A.size());
-    kernel::Similarity3_Kernel kernel(X_B_Mat, X_B_A_Mat);
-    const double lmeds_median = openMVG::robust::LeastMedianOfSquares(kernel, &sim);
-    if (lmeds_median != std::numeric_limits<double>::max())
-    {
-      
-      // Compute the median residual error once the registration is applied
-      for (Vec3 & pos : X_B) // Transform B poses for residual computation
-      {
-        pos = sim(pos);
-      }
-      Vec residual = (Eigen::Map<Mat3X>(X_B[0].data(), 3, X_B.size()) - Eigen::Map<Mat3X>(X_B_A[0].data(), 3, X_B_A.size())).colwise().norm();
-      std::sort(residual.data(), residual.data() + residual.size());
-      dEstimatedPose_Outlier_Threshold = residual(residual.size()/2) * dPoseResidualMedianMultiply;
-            
-      // Remove poses with large residual error (probable outliers)  
-      Hash_Map<IndexT, Pose3>::iterator pose_it = poses_estimated.begin();
-      while(pose_it != poses_estimated.end())
-      {
-        IndexT view_id = pose_it->first; 
-        double residual = (sim(sfm_data_B.GetPoses().at(view_id).center()) - pose_it->second.center()).norm();
-        if(residual > dEstimatedPose_Outlier_Threshold)
-        {
-          pose_it = poses_estimated.erase(pose_it);
-        }
-        else{
-          // Enforce the information on the reconstruction
-          sfm_data_B.poses[view_id] = pose_it->second;
-          ++pose_it;
-        }
-      }
-    }
-    else
+    Mat X_B_Mat = Eigen::Map<Mat>(X_B[0].data(),3, X_B.size());
+    Mat X_B_A_Mat = Eigen::Map<Mat>(X_B_A[0].data(),3, X_B_A.size());
+    kernel::Similarity3_Kernel kernel_noisy(X_B_Mat, X_B_A_Mat);
+    
+    // Estimate similarty transformation between centers of cameras
+    double lmeds_median = openMVG::robust::LeastMedianOfSquares(kernel_noisy, &sim);
+    
+    std::cout<<"Noisy similarity transform median: "<<lmeds_median<<"\n";
+    if (lmeds_median == std::numeric_limits<double>::max())
     {
       std::cerr << "Second reconstruction cannot be accurately localized!"<< std::endl
       <<"\t - Inaccurate localization of views"<< std::endl;
       return EXIT_FAILURE;
+    }
+    
+    // Compute the median residual error once the registration is applied
+    for (Vec3 & pos : X_B) // Transform B poses for residual computation
+    {
+      pos = sim(pos);
+    }
+    Vec residual = (Eigen::Map<Mat3X>(X_B[0].data(), 3, X_B.size()) - Eigen::Map<Mat3X>(X_B_A[0].data(), 3, X_B_A.size())).colwise().norm();
+    std::sort(residual.data(), residual.data() + residual.size());
+    dEstimatedPose_Outlier_Threshold = residual(residual.size()/2) * dPoseResidualMedianMultiply;
+          
+    // Remove poses with large residual error (probable outliers)  
+    Hash_Map<IndexT, Pose3>::iterator pose_it = poses_estimated.begin();
+    while(pose_it != poses_estimated.end())
+    {
+      IndexT view_id = pose_it->first; 
+      double residual = (sim(sfm_data_B.GetPoses().at(view_id).center()) - pose_it->second.center()).norm();
+      if(residual > dEstimatedPose_Outlier_Threshold)
+      {
+        pose_it = poses_estimated.erase(pose_it);
+      }
+      else
+      {
+        ++pose_it;
+      }
+    }
+
+    std::cout << " Total poses after outlier removal : " << poses_estimated.size() << std::endl;
+
+    // Recompute similarity transformation
+    X_B.clear();
+    X_B_A.clear();
+    for (const auto & view_it : poses_estimated)
+    {
+      const IndexT view_id = view_it.first;    
+      X_B.push_back( sfm_data_B.GetPoses().at(view_id).center() );
+      X_B_A.push_back(view_it.second.center() );
+    }
+    
+    X_B_Mat = Eigen::Map<Mat>(X_B[0].data(),3, X_B.size());
+    X_B_A_Mat = Eigen::Map<Mat>(X_B_A[0].data(),3, X_B_A.size());
+    kernel::Similarity3_Kernel kernel(X_B_Mat, X_B_A_Mat);
+    lmeds_median = openMVG::robust::LeastMedianOfSquares(kernel, &sim);
+    
+    if (lmeds_median == std::numeric_limits<double>::max())
+    {
+      std::cerr << "Second reconstruction cannot be accurately localized!"<< std::endl
+      <<"\t - Inaccurate localization of views"<< std::endl;
+      return EXIT_FAILURE;
+    }
+    
+    std::cout<<"Similarity transform median: "<<lmeds_median<<"\n";
+    
+    // Go through poses
+    // the ones with good localization use it otherwise approximate with similarity
+    
+    for (auto & pose_it : sfm_data_B.poses)
+    {
+      IndexT indexPose = pose_it.first;
+      if(poses_estimated.count(indexPose) != 0)
+      {
+        sfm_data_B.poses[indexPose] = poses_estimated[indexPose];
+      }
+      else
+      {
+        sfm_data_B.poses[indexPose] = sim(sfm_data_B.poses[indexPose]);
+      }
+    }
+      
+    for (auto & landmark_it : sfm_data_B.structure)
+    {
+      landmark_it.second.X = sim(landmark_it.second.X);
+    }
+    for (auto & landmark_it : sfm_data_B.control_points)
+    {
+      landmark_it.second.X = sim(landmark_it.second.X);
     }
   }
   else
