@@ -322,14 +322,14 @@ bool AdjustReconstructionWithSomeFixedCameras
 
 
 // ----------------------------------------------------
-// Multiple Images localization from an existing reconstruction
+// Localization of the SfM reconstruction in another SfM reconstruction (and alignment)
 // ----------------------------------------------------
 int main(int argc, char **argv)
 {
   using namespace std;
   std::cout << std::endl
     << "-----------------------------------------------------------\n"
-    << "  Images localization in an existing SfM reconstruction:\n"
+    << "  Localization of the SfM reconstruction in another SfM reconstruction (and alignment):\n"
     << "-----------------------------------------------------------\n"
     << std::endl;
 
@@ -520,13 +520,8 @@ int main(int argc, char **argv)
   
   // Load the SfM_Data region's views
   std::shared_ptr<Regions_Provider> regions_provider_A = std::make_shared<Regions_Provider>();
-  std::shared_ptr<Regions_Provider> regions_provider_B = std::make_shared<Regions_Provider>();
   
   if (!regions_provider_A->load(sfm_data_A, sMatchesDir_A, regions_type_A)) {
-    std::cerr << std::endl << "Invalid regions." << std::endl;
-    return EXIT_FAILURE;
-  }
-  if (!regions_provider_B->load(sfm_data_B, sMatchesDir_B, regions_type_B)) {
     std::cerr << std::endl << "Invalid regions." << std::endl;
     return EXIT_FAILURE;
   }
