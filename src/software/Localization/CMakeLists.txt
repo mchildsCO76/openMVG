@@ -2,8 +2,8 @@
 ###
 # Localize images in an existing SfM reconstruction
 ###
-ADD_EXECUTABLE(openMVG_main_SfM_Localization main_SfM_Localization.cpp)
-TARGET_LINK_LIBRARIES(openMVG_main_SfM_Localization
+ADD_EXECUTABLE(openMVG_main_SfM_LocalizationImage main_SfM_LocalizationImage.cpp)
+TARGET_LINK_LIBRARIES(openMVG_main_SfM_LocalizationImage
   openMVG_system
   openMVG_image
   openMVG_features
@@ -14,8 +14,8 @@ TARGET_LINK_LIBRARIES(openMVG_main_SfM_Localization
   )
   
 
-ADD_EXECUTABLE(openMVG_main_SfM_ReconstructionLocalization main_SfM_ReconstructionLocalization.cpp)
-TARGET_LINK_LIBRARIES(openMVG_main_SfM_ReconstructionLocalization
+ADD_EXECUTABLE(openMVG_main_SfM_LocalizationReconstruction main_SfM_LocalizationReconstruction.cpp)
+TARGET_LINK_LIBRARIES(openMVG_main_SfM_LocalizationReconstruction
   openMVG_system
   openMVG_image
   openMVG_features
@@ -26,7 +26,7 @@ TARGET_LINK_LIBRARIES(openMVG_main_SfM_ReconstructionLocalization
   )
   
 # Installation rules
-SET_PROPERTY(TARGET openMVG_main_SfM_Localization PROPERTY FOLDER OpenMVG/software)
-INSTALL(TARGETS openMVG_main_SfM_Localization DESTINATION bin/)
-SET_PROPERTY(TARGET openMVG_main_SfM_ReconstructionLocalization PROPERTY FOLDER OpenMVG/software)
-INSTALL(TARGETS openMVG_main_SfM_ReconstructionLocalization DESTINATION bin/)
+SET_PROPERTY(TARGET openMVG_main_SfM_LocalizationImage PROPERTY FOLDER OpenMVG/software)
+INSTALL(TARGETS openMVG_main_SfM_LocalizationImage DESTINATION bin/)
+SET_PROPERTY(TARGET openMVG_main_SfM_LocalizationReconstruction PROPERTY FOLDER OpenMVG/software)
+INSTALL(TARGETS openMVG_main_SfM_LocalizationReconstruction DESTINATION bin/)

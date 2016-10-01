@@ -30,9 +30,8 @@ using namespace openMVG::geometry;
 
 #include <cstdlib>
 
-// 
-
-bool AdjustReconstructionWithFixedCameras
+//  Adjust camera poses (ones that are not used in the localization)  
+bool AdjustReconstructionWithSomeFixedCameras
 (
   SfM_Data & sfm_data,     // the SfM scene to refine
   const cameras::Intrinsic_Parameter_Type &intrinsic_refinement_options,
@@ -346,6 +345,10 @@ int main(int argc, char **argv)
   double dPoseResidualMedianMultiply = 10;
   std::string sIntrinsic_refinement_options = "ADJUST_ALL";
 
+#ifdef OPENMVG_USE_OPENMP
+  int iNumThreads = 0;
+#endif
+
   cmd.add( make_option('i', sSfM_Data_Filename_A, "input_file_A") );
   cmd.add( make_option('j', sSfM_Data_Filename_B, "input_file_B") );
   cmd.add( make_option('a', sMatchesDir_A, "match_dir_A") );
@@ -356,6 +359,9 @@ int main(int argc, char **argv)
   cmd.add( make_option('r', dMaxResidualError, "residual_error"));
   cmd.add( make_option('d', dPoseResidualMedianMultiply, "pose_residual_error"));
   cmd.add( make_option('f', sIntrinsic_refinement_options, "refineIntrinsics") );
+#ifdef OPENMVG_USE_OPENMP
+  cmd.add( make_option('n', iNumThreads, "numThreads") );
+#endif
 
   try {
     if (argc == 1) throw std::string("Invalid parameter.");
@@ -390,6 +396,9 @@ int main(int argc, char **argv)
       <<      "\t\t-> refine the focal length & the distortion coefficient(s) (if any)\n"
       << "\t ADJUST_PRINCIPAL_POINT|ADJUST_DISTORTION\n"
       <<      "\t\t-> refine the principal point position & the distortion coefficient(s) (if any)\n"
+#ifdef OPENMVG_USE_OPENMP
+    << "[-n|--numThreads] number of thread(s)\n"
+#endif
     << std::endl;
 
     std::cerr << s << std::endl;
@@ -561,11 +570,19 @@ int main(int argc, char **argv)
 
   // Estimated poses of views in the reconstruction B
   Hash_Map<IndexT, Pose3> poses_estimated;
-  
-  // For each pose in reconstruction B try to localize
-  for (const auto & pose_it : sfm_data_B.poses)
+
+#ifdef OPENMVG_USE_OPENMP
+  const unsigned int nb_max_thread = (iNumThreads == 0) ? 0 : omp_get_max_threads();
+  omp_set_num_threads(nb_max_thread);
+  #pragma omp parallel for schedule(dynamic)
+#endif
+  for (int i = 0; i < static_cast<int>(sfm_data_B.poses.size()); ++i)
   {
-    const IndexT indexPose_B = pose_it.first; // Also view id
+    // For each pose in reconstruction B try to localize
+    Poses::const_iterator pose_it = sfm_data_B.poses.begin();
+    std::advance(pose_it, i);
+    
+    const IndexT indexPose_B = pose_it->first; // Also view id
     const View * view_B = sfm_data_B.views.at(indexPose_B).get();
     
     std::unique_ptr<Regions> query_regions(regions_type_B->EmptyClone());
@@ -628,8 +645,11 @@ int main(int argc, char **argv)
       {
         std::cerr << "Refining pose for image " << view_B->s_Img_path << " failed." << std::endl;
       }
-
+      
       // Save the new pose
+#ifdef OPENMVG_USE_OPENMP
+      #pragma omp critical
+#endif
       poses_estimated[view_B->id_view] = pose_estimated;
     }
   }
@@ -710,7 +730,6 @@ int main(int argc, char **argv)
   std::cout << " Total poses after outlier removal : " << poses_estimated.size() << "/" << sfm_data_B.poses.size() << endl;
   
   
-  
   // Perform BA to compensate for new changes in poses and intrinsics
   
   // If we use camera params of first reconstruction the intrinsics are fixed
@@ -718,10 +737,10 @@ int main(int argc, char **argv)
   {
     sIntrinsic_refinement_options = "NONE";
   }
-  const cameras::Intrinsic_Parameter_Type intrinsic_refinement_options = cameras::StringTo_Intrinsic_Parameter_Type(sIntrinsic_refinement_options);}
-    
-  //return bundle_adjustment_obj.Adjust(sfm_data_, ba_refine_options);
-  AdjustReconstructionWithFixedCameras(sfm_data_B, intrinsic_refinement_options, poses_estimated);
+  const cameras::Intrinsic_Parameter_Type intrinsic_refinement_options = cameras::StringTo_Intrinsic_Parameter_Type(sIntrinsic_refinement_options);
+  
+  // Adjust the cameras that were not sucessfully matched and the structure
+  AdjustReconstructionWithSomeFixedCameras(sfm_data_B, intrinsic_refinement_options, poses_estimated);
   
   
   // Export the found camera position in a ply.
