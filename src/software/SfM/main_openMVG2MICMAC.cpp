@@ -363,12 +363,6 @@ bool exportPOINTSToMICMAC(
 
         for (const std::pair< Observation, Observation >& point_pair : obs_vector)
         {
-          // Write the feature pair
-          file_img_A_B.write(reinterpret_cast<const char *>(&num_2),sizeof(num_2));
-          file_img_A_B.write(reinterpret_cast<const char *>(&num_1),sizeof(num_1));
-          file_img_B_A.write(reinterpret_cast<const char *>(&num_2),sizeof(num_2));
-          file_img_B_A.write(reinterpret_cast<const char *>(&num_1),sizeof(num_1));
-
           // Undistort point locations          
           const double im_A_x =  cam_A->get_ud_pixel(point_pair.first.x)(0);
           const double im_A_y =  cam_A->get_ud_pixel(point_pair.first.x)(1);
@@ -377,6 +371,12 @@ bool exportPOINTSToMICMAC(
           if( 0 <= im_A_x && im_A_x < viewA_width && 0 <= im_A_y && im_A_y < viewA_height &&
               0 <= im_B_x && im_B_x < viewB_width && 0 <= im_B_y && im_B_y < viewB_height)
           {
+            // Write the feature pair
+            file_img_A_B.write(reinterpret_cast<const char *>(&num_2),sizeof(num_2));
+            file_img_A_B.write(reinterpret_cast<const char *>(&num_1),sizeof(num_1));
+            file_img_B_A.write(reinterpret_cast<const char *>(&num_2),sizeof(num_2));
+            file_img_B_A.write(reinterpret_cast<const char *>(&num_1),sizeof(num_1));
+
             // Save to files
             file_img_A_B.write(reinterpret_cast<const char *>(&im_A_x),sizeof(im_A_x));
             file_img_A_B.write(reinterpret_cast<const char *>(&im_A_y),sizeof(im_A_y));
