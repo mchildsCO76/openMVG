@@ -300,6 +300,8 @@ bool exportPOINTSToMICMAC(
 
       IndexT view_A_id = view_A_iter->first;
       View * view_A = sfm_data.GetViews().at(view_A_id).get();
+      const IndexT viewA_width = view_A->ui_width;
+      const IndexT viewA_height = view_A->ui_height;
       const IntrinsicBase * cam_A = sfm_data.GetIntrinsics().find(view_A->id_intrinsic)->second.get();
 
       Hash_Map<IndexT, std::vector<std::pair<Observation,Observation> > > obs_per_view_A = view_A_iter->second;
@@ -308,6 +310,8 @@ bool exportPOINTSToMICMAC(
 
         IndexT view_B_id = view_B_iter->first;
         View * view_B = sfm_data.GetViews().at(view_B_id).get();
+        const IndexT viewB_width = view_B->ui_width;
+        const IndexT viewB_height = view_B->ui_height;
         const IntrinsicBase * cam_B = sfm_data.GetIntrinsics().find(view_B->id_intrinsic)->second.get();
 
         std::vector<std::pair<Observation,Observation> >  obs_vector =  view_B_iter->second;
@@ -328,9 +332,25 @@ bool exportPOINTSToMICMAC(
           stlplus::folder_create(sImgA_folder_path);
         }
 
-        int n_obs = obs_vector.size();
-        int num_2 = 2;
-        double num_1 = 1;
+        const int num_2 = 2;
+        const double num_1 = 1;
+        int n_obs = 0;
+
+
+        // Determine how many points are in the boundaries of the undistorted image
+        for (const std::pair< Observation, Observation >& point_pair : obs_vector)
+        {
+          const double im_A_x =  cam_A->get_ud_pixel(point_pair.first.x)(0);
+          const double im_A_y =  cam_A->get_ud_pixel(point_pair.first.x)(1);
+          const double im_B_x =  cam_B->get_ud_pixel(point_pair.second.x)(0);
+          const double im_B_y =  cam_B->get_ud_pixel(point_pair.second.x)(1);
+          
+          if( 0 <= im_A_x && im_A_x < viewA_width && 0 <= im_A_y && im_A_y < viewA_height &&
+              0 <= im_B_x && im_B_x < viewB_width && 0 <= im_B_y && im_B_y < viewB_height)
+          {
+            n_obs++;
+          }
+        }
 
 
         // Write header to each file
@@ -354,17 +374,20 @@ bool exportPOINTSToMICMAC(
           const double im_A_y =  cam_A->get_ud_pixel(point_pair.first.x)(1);
           const double im_B_x =  cam_B->get_ud_pixel(point_pair.second.x)(0);
           const double im_B_y =  cam_B->get_ud_pixel(point_pair.second.x)(1);
+          if( 0 <= im_A_x && im_A_x < viewA_width && 0 <= im_A_y && im_A_y < viewA_height &&
+              0 <= im_B_x && im_B_x < viewB_width && 0 <= im_B_y && im_B_y < viewB_height)
+          {
+            // Save to files
+            file_img_A_B.write(reinterpret_cast<const char *>(&im_A_x),sizeof(im_A_x));
+            file_img_A_B.write(reinterpret_cast<const char *>(&im_A_y),sizeof(im_A_y));
+            file_img_A_B.write(reinterpret_cast<const char *>(&im_B_x),sizeof(im_B_x));
+            file_img_A_B.write(reinterpret_cast<const char *>(&im_B_y),sizeof(im_B_y));
 
-          // Save to files
-          file_img_A_B.write(reinterpret_cast<const char *>(&im_A_x),sizeof(im_A_x));
-          file_img_A_B.write(reinterpret_cast<const char *>(&im_A_y),sizeof(im_A_y));
-          file_img_A_B.write(reinterpret_cast<const char *>(&im_B_x),sizeof(im_B_x));
-          file_img_A_B.write(reinterpret_cast<const char *>(&im_B_y),sizeof(im_B_y));
-
-          file_img_B_A.write(reinterpret_cast<const char *>(&im_B_x),sizeof(im_B_x));
-          file_img_B_A.write(reinterpret_cast<const char *>(&im_B_y),sizeof(im_B_y));
-          file_img_B_A.write(reinterpret_cast<const char *>(&im_A_x),sizeof(im_A_x));
-          file_img_B_A.write(reinterpret_cast<const char *>(&im_A_y),sizeof(im_A_y));
+            file_img_B_A.write(reinterpret_cast<const char *>(&im_B_x),sizeof(im_B_x));
+            file_img_B_A.write(reinterpret_cast<const char *>(&im_B_y),sizeof(im_B_y));
+            file_img_B_A.write(reinterpret_cast<const char *>(&im_A_x),sizeof(im_A_x));
+            file_img_B_A.write(reinterpret_cast<const char *>(&im_A_y),sizeof(im_A_y));
+          }
         }
         file_img_A_B.close();
         file_img_B_A.close();
