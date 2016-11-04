@@ -119,6 +119,14 @@ TARGET_LINK_LIBRARIES(openMVG_main_ComputeSfM_DataColor
   stlplus
   )
 
+ADD_EXECUTABLE(openMVG_main_IncrementalSfM2SLAMPP main_IncrementalSfM2SLAMPP.cpp)
+TARGET_LINK_LIBRARIES(openMVG_main_IncrementalSfM2SLAMPP
+  openMVG_system
+  openMVG_image
+  openMVG_features
+  openMVG_sfm
+  stlplus
+  )
 # Installation rules
 SET_PROPERTY(TARGET openMVG_main_IncrementalSfM PROPERTY FOLDER OpenMVG/software)
 INSTALL(TARGETS openMVG_main_IncrementalSfM DESTINATION bin/)
@@ -132,6 +140,8 @@ SET_PROPERTY(TARGET openMVG_main_ComputeStructureFromKnownPoses PROPERTY FOLDER 
 INSTALL(TARGETS openMVG_main_ComputeStructureFromKnownPoses DESTINATION bin/)
 SET_PROPERTY(TARGET openMVG_main_ComputeSfM_DataColor PROPERTY FOLDER OpenMVG/software)
 INSTALL(TARGETS openMVG_main_ComputeSfM_DataColor DESTINATION bin/)
+SET_PROPERTY(TARGET openMVG_main_IncrementalSfM2SLAMPP PROPERTY FOLDER OpenMVG/software)
+INSTALL(TARGETS openMVG_main_IncrementalSfM2SLAMPP DESTINATION bin/)
 
 ###
 # SfM tools to visualize feature tracking data
