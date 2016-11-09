@@ -39,7 +39,7 @@ struct SlamPP_Data
 
   /// Export format
   int iOutputVertexType = 0; //0 - SE3; 1 - Sim3
-  bool iOutputLandmarkType = 0; // 0 - Eucliean (world); 1 - inverse depth (reference)
+  int iOutputLandmarkType = 0; // 0 - Eucliean (world); 1 - inverse depth (reference)
 
   std::string slamPP_dataset_filename;
   std::ofstream slamPP_DatasetFile;
