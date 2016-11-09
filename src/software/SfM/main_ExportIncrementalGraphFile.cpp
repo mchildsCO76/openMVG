@@ -59,8 +59,8 @@ bool computeIndexFromImageNames(
 int main(int argc, char **argv)
 {
   using namespace std;
-  std::cout << "Sequential/Incremental reconstruction" << std::endl
-            << " Perform incremental SfM (Initial Pair Essential + Resection)." << std::endl
+  std::cout << "Export incremental graph file" << std::endl
+            << " " << std::endl
             << std::endl;
 
   CmdLine cmd;
@@ -72,11 +72,14 @@ int main(int argc, char **argv)
   std::string sIntrinsic_refinement_options = "ADJUST_ALL";
   int i_User_camera_model = PINHOLE_CAMERA_RADIAL3;
 
-  std::string slamPP_data_filename;
+  std::string graphfile_filename;
   bool bPerformGlobalBA = false;
-  bool bPerformLocalPoseBA = true;
+  bool bPerformLocalPoseBA = false;
   bool bPerformGlobalOutlierRemoval = false;
   bool bPerformConsistencyCheck = false;
+
+  int iCamVertexType = 0;
+  int iLandmarkVertexType = 0;
 
   cmd.add( make_option('i', sSfM_Data_Filename, "input_file") );
   cmd.add( make_option('m', sMatchesDir, "matchdir") );
@@ -86,11 +89,17 @@ int main(int argc, char **argv)
   cmd.add( make_option('c', i_User_camera_model, "camera_model") );
   cmd.add( make_option('f', sIntrinsic_refinement_options, "refineIntrinsics") );
 
-  cmd.add( make_option('s', slamPP_data_filename, "slampp_data_file") );
+  cmd.add( make_option('s', graphfile_filename, "graph_file") );
+
+  cmd.add( make_option('u', iCamVertexType, "camera_vertex_type") );
+  cmd.add( make_option('v', iLandmarkVertexType, "landmark_vertex_type") );
+
   cmd.add( make_option('g', bPerformGlobalBA, "globalBA") );
   cmd.add( make_option('l', bPerformLocalPoseBA, "localPoseBA") );
   cmd.add( make_option('e', bPerformGlobalOutlierRemoval, "global_outlier_removal") );
   cmd.add( make_option('v', bPerformConsistencyCheck, "consistency_check") );
+
+
 
   try {
     if (argc == 1) throw std::string("Invalid parameter.");
@@ -121,11 +130,17 @@ int main(int argc, char **argv)
       <<      "\t\t-> refine the focal length & the distortion coefficient(s) (if any)\n"
       << "\t ADJUST_PRINCIPAL_POINT|ADJUST_DISTORTION\n"
       <<      "\t\t-> refine the principal point position & the distortion coefficient(s) (if any)\n"
-      << "[-s|--slampp_data_file] path where Slam++ incremental dataset will be stored\n"
-      << "[-g|--globalBA] Perform global BA after each iteration (default: false)]\n"
-      << "[-l|--localPoseBA] Perform local BA of each camera pose added (default: true)]\n"
-      << "[-e|--global_outlier_removal] Perform global outlier removal after global BA (default: false)]\n"
-      << "[-v|--consistency_check] After each interation perform check if loggind is correct (default: false)]\n"
+    << "[-s|--graph_file] path where incremental graphfile will be stored\n"
+    << "[-u|--camera_vertex_type] Type of exported camera vertex (in graph file):\n"
+      << "\t 0: SE(3) in global reference frame (default)\n"
+      << "\t 1: Sim(3) in global reference frame \n"
+    << "[-v|--landmark_vertex_type] Type of exported landmark vertex (in graph file):\n"
+      << "\t 0: XYZ in global reference frame (default) \n"
+      << "\t 1: Inverse depth in relative reference frame (second observing camera is reference) \n"
+    << "[-g|--globalBA] Perform global BA after each iteration (default: false)]\n"
+    << "[-l|--localPoseBA] Perform local BA of each camera pose added (default: false)]\n"
+    << "[-e|--global_outlier_removal] Perform global outlier removal after global BA (default: false)]\n"
+    << "[-v|--consistency_check] After each interation perform check if loggind is correct (default: false)]\n"
     << std::endl;
 
     std::cerr << s << std::endl;
@@ -212,15 +227,16 @@ int main(int argc, char **argv)
   sfmEngine.SetUnknownCameraType(EINTRINSIC(i_User_camera_model));
 
   // Set SlamPP logging data
-  if (slamPP_data_filename.empty())
+  if (graphfile_filename.empty())
   {
-    slamPP_data_filename = stlplus::create_filespec(sOutDir, "SlamPP_DS", ".txt");
+    graphfile_filename = stlplus::create_filespec(sOutDir, "GraphFile", ".txt");
   }
-  sfmEngine.setSlamPPOutputFile(slamPP_data_filename);
-  bool bPerformInitialTwoViewBA = true; // Not yet implemented
+  sfmEngine.setGraphFileOutputFile(graphfile_filename);
+  bool bPerformInitialTwoViewBA = bPerformLocalPoseBA; // Not yet implemented
   sfmEngine.setBAOptimizations(bPerformGlobalBA, bPerformInitialTwoViewBA, bPerformLocalPoseBA);
   sfmEngine.setConsistencyCheck(bPerformConsistencyCheck);
   sfmEngine.setGlobalOutlierRemoval(bPerformGlobalOutlierRemoval);
+  sfmEngine.setGraphVertexOutputTypes(iCamVertexType,iLandmarkVertexType);
 
   // Handle Initial pair parameter
   if (!initialPairString.first.empty() && !initialPairString.second.empty())

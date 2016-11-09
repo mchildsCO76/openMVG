@@ -25,6 +25,8 @@
 
 #include "third_party/htmlDoc/htmlDoc.hpp"
 #include "third_party/progress/progress.hpp"
+#include "ceres/rotation.h"
+#include <lemon/bfs.h>
 
 #ifdef _MSC_VER
 #pragma warning( once : 4267 ) //warning C4267: 'argument' : conversion from 'size_t' to 'const int', possible loss of data
@@ -125,9 +127,10 @@ bool IncrementalSfMReconstructionEngine::Process() {
     return false;
 
   // Initial Incremental step
-  ExportIncrementToTextFile_SlamPP();
+  ExportIncrementToGraphFile_SlamPP();
   resetIncrementStep();
-  checkIncrementalConsistency();
+  if (performConsistencyCheck_)
+    checkIncrementalConsistency();
 
   // Compute robust Resection of remaining images
   // - group of images will be selected and resection + scene completion will be tried
@@ -163,7 +166,7 @@ bool IncrementalSfMReconstructionEngine::Process() {
           eraseUnstablePosesAndObservations(sfm_data_);
       }
       
-      ExportIncrementToTextFile_SlamPP();
+      ExportIncrementToGraphFile_SlamPP();
       resetIncrementStep();
 
       if (performConsistencyCheck_)
@@ -581,7 +584,22 @@ bool IncrementalSfMReconstructionEngine::MakeInitialPair3D(const Pair & current_
   // Bound min precision at 1 pix.
   relativePose_info.found_residual_precision = std::max(relativePose_info.found_residual_precision, 1.0);
 
+  map_ACThreshold_.insert(std::make_pair(I, relativePose_info.found_residual_precision));
+  map_ACThreshold_.insert(std::make_pair(J, relativePose_info.found_residual_precision));
+  set_remaining_view_id_.erase(view_I->id_view);
+  set_remaining_view_id_.erase(view_J->id_view);
+
+  // Log data for incremental SfM
+  increment_camera_.first.emplace(view_I->id_view);
+  increment_camera_.first.emplace(view_J->id_view);
+  // Add parent information to the graph (second camera is the parent of first)
+  slam_pp_data.addCamWithParentToGraph(view_J->id_view,std::numeric_limits<IndexT>::max());
+  slam_pp_data.addCamWithParentToGraph(view_I->id_view,view_J->id_view);
+
+
+
   const bool bRefine_using_BA = performInitialTwoViewBA_;
+
   if (bRefine_using_BA)
   {
     // Refine the defined scene
@@ -623,6 +641,7 @@ bool IncrementalSfMReconstructionEngine::MakeInitialPair3D(const Pair & current_
     }
     Save(tiny_scene, stlplus::create_filespec(sOut_directory_, "initialPair.ply"), ESfM_Data(ALL));
 
+ 
     // - refine only Structure and Rotations & translations (keep intrinsic constant)
     Bundle_Adjustment_Ceres::BA_Ceres_options options(true, true);
     options.linear_solver_type_ = ceres::DENSE_SCHUR;
@@ -642,14 +661,6 @@ bool IncrementalSfMReconstructionEngine::MakeInitialPair3D(const Pair & current_
     // Save computed data
     const Pose3 pose_I = sfm_data_.poses[view_I->id_pose] = tiny_scene.poses[view_I->id_pose];
     const Pose3 pose_J = sfm_data_.poses[view_J->id_pose] = tiny_scene.poses[view_J->id_pose];
-    map_ACThreshold_.insert(std::make_pair(I, relativePose_info.found_residual_precision));
-    map_ACThreshold_.insert(std::make_pair(J, relativePose_info.found_residual_precision));
-    set_remaining_view_id_.erase(view_I->id_view);
-    set_remaining_view_id_.erase(view_J->id_view);
-
-    // Log data for incremental SfM
-    increment_camera_.first.emplace(view_I->id_view);
-    increment_camera_.first.emplace(view_J->id_view);
 
     // List inliers and save them
     for (Landmarks::const_iterator iter = tiny_scene.GetLandmarks().begin();
@@ -680,65 +691,123 @@ bool IncrementalSfMReconstructionEngine::MakeInitialPair3D(const Pair & current_
         increment_structure_.first.emplace(trackId);
         (increment_observation_.first)[view_I->id_view].emplace(trackId);
         (increment_observation_.first)[view_J->id_view].emplace(trackId);
-        owner_track_cam_id[trackId] = view_J->id_view;
+        slam_pp_data.owner_track_cam_id[trackId] = view_J->id_view;
 
       }
     }
-    // Save outlier residual information
-    Histogram<double> histoResiduals;
-    std::cout << std::endl
-      << "=========================\n"
-      << " MSE Residual InitialPair Inlier: " << ComputeResidualsHistogram(&histoResiduals) << "\n"
-      << "=========================" << std::endl;
+  }
+  else
+  {
 
-    if (!sLogging_file_.empty())
+    // Init poses
+    const Pose3 & pose_I = sfm_data_.poses[view_I->id_pose] = Pose3(Mat3::Identity(), Vec3::Zero());
+    const Pose3 & pose_J = sfm_data_.poses[view_J->id_pose] = relativePose_info.relativePose;
+
+    // Init structure
+    const Mat34 P1 = cam_I->get_projective_equivalent(pose_I);
+    const Mat34 P2 = cam_J->get_projective_equivalent(pose_J);
+    
+    for (openMVG::tracks::STLMAPTracks::const_iterator
+      iterT = map_tracksCommon.begin();
+      iterT != map_tracksCommon.end();
+      ++iterT)
     {
-      using namespace htmlDocument;
-      html_doc_stream_->pushInfo(htmlMarkup("h1","Essential Matrix."));
-      ostringstream os;
-      os << std::endl
-        << "-------------------------------" << "<br>"
-        << "-- Robust Essential matrix: <"  << I << "," <<J << "> images: "
-        << view_I->s_Img_path << ","
-        << view_J->s_Img_path << "<br>"
-        << "-- Threshold: " << relativePose_info.found_residual_precision << "<br>"
-        << "-- Resection status: " << "OK" << "<br>"
-        << "-- Nb points used for robust Essential matrix estimation: "
-        << xI.cols() << "<br>"
-        << "-- Nb points validated by robust estimation: "
-        << sfm_data_.structure.size() << "<br>"
-        << "-- % points validated: "
-        << sfm_data_.structure.size()/static_cast<float>(xI.cols())
-        << "<br>"
-        << "-------------------------------" << "<br>";
-      html_doc_stream_->pushInfo(os.str());
+      // Get corresponding points
+      tracks::submapTrack::const_iterator iter = iterT->second.begin();
+      const size_t i = iter->second;
+      const size_t j = (++iter)->second;
 
-      html_doc_stream_->pushInfo(htmlMarkup("h2",
-        "Residual of the robust estimation (Initial triangulation). Thresholded at: "
-        + toString(relativePose_info.found_residual_precision)));
+      const Vec2 x1_ = features_provider_->feats_per_view[I][i].coords().cast<double>();
+      const Vec2 x2_ = features_provider_->feats_per_view[J][j].coords().cast<double>();
 
-      html_doc_stream_->pushInfo(htmlMarkup("h2","Histogram of residuals"));
+      Vec3 X;
+      TriangulateDLT(P1, x1_, P2, x2_, &X);
+      
+      const Observation ob_xI = Observation(x1_, i);
+      const Observation ob_xJ = Observation(x2_, j);
 
-      std::vector<double> xBin = histoResiduals.GetXbinsValue();
-      std::pair< std::pair<double,double>, std::pair<double,double> > range =
-        autoJSXGraphViewport<double>(xBin, histoResiduals.GetHist());
+      const double angle = AngleBetweenRay(
+        pose_I, cam_I, pose_J, cam_J, ob_xI.x, ob_xJ.x);
+      const Vec2 residual_I = cam_I->residual(pose_I, X, ob_xI.x);
+      const Vec2 residual_J = cam_J->residual(pose_J, X, ob_xJ.x);
+      if ( angle > 2.0 &&
+           pose_I.depth(X) > 0 &&
+           pose_J.depth(X) > 0 &&
+           residual_I.norm() < relativePose_info.found_residual_precision &&
+           residual_J.norm() < relativePose_info.found_residual_precision)
+      {
+        Observations obs;
+        obs[I] = Observation(x1_, i);
+        obs[J] = Observation(x2_, j);
+        sfm_data_.structure[iterT->first].obs = std::move(obs);
+        sfm_data_.structure[iterT->first].X = X;
 
-      htmlDocument::JSXGraphWrapper jsxGraph;
-      jsxGraph.init("InitialPairTriangulationKeptInfo",600,300);
-      jsxGraph.addXYChart(xBin, histoResiduals.GetHist(), "line,point");
-      jsxGraph.addLine(relativePose_info.found_residual_precision, 0,
-        relativePose_info.found_residual_precision, histoResiduals.GetHist().front());
-      jsxGraph.UnsuspendUpdate();
-      jsxGraph.setViewport(range);
-      jsxGraph.close();
-      html_doc_stream_->pushInfo(jsxGraph.toStr());
+        // Log data for incremental SfM
+        increment_structure_.first.emplace(iterT->first);
+        (increment_observation_.first)[I].emplace(iterT->first);
+        (increment_observation_.first)[J].emplace(iterT->first);
+        slam_pp_data.owner_track_cam_id[iterT->first] =J;
 
-      html_doc_stream_->pushInfo("<hr>");
-
-      ofstream htmlFileStream( string(stlplus::folder_append_separator(sOut_directory_) +
-        "Reconstruction_Report.html").c_str());
-      htmlFileStream << html_doc_stream_->getDoc();
+      }
     }
+
+    Save(sfm_data_, stlplus::create_filespec(sOut_directory_, "initialPair.ply"), ESfM_Data(ALL));
+  }
+
+  // Save outlier residual information
+  Histogram<double> histoResiduals;
+  std::cout << std::endl
+    << "=========================\n"
+    << " MSE Residual InitialPair Inlier: " << ComputeResidualsHistogram(&histoResiduals) << "\n"
+    << "=========================" << std::endl;
+
+  if (!sLogging_file_.empty())
+  {
+    using namespace htmlDocument;
+    html_doc_stream_->pushInfo(htmlMarkup("h1","Essential Matrix."));
+    ostringstream os;
+    os << std::endl
+      << "-------------------------------" << "<br>"
+      << "-- Robust Essential matrix: <"  << I << "," <<J << "> images: "
+      << view_I->s_Img_path << ","
+      << view_J->s_Img_path << "<br>"
+      << "-- Threshold: " << relativePose_info.found_residual_precision << "<br>"
+      << "-- Resection status: " << "OK" << "<br>"
+      << "-- Nb points used for robust Essential matrix estimation: "
+      << xI.cols() << "<br>"
+      << "-- Nb points validated by robust estimation: "
+      << sfm_data_.structure.size() << "<br>"
+      << "-- % points validated: "
+      << sfm_data_.structure.size()/static_cast<float>(xI.cols())
+      << "<br>"
+      << "-------------------------------" << "<br>";
+    html_doc_stream_->pushInfo(os.str());
+
+    html_doc_stream_->pushInfo(htmlMarkup("h2",
+      "Residual of the robust estimation (Initial triangulation). Thresholded at: "
+      + toString(relativePose_info.found_residual_precision)));
+
+    html_doc_stream_->pushInfo(htmlMarkup("h2","Histogram of residuals"));
+
+    std::vector<double> xBin = histoResiduals.GetXbinsValue();
+    std::pair< std::pair<double,double>, std::pair<double,double> > range =
+      autoJSXGraphViewport<double>(xBin, histoResiduals.GetHist());
+
+    htmlDocument::JSXGraphWrapper jsxGraph;
+    jsxGraph.init("InitialPairTriangulationKeptInfo",600,300);
+    jsxGraph.addXYChart(xBin, histoResiduals.GetHist(), "line,point");
+    jsxGraph.addLine(relativePose_info.found_residual_precision, 0,
+      relativePose_info.found_residual_precision, histoResiduals.GetHist().front());
+    jsxGraph.UnsuspendUpdate();
+    jsxGraph.setViewport(range);
+    jsxGraph.close();
+    html_doc_stream_->pushInfo(jsxGraph.toStr());
+
+    html_doc_stream_->pushInfo("<hr>");
+
+    ofstream htmlFileStream( string(stlplus::folder_append_separator(sOut_directory_) +
+      "Reconstruction_Report.html").c_str());
+    htmlFileStream << html_doc_stream_->getDoc();
   }
 
   return !sfm_data_.structure.empty();
@@ -1108,6 +1177,46 @@ bool IncrementalSfMReconstructionEngine::Resection(const size_t viewIndex)
       sfm_data_.views.at(viewIndex).get()->id_intrinsic = new_intrinsic_id;
       sfm_data_.intrinsics[new_intrinsic_id] = optional_intrinsic;
     }
+
+    // Log data for incremental SfM 
+    increment_camera_.first.emplace(viewIndex);
+    
+    // Find parent camera (camera that gives most inliers for pose estimation)
+    {
+      Hash_Map<IndexT,std::set<IndexT> >resectionTracksPerView;
+      // Get all reconstructed views
+      std::set<IndexT> valid_views = Get_Valid_Views(sfm_data_);
+      // remove current view from the list
+      valid_views.erase(valid_views.find(view_I->id_pose));
+
+      // iterate only over inlier tracks
+      for (auto it_inlier : resection_data.vec_inliers)
+      {
+        std::set<size_t>::iterator iterTrackId = set_trackIdForResection.begin();
+        std::advance(iterTrackId,it_inlier);
+        size_t trackId = *iterTrackId;  
+        for (const auto & iterT : map_tracks_[trackId])
+        {
+          if (valid_views.find(iterT.first) != valid_views.end())
+          {
+            resectionTracksPerView[iterT.first].emplace(trackId);
+          }
+        }
+      }
+      size_t max_n_tracks_cam = 0;
+      IndexT parent_cam_id;
+      for (auto it_r : resectionTracksPerView)
+      {
+        if (it_r.second.size() > max_n_tracks_cam)
+        {
+          max_n_tracks_cam = it_r.second.size();
+          parent_cam_id = it_r.first;
+        }
+      }
+
+      std::cout << "Camera: "<<view_I->id_pose<<" Parent camera: "<< parent_cam_id << " with " << max_n_tracks_cam<< " inliers\n";
+      slam_pp_data.addCamWithParentToGraph(view_I->id_pose, parent_cam_id);
+    }
   }
 
   // F. List tracks that share content with this view and add observations and new 3D track if required.
@@ -1197,7 +1306,7 @@ bool IncrementalSfMReconstructionEngine::Resection(const size_t viewIndex)
 
                 // Log data for incremental SfM 
                 increment_structure_.first.emplace(trackId);
-                owner_track_cam_id[trackId] = view_J->id_view;
+                slam_pp_data.owner_track_cam_id[trackId] = viewIndex;
               } // 3D point is valid
               else
               {
@@ -1238,8 +1347,6 @@ bool IncrementalSfMReconstructionEngine::Resection(const size_t viewIndex)
     }// All the tracks in the view
   }
 
-  // Log data for incremental SfM 
-  increment_camera_.first.emplace(viewIndex);
   return true;
 }
 
@@ -1290,6 +1397,7 @@ bool IncrementalSfMReconstructionEngine::badTrackRejector(double dPrecision, siz
 /// Check if incremental history is consistent with the data we logged
 bool IncrementalSfMReconstructionEngine::checkIncrementalConsistency()
 {
+  std::cout<<"START CONSISTENCY CHECK\n";
   std::vector<std::pair<std::set<IndexT>, std::set<IndexT> > > h_cam = history_i_camera_;
   std::vector<std::pair<std::set<IndexT>, std::set<IndexT> > > h_struct = history_i_structure_;
   std::vector<std::pair< Hash_Map<IndexT, std::set<IndexT> >, Hash_Map<IndexT, std::set<IndexT> > > > h_obs = history_i_observations_;
@@ -1447,155 +1555,284 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
   increment_observation_.first.clear();
 }
 
-void IncrementalSfMReconstructionEngine::ExportIncrementToTextFile_SlamPP()
-{
-  // Cameras
-  for (std::set<IndexT>::iterator c_i = increment_camera_.first.begin(); c_i != increment_camera_.first.end(); ++c_i)
+
+  void IncrementalSfMReconstructionEngine::ExportIncrementToGraphFile_SlamPP()
   {
-    const IndexT camId_omvg = *c_i;
-    const IndexT camId_slamPP = slam_pp_data.getNextFreeSlamPPId();
 
-    // Save mapping between omvg and slamPP
-    slam_pp_data.setCamId_SlamPP(camId_omvg,camId_slamPP);
-
-    // Get information of the camera
-    const View * view = sfm_data_.GetViews().at(camId_omvg).get();
-
-    if ( !sfm_data_.IsPoseAndIntrinsicDefined( view ) )
+    // Cameras
+    for (std::set<IndexT>::iterator c_i = increment_camera_.first.begin(); c_i != increment_camera_.first.end(); ++c_i)
     {
-      continue;
+      const IndexT camId_omvg = *c_i;
+      const IndexT camId_slamPP = slam_pp_data.getNextFreeSlamPPId();
+
+      // Save mapping between omvg and slamPP
+      slam_pp_data.setCamId_SlamPP(camId_omvg,camId_slamPP);
+
+      // Get information of the camera
+      const View * view = sfm_data_.GetViews().at(camId_omvg).get();
+      if ( !sfm_data_.IsPoseAndIntrinsicDefined( view ) )
+      {
+        continue;
+      }
+
+      const IntrinsicBase * cam = sfm_data_.GetIntrinsics().at(view->id_intrinsic).get();
+      const Pinhole_Intrinsic * pinhole_cam = static_cast<const Pinhole_Intrinsic *>( cam );
+      const Mat3 K = pinhole_cam->K();
+
+      switch (slam_pp_data.iOutputVertexType)
+      {
+        case 0: // SE(3)
+        {
+          // Get pose
+          const Pose3 pose= sfm_data_.GetPoseOrDie(view);
+          const Mat3 rotation = pose.rotation();
+          const Vec3 center = pose.center();
+          Eigen::Quaterniond q( rotation ) ;
+          // Export to graph file
+          slam_pp_data.slamPP_DatasetFile << "VERTEX_CAM" 
+            << " " << camId_slamPP
+            << " " << center[0]
+            << " " << center[1]
+            << " " << center[2]
+            << " " << q.x()
+            << " " << q.y()
+            << " " << q.z()
+            << " " << q.w()
+            << " " << K(0,0)
+            << " " << K(1,1)
+            << " " << K(0,2)
+            << " " << K(1,2)
+            << " " << "0.0"
+            << std::endl;
+        }
+        break;
+        case 1: // Sim(3)
+        {
+          const Pose3 pose = sfm_data_.GetPoseOrDie(view);
+          const Mat3 rotation = pose.rotation();
+          const Vec3 center = pose.center();
+          const double scale = 1.0;
+          double angleAxis[3];
+          ceres::RotationMatrixToAngleAxis((const double*)rotation.data(), angleAxis);
+          // Export to graph file
+          slam_pp_data.slamPP_DatasetFile << "VERTEX_CAM:SIM3" 
+            << " " << camId_slamPP
+            << " " << center[0]
+            << " " << center[1]
+            << " " << center[2]
+            << " " << angleAxis[0]
+            << " " << angleAxis[1]
+            << " " << angleAxis[2]
+            << " " << scale
+            << " " << K(0,0)
+            << " " << K(1,1)
+            << " " << K(0,2)
+            << " " << K(1,2)
+            << " " << "0.0"
+            << std::endl;
+        }
+        break;
+      }
+    
     }
 
-    const IntrinsicBase * cam = sfm_data_.GetIntrinsics().at(view->id_intrinsic).get();
-    const Pinhole_Intrinsic * pinhole_cam = static_cast<const Pinhole_Intrinsic *>( cam );
-    const Pose3 pose= sfm_data_.GetPoseOrDie(view);
-    const Mat3 rotation = pose.rotation();
-    Eigen::Quaterniond q( rotation ) ;
-    const Vec3 center = pose.center();
-    const Mat3 K = pinhole_cam->K();
-
-    slam_pp_data.slamPP_DatasetFile << "VERTEX_CAM " 
-      << camId_slamPP << " "
-      << center[0] << " "
-      << center[1] << " "
-      << center[2] << " "
-      << q.x() << " "
-      << q.y() << " "
-      << q.z() << " "
-      << q.w() << " "
-      << K(0,0) << " "
-      << K(1,1) << " "
-      << K(0,2) << " "
-      << K(1,2) << " "
-      << "0.0" << " "
-      << std::endl;
-  }
-
-  // Structure
-  Landmarks & landmarks = sfm_data_.structure;
-  for (std::set<IndexT>::iterator s_i = increment_structure_.first.begin(); s_i != increment_structure_.first.end(); ++s_i)
-  {
-    const IndexT trackId_omvg = *s_i;
-    const IndexT trackId_slamPP = slam_pp_data.getNextFreeSlamPPId();
-    // Save mapping between omvg and slamPP
-    slam_pp_data.setTrackId_SlamPP(trackId_omvg,trackId_slamPP);
-    // Get position of landmark
-    Vec3 & l_pos = landmarks[trackId_omvg].X;
-
-    slam_pp_data.slamPP_DatasetFile << "VERTEX_XYZ " 
-    << trackId_slamPP << " "
-    << l_pos(0) << " "
-    << l_pos(1) << " "
-    << l_pos(2) << " "
-    << std::endl;
-  }
-  // Observations - sort them by cam and track id (of slamPP)
-  Hash_Map<IndexT,std::set<IndexT> >observations_slamPP;
-
-  
-  for (Hash_Map<IndexT, std::set<IndexT> >::iterator it_views_tracks_obs = increment_observation_.first.begin(); it_views_tracks_obs != increment_observation_.first.end(); ++it_views_tracks_obs)
-  {
-    IndexT camId_slamPP, trackId_slamPP, camId_omvg, trackId_omvg;
-    // Get SlamPP index of camera
-    camId_omvg = it_views_tracks_obs->first;
-    if (!slam_pp_data.getCamId_SlamPP(camId_omvg,camId_slamPP))
+    // Structure
+    Landmarks & landmarks = sfm_data_.structure;
+    for (std::set<IndexT>::iterator s_i = increment_structure_.first.begin(); s_i != increment_structure_.first.end(); ++s_i)
     {
-      std::cerr << "Something went wrong with Camera ID OpenMVG - SlamPP index mapping\n";
+      const IndexT trackId_omvg = *s_i;
+      const IndexT trackId_slamPP = slam_pp_data.getNextFreeSlamPPId();
+      // Save mapping between omvg and slamPP
+      slam_pp_data.setTrackId_SlamPP(trackId_omvg,trackId_slamPP);
+      // Get position of landmark
+      Vec3 & l_pos_w = landmarks[trackId_omvg].X;
+
+      switch (slam_pp_data.iOutputLandmarkType)
+      {
+        case 0: // euclidean (world)
+        {
+          slam_pp_data.slamPP_DatasetFile << "VERTEX_XYZ" 
+          << " " << trackId_slamPP
+          << " " << l_pos_w(0)
+          << " " << l_pos_w(1)
+          << " " << l_pos_w(2)
+          << std::endl;
+        }
+        break;
+        case 1: // inverse depth (reference cam)
+        {
+          IndexT track_owner_camId_omvg = slam_pp_data.owner_track_cam_id[trackId_omvg];        
+          IndexT track_owner_camId_slamPP;
+          if (!slam_pp_data.getCamId_SlamPP(track_owner_camId_omvg,track_owner_camId_slamPP))
+          {
+            std::cerr << "Something went wrong with Camera ID OpenMVG - SlamPP index mapping\n";
+          }
+
+          const View * view_owner = sfm_data_.GetViews().at(track_owner_camId_omvg).get();
+          if ( !sfm_data_.IsPoseAndIntrinsicDefined( view_owner ) )
+          {
+            continue;
+          }
+          const Pose3 pose_owner= sfm_data_.GetPoseOrDie(view_owner);
+          const Mat3 rotation_owner = pose_owner.rotation();
+          
+          // Point to owner camera coordinate system
+          Vec3 pt_owner = pose_owner(l_pos_w);
+          pt_owner(0) = pt_owner(0) / pt_owner(2);
+          pt_owner(1) = pt_owner(0) / pt_owner(1);
+          pt_owner(2) = 1.0 / pt_owner(2);
+
+          slam_pp_data.slamPP_DatasetFile << "VERTEX:INVD" 
+          << " " << trackId_slamPP
+          << " " << track_owner_camId_slamPP
+          << " " << pt_owner(0)
+          << " " << pt_owner(1)
+          << " " << pt_owner(2)
+          << std::endl;
+        }
+        break;
+      }
     }
-    // Get iterator to the set of tracks for current view
-    for (std::set<IndexT>::iterator it_view_tracks = it_views_tracks_obs->second.begin() ; it_view_tracks != it_views_tracks_obs->second.end(); ++it_view_tracks)
+
+    // Observations - sort them by cam and track id (of slamPP)
+    Hash_Map<IndexT,std::set<IndexT> >observations_slamPP;
+    
+    for (Hash_Map<IndexT, std::set<IndexT> >::iterator it_views_tracks_obs = increment_observation_.first.begin(); it_views_tracks_obs != increment_observation_.first.end(); ++it_views_tracks_obs)
     {
-      // Get SlamPP index of track
-      trackId_omvg = *it_view_tracks;
-      if (!slam_pp_data.getTrackId_SlamPP(trackId_omvg,trackId_slamPP))
+      IndexT camId_slamPP, trackId_slamPP, camId_omvg, trackId_omvg;
+      // Get SlamPP index of camera
+      camId_omvg = it_views_tracks_obs->first;
+      if (!slam_pp_data.getCamId_SlamPP(camId_omvg,camId_slamPP))
       {
         std::cerr << "Something went wrong with Camera ID OpenMVG - SlamPP index mapping\n";
       }
+      // Get iterator to the set of tracks for current view
+      for (std::set<IndexT>::iterator it_view_tracks = it_views_tracks_obs->second.begin() ; it_view_tracks != it_views_tracks_obs->second.end(); ++it_view_tracks)
+      {
+        // Get SlamPP index of track
+        trackId_omvg = *it_view_tracks;
+        if (!slam_pp_data.getTrackId_SlamPP(trackId_omvg,trackId_slamPP))
+        {
+          std::cerr << "Something went wrong with Camera ID OpenMVG - SlamPP index mapping\n";
+        }
 
-      // observations of this cam already exist -> we just add new
-      observations_slamPP[camId_slamPP].insert(trackId_slamPP);
-      
+        // observations of this cam already exist -> we just add new
+        observations_slamPP[camId_slamPP].insert(trackId_slamPP);
+        
+      }
     }
+
+    std::ostringstream edge_other_stream;
+    slam_pp_data.initBreadthSearchFirstGraph();
+    // Saved path of predecesors so we dont have to query it for every observation
+    std::vector<IndexT> cam_predecesors;
+    std::pair<IndexT,IndexT> last_queried_path(std::numeric_limits<IndexT>::max(),std::numeric_limits<IndexT>::max());
+
+    // Export ordered observations to file
+    for (Hash_Map<IndexT,std::set<IndexT> >::iterator it_obs = observations_slamPP.begin(); it_obs != observations_slamPP.end(); ++it_obs)
+    { 
+      IndexT camId_slamPP, trackId_slamPP, camId_omvg, trackId_omvg;
+      camId_slamPP = it_obs->first;
+      if (!slam_pp_data.getCamId_OpenMVG(camId_omvg,camId_slamPP))
+      {
+        std::cerr << "Something went wrong with CameraID SlamPP - OpenMVG index mapping\n";
+      }
+      // Get information of the camera -> to undistort the point
+      const View * view = sfm_data_.GetViews().at(camId_omvg).get();
+      std::shared_ptr<cameras::IntrinsicBase> optional_intrinsic (nullptr);
+      if (sfm_data_.GetIntrinsics().count(view->id_intrinsic))
+      {
+        optional_intrinsic = sfm_data_.GetIntrinsics().at(view->id_intrinsic);
+      }
+
+      // Loop throught measurements of the camera
+      std::set<IndexT> & obs_tracks = it_obs->second;
+      for (std::set<IndexT>::iterator it_tracks = obs_tracks.begin(); it_tracks != obs_tracks.end(); ++it_tracks)
+      {
+        trackId_slamPP = *it_tracks;
+        if (!slam_pp_data.getTrackId_OpenMVG(trackId_omvg,trackId_slamPP))
+        {
+          std::cerr << "Something went wrong with TrackID SlamPP - OpenMVG index mapping\n";
+        }
+
+        // Get owner camid
+        IndexT track_owner_camId_omvg = slam_pp_data.owner_track_cam_id[trackId_omvg];
+        IndexT track_owner_camId_slamPP;
+        if (!slam_pp_data.getCamId_SlamPP(track_owner_camId_omvg,track_owner_camId_slamPP))
+        {
+          std::cerr << "Something went wrong with Camera ID OpenMVG - SlamPP index mapping\n";
+        }
+
+        // Get feature id of the point in camId and trackId
+        const IndexT featId_omvg = map_tracks_[trackId_omvg][camId_omvg];
+        Vec2 pt_2d;
+        pt_2d = features_provider_->feats_per_view.at(camId_omvg)[featId_omvg].coords().cast<double>();
+        if (optional_intrinsic && optional_intrinsic->have_disto())
+        {
+          pt_2d = optional_intrinsic->get_ud_pixel(pt_2d);
+        }
+
+        switch (slam_pp_data.iOutputLandmarkType)
+        {
+          case 0: // Euclidean (world)
+            slam_pp_data.slamPP_DatasetFile << "EDGE_PROJ_P2MC"
+            << " " << trackId_slamPP
+            << " " << camId_slamPP
+            << " " << pt_2d(0)
+            << " " << pt_2d(1)
+            << " " << "1 0 1"
+            << std::endl;
+          break;
+          case 1:
+            if (camId_slamPP == track_owner_camId_slamPP)
+            {
+              slam_pp_data.slamPP_DatasetFile << "EDGE_PROJ_SELF"
+              << " " << trackId_slamPP
+              << " " << camId_slamPP
+              << " " << pt_2d(0)
+              << " " << pt_2d(1)
+              << " " << "1 0 1"
+              << std::endl;
+            }
+            else
+            {
+              // Only query if its different from the last
+              if (last_queried_path.first != camId_omvg || last_queried_path.second != track_owner_camId_omvg)
+              {
+                cam_predecesors.clear();
+                slam_pp_data.findPathBetween(camId_omvg,track_owner_camId_omvg,cam_predecesors);
+                last_queried_path.first = camId_omvg;
+                last_queried_path.second = track_owner_camId_omvg;
+              }
+              edge_other_stream << "EDGE_PROJ_OTHER"
+              << " " << trackId_slamPP
+              << " " << cam_predecesors.size() + 1
+              << " " << camId_slamPP;
+              for (auto it_pred_camId = cam_predecesors.rbegin(); it_pred_camId != cam_predecesors.rend(); ++it_pred_camId)
+              {
+                IndexT pred_cam_slamPP;
+                if (!slam_pp_data.getCamId_SlamPP(*it_pred_camId,pred_cam_slamPP))
+                {
+                  std::cerr << "Something went wrong with Camera ID OpenMVG - SlamPP index mapping\n";
+                }
+                edge_other_stream << " " << pred_cam_slamPP;
+              }
+              edge_other_stream << " " << pt_2d(0)
+              << " " << pt_2d(1)
+              << " " << "1 0 1"
+              << std::endl;
+            }
+          break;
+        }
+      }
+    }
+    slam_pp_data.slamPP_DatasetFile << edge_other_stream.str();
+
+
+    // Export consistency marker
+    slam_pp_data.slamPP_DatasetFile << "CONSISTENCY_MARKER\n";
+
   }
-
-  // Export ordered observations to file
-  for (Hash_Map<IndexT,std::set<IndexT> >::iterator it_obs = observations_slamPP.begin(); it_obs != observations_slamPP.end(); ++it_obs)
-  {
-    IndexT camId_slamPP, trackId_slamPP, camId_omvg, trackId_omvg;
-    camId_slamPP = it_obs->first;
-    if (!slam_pp_data.getCamId_OpenMVG(camId_omvg,camId_slamPP))
-    {
-      std::cerr << "Something went wrong with CameraID SlamPP - OpenMVG index mapping\n";
-    }
-    // Get information of the camera -> to undistort the point
-    const View * view = sfm_data_.GetViews().at(camId_omvg).get();
-    std::shared_ptr<cameras::IntrinsicBase> optional_intrinsic (nullptr);
-    if (sfm_data_.GetIntrinsics().count(view->id_intrinsic))
-    {
-      optional_intrinsic = sfm_data_.GetIntrinsics().at(view->id_intrinsic);
-    }
-
-    // Loop throught measurements of the camera
-    std::set<IndexT> & obs_tracks = it_obs->second;
-    for (std::set<IndexT>::iterator it_tracks = obs_tracks.begin(); it_tracks != obs_tracks.end(); ++it_tracks)
-    {
-      trackId_slamPP = *it_tracks;
-      if (!slam_pp_data.getTrackId_OpenMVG(trackId_omvg,trackId_slamPP))
-      {
-        std::cerr << "Something went wrong with TrackID SlamPP - OpenMVG index mapping\n";
-      }
-
-      // Get owner camid
-      IndexT track_owner_camId_omvg = owner_track_cam_id[trackId_omvg];
-      IndexT track_owner_camId_slamPP;
-      if (!slam_pp_data.getCamId_SlamPP(track_owner_camId_omvg,track_owner_camId_slamPP))
-      {
-        std::cerr << "Something went wrong with Camera ID OpenMVG - SlamPP index mapping\n";
-      }
-
-      // Get feature id of the point in camId and trackId
-      const IndexT featId_omvg = map_tracks_[trackId_omvg][camId_omvg];
-      Vec2 pt_2d;
-      pt_2d = features_provider_->feats_per_view.at(camId_omvg)[featId_omvg].coords().cast<double>();
-      if (optional_intrinsic && optional_intrinsic->have_disto())
-      {
-        pt_2d = optional_intrinsic->get_ud_pixel(pt_2d);
-      }
-
-      slam_pp_data.slamPP_DatasetFile << "EDGE_PROJECT_P2MC "
-      << trackId_slamPP << " "
-      << camId_slamPP << " "
-      //<< track_owner_camId_slamPP << " "
-      << pt_2d(0) << " "
-      << pt_2d(1) << " "
-      << "1 0 1"
-      << std::endl;
-    }
-  }
-  // Export consistency marker
-  slam_pp_data.slamPP_DatasetFile << "CONSISTENCY_MARKER\n";
-
-}
 
 } // namespace sfm
 } // namespace openMVG
