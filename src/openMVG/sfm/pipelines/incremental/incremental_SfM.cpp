@@ -1584,8 +1584,12 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
         case 0: // SE(3)
         {
           // Get pose
-          const Pose3 pose= sfm_data_.GetPoseOrDie(view);
+          Pose3 pose= sfm_data_.GetPoseOrDie(view);
+          /*pose = pose.inverse();
           const Mat3 rotation = pose.rotation();
+          const Vec3 center = pose.translation();*/
+          //pose = pose.inverse();
+          const Mat3 rotation = pose.rotation().transpose();
           const Vec3 center = pose.center();
           Eigen::Quaterniond q( rotation ) ;
           // Export to graph file
@@ -1608,8 +1612,8 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
         break;
         case 1: // Sim(3)
         {
-          const Pose3 pose = sfm_data_.GetPoseOrDie(view);
-          const Mat3 rotation = pose.rotation();
+          Pose3 pose = sfm_data_.GetPoseOrDie(view);
+          const Mat3 rotation = pose.rotation().transpose();
           const Vec3 center = pose.center();
           const double scale = 1.0;
           double angleAxis[3];
@@ -1679,7 +1683,7 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
           // Point to owner camera coordinate system
           Vec3 pt_owner = pose_owner(l_pos_w);
           pt_owner(0) = pt_owner(0) / pt_owner(2);
-          pt_owner(1) = pt_owner(0) / pt_owner(1);
+          pt_owner(1) = pt_owner(0) / pt_owner(2);
           pt_owner(2) = 1.0 / pt_owner(2);
 
           slam_pp_data.slamPP_DatasetFile << "VERTEX:INVD" 
@@ -1775,7 +1779,7 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
         switch (slam_pp_data.iOutputLandmarkType)
         {
           case 0: // Euclidean (world)
-            slam_pp_data.slamPP_DatasetFile << "EDGE_PROJ_P2MC"
+            slam_pp_data.slamPP_DatasetFile << "EDGE_PROJECT_P2MC"
             << " " << trackId_slamPP
             << " " << camId_slamPP
             << " " << pt_2d(0)
