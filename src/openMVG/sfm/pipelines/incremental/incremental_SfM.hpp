@@ -78,9 +78,10 @@ public:
     performLocalPoseBA_ = performLocalPoseBA;
   }
   /// Set if global outlier removal procedure is done
-  void setGlobalOutlierRemoval(const bool &performGOR)
+  void setOutlierRemoval(const bool &performGOR, const bool &performLOR)
   {
     performGlobalOutlierRemoval_ = performGOR;
+    performLocalOutlierRemoval_ = performLOR;
   }
   /// Set if consistency check of incremental log is done
   void setConsistencyCheck(const bool &performCC)
@@ -164,6 +165,7 @@ private:
   bool performInitialTwoViewBA_;
   bool performLocalPoseBA_;
   bool performGlobalOutlierRemoval_;
+  bool performLocalOutlierRemoval_;
 
   bool performConsistencyCheck_;
   

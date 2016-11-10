@@ -74,6 +74,8 @@ IncrementalSfMReconstructionEngine::IncrementalSfMReconstructionEngine(
   performGlobalOutlierRemoval_ = false;
   performConsistencyCheck_ = true;
 
+  performLocalOutlierRemoval_ = false;
+
 }
 
 IncrementalSfMReconstructionEngine::~IncrementalSfMReconstructionEngine()
@@ -1332,10 +1334,21 @@ bool IncrementalSfMReconstructionEngine::Resection(const size_t viewIndex)
           const Pose3 pose_J = sfm_data_.GetPoseOrDie(view_J);
           const Vec2 xJ = features_provider_->feats_per_view.at(J)[allViews_of_track.at(J)].coords().cast<double>();
 
-          const Vec2 residual = cam_J->residual(pose_J, landmark.X, xJ);
-          if (pose_J.depth(landmark.X) > 0 &&
-              residual.norm() < std::max(4.0, map_ACThreshold_.at(J))
-             )
+          // If we dont do local outlier removal we automatically add observation to the system without checking anything 
+          if (performLocalOutlierRemoval_)
+          {
+            const Vec2 residual = cam_J->residual(pose_J, landmark.X, xJ);
+            if (pose_J.depth(landmark.X) > 0 &&
+                residual.norm() < std::max(4.0, map_ACThreshold_.at(J))
+               )
+            {
+              landmark.obs[J] = Observation(xJ, allViews_of_track.at(J));
+
+              // Log data for incremental SfM 
+              (increment_observation_.first)[view_J->id_view].emplace(trackId);
+            }
+          }
+          else
           {
             landmark.obs[J] = Observation(xJ, allViews_of_track.at(J));
 
@@ -1585,10 +1598,6 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
         {
           // Get pose
           Pose3 pose= sfm_data_.GetPoseOrDie(view);
-          /*pose = pose.inverse();
-          const Mat3 rotation = pose.rotation();
-          const Vec3 center = pose.translation();*/
-          //pose = pose.inverse();
           const Mat3 rotation = pose.rotation().transpose();
           const Vec3 center = pose.center();
           Eigen::Quaterniond q( rotation ) ;

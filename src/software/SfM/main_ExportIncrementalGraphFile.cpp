@@ -76,6 +76,7 @@ int main(int argc, char **argv)
   bool bPerformGlobalBA = false;
   bool bPerformLocalPoseBA = false;
   bool bPerformGlobalOutlierRemoval = false;
+  bool bPerformLocalOutlierRemoval = false;
   bool bPerformConsistencyCheck = false;
 
   int iCamVertexType = 0;
@@ -97,7 +98,8 @@ int main(int argc, char **argv)
   cmd.add( make_option('g', bPerformGlobalBA, "globalBA") );
   cmd.add( make_option('l', bPerformLocalPoseBA, "localPoseBA") );
   cmd.add( make_option('e', bPerformGlobalOutlierRemoval, "global_outlier_removal") );
-  cmd.add( make_option('v', bPerformConsistencyCheck, "consistency_check") );
+  cmd.add( make_option('h', bPerformLocalOutlierRemoval, "local_outlier_removal") );
+  cmd.add( make_option('z', bPerformConsistencyCheck, "consistency_check") );
 
 
 
@@ -140,7 +142,8 @@ int main(int argc, char **argv)
     << "[-g|--globalBA] Perform global BA after each iteration (default: false)]\n"
     << "[-l|--localPoseBA] Perform local BA of each camera pose added (default: false)]\n"
     << "[-e|--global_outlier_removal] Perform global outlier removal after global BA (default: false)]\n"
-    << "[-v|--consistency_check] After each interation perform check if loggind is correct (default: false)]\n"
+    << "[-h|--local_outlier_removal] Perform local outlier removal of measurements (if false all measurements are added) (default: false)]\n"
+    << "[-z|--consistency_check] After each interation perform check if loggind is correct (default: false)]\n"
     << std::endl;
 
     std::cerr << s << std::endl;
@@ -235,7 +238,7 @@ int main(int argc, char **argv)
   bool bPerformInitialTwoViewBA = bPerformLocalPoseBA; // Not yet implemented
   sfmEngine.setBAOptimizations(bPerformGlobalBA, bPerformInitialTwoViewBA, bPerformLocalPoseBA);
   sfmEngine.setConsistencyCheck(bPerformConsistencyCheck);
-  sfmEngine.setGlobalOutlierRemoval(bPerformGlobalOutlierRemoval);
+  sfmEngine.setOutlierRemoval(bPerformGlobalOutlierRemoval,bPerformLocalOutlierRemoval);
   sfmEngine.setGraphVertexOutputTypes(iCamVertexType,iLandmarkVertexType);
 
   // Handle Initial pair parameter
