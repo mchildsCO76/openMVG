@@ -98,8 +98,14 @@ public:
     slam_pp_data.iOutputVertexType = camVertexOutputType; // 0 - SE3; 1 - Sim3
     slam_pp_data.iOutputLandmarkType = landmarkOutputType; // 0 - Eucliean (world); 1 - inverse depth (reference)
   }
+
+  void setExportTwoFoldGraphFile(const bool bTF_Graph)
+  {
+    slam_pp_data.bTwoFoldGraphFile = bTF_Graph;
+  }
   
   void ExportIncrementToGraphFile_SlamPP();
+  void ExportTwoFoldIncrementToGraphFile_SlamPP();
 
 protected:
 

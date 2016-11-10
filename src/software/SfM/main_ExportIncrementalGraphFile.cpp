@@ -81,6 +81,7 @@ int main(int argc, char **argv)
 
   int iCamVertexType = 0;
   int iLandmarkVertexType = 0;
+  bool bExportTwoFoldGraphFile = false;
 
   cmd.add( make_option('i', sSfM_Data_Filename, "input_file") );
   cmd.add( make_option('m', sMatchesDir, "matchdir") );
@@ -94,6 +95,7 @@ int main(int argc, char **argv)
 
   cmd.add( make_option('u', iCamVertexType, "camera_vertex_type") );
   cmd.add( make_option('v', iLandmarkVertexType, "landmark_vertex_type") );
+  cmd.add( make_option('t', bExportTwoFoldGraphFile, "twofold_graph_file") );
 
   cmd.add( make_option('g', bPerformGlobalBA, "globalBA") );
   cmd.add( make_option('l', bPerformLocalPoseBA, "localPoseBA") );
@@ -240,6 +242,7 @@ int main(int argc, char **argv)
   sfmEngine.setConsistencyCheck(bPerformConsistencyCheck);
   sfmEngine.setOutlierRemoval(bPerformGlobalOutlierRemoval,bPerformLocalOutlierRemoval);
   sfmEngine.setGraphVertexOutputTypes(iCamVertexType,iLandmarkVertexType);
+  sfmEngine.setExportTwoFoldGraphFile(bExportTwoFoldGraphFile);
 
   // Handle Initial pair parameter
   if (!initialPairString.first.empty() && !initialPairString.second.empty())
