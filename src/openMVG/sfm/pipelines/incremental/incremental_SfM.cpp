@@ -1936,6 +1936,68 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
     
     }
 
+
+    // Structure
+    std::ostringstream new_landmarks_stream;
+
+    Landmarks & landmarks = sfm_data_.structure;
+    for (std::set<IndexT>::iterator s_i = increment_structure_.first.begin(); s_i != increment_structure_.first.end(); ++s_i)
+    {
+      const IndexT trackId_omvg = *s_i;
+      const IndexT trackId_slamPP = slam_pp_data.getNextFreeSlamPPId();
+      // Save mapping between omvg and slamPP
+      slam_pp_data.setTrackId_SlamPP(trackId_omvg,trackId_slamPP);
+      // Get position of landmark
+      Vec3 & l_pos_w = landmarks[trackId_omvg].X;
+
+      switch (slam_pp_data.iOutputLandmarkType)
+      {
+        case 0: // euclidean (world)
+        {
+          new_landmarks_stream << "VERTEX_XYZ" 
+          << " " << trackId_slamPP
+          << " " << l_pos_w(0)
+          << " " << l_pos_w(1)
+          << " " << l_pos_w(2)
+          << std::endl;
+        }
+        break;
+        case 1: // inverse depth (reference cam)
+        {
+          IndexT track_owner_camId_omvg = slam_pp_data.owner_track_cam_id[trackId_omvg];        
+          IndexT track_owner_camId_slamPP;
+          if (!slam_pp_data.getCamId_SlamPP(track_owner_camId_omvg,track_owner_camId_slamPP))
+          {
+            std::cerr << "Something went wrong with Camera ID OpenMVG - SlamPP index mapping\n";
+          }
+
+          const View * view_owner = sfm_data_.GetViews().at(track_owner_camId_omvg).get();
+          if ( !sfm_data_.IsPoseAndIntrinsicDefined( view_owner ) )
+          {
+            continue;
+          }
+          const Pose3 pose_owner= sfm_data_.GetPoseOrDie(view_owner);
+          const Mat3 rotation_owner = pose_owner.rotation();
+          
+          // Point to owner camera coordinate system
+          Vec3 pt_owner = pose_owner(l_pos_w);
+          pt_owner(0) = pt_owner(0) / pt_owner(2);
+          pt_owner(1) = pt_owner(1) / pt_owner(2);
+          pt_owner(2) = 1.0 / pt_owner(2);
+
+          new_landmarks_stream << "VERTEX:INVD" 
+          << " " << trackId_slamPP
+          << " " << track_owner_camId_slamPP
+          << " " << pt_owner(0)
+          << " " << pt_owner(1)
+          << " " << pt_owner(2)
+          << std::endl;
+        }
+        break;
+      }
+    }
+
+
     slam_pp_data.initBreadthSearchFirstGraph();
     // Saved path of predecesors so we dont have to query it for every observation
     std::vector<IndexT> cam_predecesors;
@@ -1960,7 +2022,7 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
         trackId_omvg = *it_view_tracks;
         if (!slam_pp_data.getTrackId_SlamPP(trackId_omvg,trackId_slamPP))
         {
-          std::cerr << "Something went wrong with Camera ID OpenMVG - SlamPP index mapping\n";
+          std::cerr << "Something went wrong with Track ID OpenMVG - SlamPP index mapping\n";
         }
 
         // Skip if its a new landmarks - we only add observations of already reconstructed points
@@ -2083,66 +2145,8 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
     {
       slam_pp_data.slamPP_DatasetFile << "CONSISTENCY_MARKER\n";
     }
-
-    // We add new landmarks
-
-    // Structure
-    Landmarks & landmarks = sfm_data_.structure;
-    for (std::set<IndexT>::iterator s_i = increment_structure_.first.begin(); s_i != increment_structure_.first.end(); ++s_i)
-    {
-      const IndexT trackId_omvg = *s_i;
-      const IndexT trackId_slamPP = slam_pp_data.getNextFreeSlamPPId();
-      // Save mapping between omvg and slamPP
-      slam_pp_data.setTrackId_SlamPP(trackId_omvg,trackId_slamPP);
-      // Get position of landmark
-      Vec3 & l_pos_w = landmarks[trackId_omvg].X;
-
-      switch (slam_pp_data.iOutputLandmarkType)
-      {
-        case 0: // euclidean (world)
-        {
-          slam_pp_data.slamPP_DatasetFile << "VERTEX_XYZ" 
-          << " " << trackId_slamPP
-          << " " << l_pos_w(0)
-          << " " << l_pos_w(1)
-          << " " << l_pos_w(2)
-          << std::endl;
-        }
-        break;
-        case 1: // inverse depth (reference cam)
-        {
-          IndexT track_owner_camId_omvg = slam_pp_data.owner_track_cam_id[trackId_omvg];        
-          IndexT track_owner_camId_slamPP;
-          if (!slam_pp_data.getCamId_SlamPP(track_owner_camId_omvg,track_owner_camId_slamPP))
-          {
-            std::cerr << "Something went wrong with Camera ID OpenMVG - SlamPP index mapping\n";
-          }
-
-          const View * view_owner = sfm_data_.GetViews().at(track_owner_camId_omvg).get();
-          if ( !sfm_data_.IsPoseAndIntrinsicDefined( view_owner ) )
-          {
-            continue;
-          }
-          const Pose3 pose_owner= sfm_data_.GetPoseOrDie(view_owner);
-          const Mat3 rotation_owner = pose_owner.rotation();
-          
-          // Point to owner camera coordinate system
-          Vec3 pt_owner = pose_owner(l_pos_w);
-          pt_owner(0) = pt_owner(0) / pt_owner(2);
-          pt_owner(1) = pt_owner(1) / pt_owner(2);
-          pt_owner(2) = 1.0 / pt_owner(2);
-
-          slam_pp_data.slamPP_DatasetFile << "VERTEX:INVD" 
-          << " " << trackId_slamPP
-          << " " << track_owner_camId_slamPP
-          << " " << pt_owner(0)
-          << " " << pt_owner(1)
-          << " " << pt_owner(2)
-          << std::endl;
-        }
-        break;
-      }
-    }
+    
+    slam_pp_data.slamPP_DatasetFile << new_landmarks_stream.str();
 
     // Add the observations of new points in reference image and other observations of new points
     observations_slamPP.clear();
@@ -2177,7 +2181,6 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
         observations_slamPP[camId_slamPP].insert(trackId_slamPP);
       }
     }
-
 
     std::ostringstream edge_other_stream;
 
