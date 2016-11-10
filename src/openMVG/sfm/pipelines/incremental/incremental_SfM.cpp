@@ -1692,7 +1692,7 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
           // Point to owner camera coordinate system
           Vec3 pt_owner = pose_owner(l_pos_w);
           pt_owner(0) = pt_owner(0) / pt_owner(2);
-          pt_owner(1) = pt_owner(0) / pt_owner(2);
+          pt_owner(1) = pt_owner(1) / pt_owner(2);
           pt_owner(2) = 1.0 / pt_owner(2);
 
           slam_pp_data.slamPP_DatasetFile << "VERTEX:INVD" 
