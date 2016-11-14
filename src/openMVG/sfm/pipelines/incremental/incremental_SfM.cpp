@@ -158,6 +158,11 @@ bool IncrementalSfMReconstructionEngine::Process() {
     {
       bImageAdded |= Resection(*iter);
       set_remaining_view_id_.erase(*iter);
+
+      // After every image its a new iteration
+      current_recon_iteration++;
+      resetIncrementStep();
+
     }
 
     if (bImageAdded)
@@ -182,6 +187,8 @@ bool IncrementalSfMReconstructionEngine::Process() {
       {
         badTrackRejector(16.0, 50);
       }
+
+      badTrackRejector(64.0, 50);
 /*
       else if(performLocalOutlierRemoval_)
       {
@@ -197,8 +204,7 @@ bool IncrementalSfMReconstructionEngine::Process() {
           ExportIncrementToGraphFile_SlamPP();
       }*/
       
-      current_recon_iteration++;
-      resetIncrementStep();
+
 
       if (performConsistencyCheck_)
         checkIncrementalConsistency();
@@ -997,13 +1003,16 @@ bool IncrementalSfMReconstructionEngine::FindImagesWithPossibleResection(
   // Add the image view index that share the most of 2D-3D correspondences
   vec_possible_indexes.push_back(vec_putative[0].first);
 
+  int added_points = 0;
+
   // Then, add all the image view indexes that have at least N% of the number of the matches of the best image.
   const IndexT M = vec_putative[0].second; // Number of 2D-3D correspondences
   const size_t threshold = static_cast<size_t>(dThresholdGroup * M);
   for (size_t i = 1; i < vec_putative.size() &&
-    vec_putative[i].second > threshold; ++i)
+    (vec_putative[i].second > threshold || ((added_points+vec_putative[i].second) / sfm_data_.structure.size() < 0.05)); ++i)
   {
     vec_possible_indexes.push_back(vec_putative[i].first);
+    added_points+=vec_putative[i].second;
   }
   return true;
 }
@@ -1222,6 +1231,56 @@ bool IncrementalSfMReconstructionEngine::Resection(const size_t viewIndex)
       sfm_data_.intrinsics[new_intrinsic_id] = optional_intrinsic;
     }
 
+
+
+    // Local cams in common BA
+    
+    if(performLocalPoseBA_)
+    {
+    // we have the tracks that are seen by the new camera
+    // Check which already reconstructed views see it
+      {
+        std::cout<<"Performing Local BA\n";
+        std::set<IndexT> affected_views;
+        std::set<IndexT> valid_views = Get_Valid_Views(sfm_data_);
+
+
+        for (auto trackId: set_trackIdForResection)
+        { 
+          Landmark & landmark = sfm_data_.structure[trackId];
+          for (auto obs_i : landmark.obs)
+          {
+            if (valid_views.find(obs_i.first) != valid_views.end())
+            {
+              affected_views.emplace(obs_i.first);
+              // Add view to tiny scene if its not yet added
+            }
+          }
+        }
+        std::cout<<"Affected views: "<<affected_views.size()<<"\n";
+        std::cout<<"Affected landmarks: "<<set_trackIdForResection.size()<<"\n";
+        // Go throught all the tracks seen by new view and add them to the scene
+
+        //Save(sfm_data_, stlplus::create_filespec(sOut_directory_, "scene_before_local_all.ply"), ESfM_Data(ALL));
+
+        Bundle_Adjustment_Ceres::BA_Ceres_options options(true, true);
+        options.bUse_loss_function_ = true;
+        options.linear_solver_type_ = ceres::DENSE_SCHUR;
+        Bundle_Adjustment_Ceres bundle_adjustment_obj(options);
+        bundle_adjustment_obj.LocalAdjust(sfm_data_,
+            Optimize_Options
+            (
+              Intrinsic_Parameter_Type::NONE, // Keep intrinsic constant
+              Extrinsic_Parameter_Type::ADJUST_ALL, // Adjust camera motion
+              Structure_Parameter_Type::ADJUST_ALL // Adjust structure
+            ),
+            affected_views,
+            set_trackIdForResection);
+
+        //Save(sfm_data_, stlplus::create_filespec(sOut_directory_, "scene_after_local_all.ply"), ESfM_Data(ALL));
+   
+      }
+    }
     // Log data for incremental SfM 
     increment_camera_.first.emplace(viewIndex);
     
@@ -1262,6 +1321,7 @@ bool IncrementalSfMReconstructionEngine::Resection(const size_t viewIndex)
       // Save parent of the added camera to map
       slam_pp_data.parent_cam_id[view_I->id_view] = parent_cam_id;
       slam_pp_data.addCamWithParentToGraph(view_I->id_pose, parent_cam_id);
+
     }
   }
 

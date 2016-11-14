@@ -11,6 +11,8 @@
 #include "openMVG/numeric/numeric.h"
 #include "ceres/types.h"
 #include "ceres/cost_function.h"
+#include <set>
+#include "openMVG/types.hpp"
 
 namespace openMVG {
 
@@ -62,6 +64,13 @@ class Bundle_Adjustment_Ceres : public Bundle_Adjustment
     // tell which parameter needs to be adjusted
     const Optimize_Options options
   ) override;
+  bool LocalAdjust
+  (
+    SfM_Data & sfm_data,     // the SfM scene to refine
+    const Optimize_Options options,
+    std::set<IndexT> freeCams,
+    std::set<size_t> freeStructure
+  );
 };
 
 } // namespace sfm
