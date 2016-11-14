@@ -66,7 +66,7 @@ IncrementalSfMReconstructionEngine::IncrementalSfMReconstructionEngine(
     set_remaining_view_id_.insert(itV->second.get()->id_view);
   }
 
-  dBAThresholdGroup_ = 1.0f;
+  dBAThresholdGroup_ = 0.5f;
 
   performGlobalBA_ = false;
   performInitialTwoViewBA_ = true;
@@ -1009,7 +1009,7 @@ bool IncrementalSfMReconstructionEngine::FindImagesWithPossibleResection(
   const IndexT M = vec_putative[0].second; // Number of 2D-3D correspondences
   const size_t threshold = static_cast<size_t>(dThresholdGroup * M);
   for (size_t i = 1; i < vec_putative.size() &&
-    (vec_putative[i].second > threshold || ((added_points+vec_putative[i].second) / sfm_data_.structure.size() < 0.05)); ++i)
+    vec_putative[i].second > threshold; ++i)
   {
     vec_possible_indexes.push_back(vec_putative[i].first);
     added_points+=vec_putative[i].second;
