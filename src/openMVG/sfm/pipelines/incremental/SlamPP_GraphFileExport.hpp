@@ -28,15 +28,14 @@ struct SlamPP_Data
 
   // Owner of tracks
   Hash_Map<IndexT,IndexT> owner_track_cam_id;
+  Hash_Map<IndexT,IndexT> parent_cam_id;
   // Parents graph
   lemon::SmartGraph g_parents_cam;
   std::unique_ptr<lemon::SmartGraph::NodeMap<IndexT> > g_parents_nodeMap;
   Hash_Map<IndexT, lemon::SmartGraph::Node > g_parents_indexMap;
-  //std::unique_ptr<lemon::SmartGraph::NodeMap<IndexT> > map_g_node_camId_omvg;
-  //Hash_Map<IndexT, lemon::SmartGraph::Node> map_g_camId_omvg_node;
+  // Graph file for computing the parent of parent
   std::unique_ptr<lemon::Bfs<lemon::SmartGraph> > bfs;
   
-
   /// Export format
   int iOutputVertexType = 0; //0 - SE3; 1 - Sim3
   int iOutputLandmarkType = 0; // 0 - Eucliean (world); 1 - inverse depth (reference)

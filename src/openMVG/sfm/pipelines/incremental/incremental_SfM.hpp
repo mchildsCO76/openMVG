@@ -82,6 +82,8 @@ public:
   {
     performGlobalOutlierRemoval_ = performGOR;
     performLocalOutlierRemoval_ = performLOR;
+    
+  std::cout<<"OUTLIUE C: "<<performGlobalOutlierRemoval_<<"\n";
   }
   /// Set if consistency check of incremental log is done
   void setConsistencyCheck(const bool &performCC)
@@ -106,7 +108,7 @@ public:
   
   void ExportIncrementToGraphFile_SlamPP();
   void ExportTwoFoldIncrementToGraphFile_SlamPP();
-
+  void ExportTwoFoldTotalProcessByIncrementToGraphFile_SlamPP();
 protected:
 
 
@@ -157,6 +159,10 @@ private:
   std::vector<std::pair<std::set<IndexT>, std::set<IndexT> > > history_i_structure_;
   std::vector<std::pair< Hash_Map<IndexT, std::set<IndexT> >, Hash_Map<IndexT, std::set<IndexT> > > > history_i_observations_;
 
+  // Data structure for removed tracks and measurements
+  Hash_Map<IndexT, IndexT> structure_last_removed;
+  Hash_Map<IndexT, Hash_Map<IndexT, IndexT> > observation_last_removed;
+
 
   // Temporary data
   openMVG::tracks::STLMAPTracks map_tracks_; // putative landmark tracks (visibility per 3D point)
@@ -177,6 +183,7 @@ private:
   
   // SLAM++
   SlamPP_Data slam_pp_data;
+  IndexT current_recon_iteration;
 };
 
 } // namespace sfm

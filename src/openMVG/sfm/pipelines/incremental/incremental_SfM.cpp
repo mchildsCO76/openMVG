@@ -106,6 +106,7 @@ bool IncrementalSfMReconstructionEngine::Process() {
 
   // Create SlamPP incremental file
   slam_pp_data.createLogFile();
+  current_recon_iteration = 0;
 
   if (!InitLandmarkTracks())
     return false;
@@ -129,12 +130,18 @@ bool IncrementalSfMReconstructionEngine::Process() {
     return false;
 
   // Initial Incremental step
-  if (slam_pp_data.bTwoFoldGraphFile)
-    ExportTwoFoldIncrementToGraphFile_SlamPP();
-  else
-    ExportIncrementToGraphFile_SlamPP();
+/*
+  if(!performGlobalOutlierRemoval_)
+  {
+    if (slam_pp_data.bTwoFoldGraphFile)
+      ExportTwoFoldIncrementToGraphFile_SlamPP();
+    else
+      ExportIncrementToGraphFile_SlamPP();
+  }*/
 
+  current_recon_iteration++;
   resetIncrementStep();
+
   if (performConsistencyCheck_)
     checkIncrementalConsistency();
 
@@ -167,16 +174,30 @@ bool IncrementalSfMReconstructionEngine::Process() {
         {
           BundleAdjustment();
         }
-        while (performGlobalOutlierRemoval_ && badTrackRejector(4.0, 50));
-        if (performGlobalOutlierRemoval_)
-          eraseUnstablePosesAndObservations(sfm_data_);
+        while (performGlobalOutlierRemoval_ && badTrackRejector(16.0, 50));
+        //if (performGlobalOutlierRemoval_)
+          //eraseUnstablePosesAndObservations(sfm_data_);
       }
+      else if(performGlobalOutlierRemoval_)
+      {
+        badTrackRejector(16.0, 50);
+      }
+/*
+      else if(performLocalOutlierRemoval_)
+      {
+        badTrackRejector(4.0, 50)
+      }*/
+    
+      /*
+      if(!performGlobalOutlierRemoval_)
+      {
+        if (slam_pp_data.bTwoFoldGraphFile)
+          ExportTwoFoldIncrementToGraphFile_SlamPP();
+        else
+          ExportIncrementToGraphFile_SlamPP();
+      }*/
       
-      if (slam_pp_data.bTwoFoldGraphFile)
-        ExportTwoFoldIncrementToGraphFile_SlamPP();
-      else
-        ExportIncrementToGraphFile_SlamPP();
-
+      current_recon_iteration++;
       resetIncrementStep();
 
       if (performConsistencyCheck_)
@@ -185,15 +206,23 @@ bool IncrementalSfMReconstructionEngine::Process() {
     }
     ++resectionGroupIndex;
   }
-
+/*
   // Ensure there is no remaining outliers
   if (performGlobalOutlierRemoval_)
   {
     if (badTrackRejector(4.0, 0))
     {
-      eraseUnstablePosesAndObservations(sfm_data_);
+      //eraseUnstablePosesAndObservations(sfm_data_);
     }
   }
+*/
+  // Go through incremental logs and put everything to file
+  //if(performGlobalOutlierRemoval_)
+  //{
+    ExportTwoFoldTotalProcessByIncrementToGraphFile_SlamPP();
+  //}
+
+
 
   //-- Reconstruction done.
 
@@ -602,8 +631,13 @@ bool IncrementalSfMReconstructionEngine::MakeInitialPair3D(const Pair & current_
   // Log data for incremental SfM
   increment_camera_.first.emplace(view_I->id_view);
   increment_camera_.first.emplace(view_J->id_view);
+  // Save parent of the added camera to map
+  slam_pp_data.parent_cam_id[view_J->id_view] = std::numeric_limits<IndexT>::max();
   // Add parent information to the graph (second camera is the parent of first)
   slam_pp_data.addCamWithParentToGraph(view_J->id_view,std::numeric_limits<IndexT>::max());
+  
+  // Save parent of the added camera to map
+  slam_pp_data.parent_cam_id[view_I->id_view] = view_J->id_view;
   slam_pp_data.addCamWithParentToGraph(view_I->id_view,view_J->id_view);
 
 
@@ -1225,6 +1259,8 @@ bool IncrementalSfMReconstructionEngine::Resection(const size_t viewIndex)
       }
 
       std::cout << "Camera: "<<view_I->id_pose<<" Parent camera: "<< parent_cam_id << " with " << max_n_tracks_cam<< " inliers\n";
+      // Save parent of the added camera to map
+      slam_pp_data.parent_cam_id[view_I->id_view] = parent_cam_id;
       slam_pp_data.addCamWithParentToGraph(view_I->id_pose, parent_cam_id);
     }
   }
@@ -1409,8 +1445,96 @@ bool IncrementalSfMReconstructionEngine::BundleAdjustment()
  */
 bool IncrementalSfMReconstructionEngine::badTrackRejector(double dPrecision, size_t count)
 {
-  const size_t nbOutliers_residualErr = RemoveOutliers_PixelResidualError(sfm_data_, dPrecision, 2);
-  const size_t nbOutliers_angleErr = RemoveOutliers_AngleError(sfm_data_, 2.0);
+  // Funcions are added here to be able to keep track of removed objects
+  //const size_t nbOutliers_residualErr = RemoveOutliers_PixelResidualError(sfm_data_, dPrecision, 2);
+  double dThresholdPixel = dPrecision;
+  unsigned int minTrackLength = 2;
+
+  IndexT nbOutliers_residualErr = 0;
+  Landmarks::iterator iterTracks = sfm_data_.structure.begin();
+  while (iterTracks != sfm_data_.structure.end())
+  {
+    Observations & obs = iterTracks->second.obs;
+    Observations::iterator itObs = obs.begin();
+    while (itObs != obs.end())
+    {
+      const View * view = sfm_data_.views.at(itObs->first).get();
+      const geometry::Pose3 pose = sfm_data_.GetPoseOrDie(view);
+      const cameras::IntrinsicBase * intrinsic = sfm_data_.intrinsics.at(view->id_intrinsic).get();
+      const Vec2 residual = intrinsic->residual(pose, iterTracks->second.X, itObs->second.x);
+      if (residual.norm() > dThresholdPixel)
+      {
+        // Point is rejected
+        // Current HACK - we dont delete observation if its owner
+        // Check if we are removing the owners measurement --> asign a different owner
+        if ( slam_pp_data.owner_track_cam_id[iterTracks->first] != itObs->first)
+        {
+          // Mark that the observation was removed
+          observation_last_removed[itObs->first][iterTracks->first] = current_recon_iteration;
+          std::cout<<"Remove observation\n";
+          ++nbOutliers_residualErr;
+          itObs = obs.erase(itObs);
+        }
+      else
+        ++itObs;
+      }
+      else
+        ++itObs;
+    }
+    if (obs.empty() || obs.size() < minTrackLength)
+    {
+      // Mark that the structure was removed
+      structure_last_removed[iterTracks->first] = current_recon_iteration;
+      std::cout<<"Remove structure\n";
+      iterTracks = sfm_data_.structure.erase(iterTracks);
+
+    }
+    else
+      ++iterTracks;
+  }
+
+  // const size_t nbOutliers_angleErr = RemoveOutliers_AngleError(sfm_data_, 2.0);
+  double dMinAcceptedAngle = 2.0;
+
+  IndexT nbOutliers_angleErr = 0;
+  iterTracks = sfm_data_.structure.begin();
+  while (iterTracks != sfm_data_.structure.end())
+  {
+    Observations & obs = iterTracks->second.obs;
+    double max_angle = 0.0;
+    for (Observations::const_iterator itObs1 = obs.begin();
+      itObs1 != obs.end(); ++itObs1)
+    {
+      const View * view1 = sfm_data_.views.at(itObs1->first).get();
+      const geometry::Pose3 pose1 = sfm_data_.GetPoseOrDie(view1);
+      const cameras::IntrinsicBase * intrinsic1 = sfm_data_.intrinsics.at(view1->id_intrinsic).get();
+
+      Observations::const_iterator itObs2 = itObs1;
+      ++itObs2;
+      for (; itObs2 != obs.end(); ++itObs2)
+      {
+        const View * view2 = sfm_data_.views.at(itObs2->first).get();
+        const geometry::Pose3 pose2 = sfm_data_.GetPoseOrDie(view2);
+        const cameras::IntrinsicBase * intrinsic2 = sfm_data_.intrinsics.at(view2->id_intrinsic).get();
+
+        const double angle = AngleBetweenRay(
+          pose1, intrinsic1, pose2, intrinsic2,
+          itObs1->second.x, itObs2->second.x);
+        max_angle = std::max(angle, max_angle);
+      }
+    }
+    if (max_angle < dMinAcceptedAngle)
+    {
+      // Mark that the structure was removed
+      structure_last_removed[iterTracks->first] = current_recon_iteration;
+  std::cout<<"Remove structure\n";
+      iterTracks = sfm_data_.structure.erase(iterTracks);
+      ++nbOutliers_angleErr;
+
+    }
+    else
+      ++iterTracks;
+  }
 
   return (nbOutliers_residualErr + nbOutliers_angleErr) > count;
 }
@@ -1564,12 +1688,12 @@ bool IncrementalSfMReconstructionEngine::checkIncrementalConsistency()
 void IncrementalSfMReconstructionEngine::resetIncrementStep()
 {
   // Save history (for debug)
-  if (performConsistencyCheck_)
-  {
+  //if (performConsistencyCheck_)
+  //{
     history_i_camera_.emplace_back(increment_camera_);
     history_i_structure_.emplace_back(increment_structure_);
     history_i_observations_.emplace_back(increment_observation_);
-  }
+  //}
   // Clear for next step
   increment_camera_.first.clear();
   increment_structure_.first.clear();
@@ -2022,7 +2146,7 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
         trackId_omvg = *it_view_tracks;
         if (!slam_pp_data.getTrackId_SlamPP(trackId_omvg,trackId_slamPP))
         {
-          std::cerr << "Something went wrong with Track ID OpenMVG - SlamPP index mapping\n";
+          std::cerr << "Something went wrong with Track ID OpenMVG B- SlamPP index mapping\n";
         }
 
         // Skip if its a new landmarks - we only add observations of already reconstructed points
@@ -2289,6 +2413,489 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
     slam_pp_data.slamPP_DatasetFile << "CONSISTENCY_MARKER\n";
 
   }
+
+
+
+  void IncrementalSfMReconstructionEngine::ExportTwoFoldTotalProcessByIncrementToGraphFile_SlamPP()
+  {
+    SlamPP_Data slam_pp_total_data;
+    slam_pp_total_data.initCamParentsGraph();
+
+    for (IndexT i_inc_iter = 0; i_inc_iter < history_i_camera_.size(); i_inc_iter++)
+    {
+      std::set<IndexT> & current_inc_camera = history_i_camera_[i_inc_iter].first;
+      std::set<IndexT> & current_inc_structure = history_i_structure_[i_inc_iter].first;
+      Hash_Map<IndexT, std::set<IndexT> > & current_inc_observation = history_i_observations_[i_inc_iter].first;
+
+
+      // Cameras
+      for (std::set<IndexT>::iterator c_i = current_inc_camera.begin(); c_i != current_inc_camera.end(); ++c_i)
+      {
+        const IndexT camId_omvg = *c_i;
+        const IndexT camId_slamPP = slam_pp_total_data.getNextFreeSlamPPId();
+
+        // Add camera to parents graph
+        if (i_inc_iter !=0)
+          slam_pp_total_data.addCamWithParentToGraph(camId_omvg, slam_pp_data.parent_cam_id[camId_omvg]);
+
+        // Save mapping between omvg and slamPP
+        slam_pp_total_data.setCamId_SlamPP(camId_omvg,camId_slamPP);
+
+        // Get information of the camera
+        const View * view = sfm_data_.GetViews().at(camId_omvg).get();
+        if ( !sfm_data_.IsPoseAndIntrinsicDefined( view ) )
+        {
+          continue;
+        }
+
+        const IntrinsicBase * cam = sfm_data_.GetIntrinsics().at(view->id_intrinsic).get();
+        const Pinhole_Intrinsic * pinhole_cam = static_cast<const Pinhole_Intrinsic *>( cam );
+        const Mat3 K = pinhole_cam->K();
+
+        switch (slam_pp_data.iOutputVertexType)
+        {
+          case 0: // SE(3)
+          {
+            // Get pose
+            Pose3 pose= sfm_data_.GetPoseOrDie(view);
+            const Mat3 rotation = pose.rotation().transpose();
+            const Vec3 center = pose.center();
+            Eigen::Quaterniond q( rotation ) ;
+            // Export to graph file
+            slam_pp_data.slamPP_DatasetFile << "VERTEX_CAM" 
+              << " " << camId_slamPP
+              << " " << center[0]
+              << " " << center[1]
+              << " " << center[2]
+              << " " << q.x()
+              << " " << q.y()
+              << " " << q.z()
+              << " " << q.w()
+              << " " << K(0,0)
+              << " " << K(1,1)
+              << " " << K(0,2)
+              << " " << K(1,2)
+              << " " << "0.0"
+              << std::endl;
+          }
+          break;
+          case 1: // Sim(3)
+          {
+            Pose3 pose = sfm_data_.GetPoseOrDie(view);
+            const Mat3 rotation = pose.rotation().transpose();
+            const Vec3 center = pose.center();
+            const double scale = 1.0;
+            double angleAxis[3];
+            ceres::RotationMatrixToAngleAxis((const double*)rotation.data(), angleAxis);
+            // Export to graph file
+            slam_pp_data.slamPP_DatasetFile << "VERTEX_CAM:SIM3" 
+              << " " << camId_slamPP
+              << " " << center[0]
+              << " " << center[1]
+              << " " << center[2]
+              << " " << angleAxis[0]
+              << " " << angleAxis[1]
+              << " " << angleAxis[2]
+              << " " << scale
+              << " " << K(0,0)
+              << " " << K(1,1)
+              << " " << K(0,2)
+              << " " << K(1,2)
+              << " " << "0.0"
+              << std::endl;
+          }
+          break;
+        }
+      }
+
+      if(i_inc_iter == 0)
+      {
+        for (std::set<IndexT>::reverse_iterator c_i = current_inc_camera.rbegin(); c_i != current_inc_camera.rend(); ++c_i)
+        {
+            // Get SlamPP index of camera
+            IndexT camId_omvg = *c_i;
+            slam_pp_total_data.addCamWithParentToGraph(camId_omvg, slam_pp_data.parent_cam_id[camId_omvg]);
+        }
+      }
+      // Structure
+      std::ostringstream new_landmarks_stream;
+
+      Landmarks & landmarks = sfm_data_.structure;
+      for (std::set<IndexT>::iterator s_i = current_inc_structure.begin(); s_i != current_inc_structure.end(); ++s_i)
+      {
+        const IndexT trackId_omvg = *s_i;
+
+        // If point was ever removed and the removal was in later iteration that currently inspected --> we skip the structure as it will be removed
+        if (structure_last_removed.count(trackId_omvg) != 0 && !(i_inc_iter > structure_last_removed[trackId_omvg]))
+          continue;
+
+        const IndexT trackId_slamPP = slam_pp_total_data.getNextFreeSlamPPId();
+        // Save mapping between omvg and slamPP
+        slam_pp_total_data.setTrackId_SlamPP(trackId_omvg,trackId_slamPP);
+        // Get position of landmark
+        Vec3 & l_pos_w = landmarks[trackId_omvg].X;
+
+        switch (slam_pp_data.iOutputLandmarkType)
+        {
+          case 0: // euclidean (world)
+          {
+            new_landmarks_stream << "VERTEX_XYZ" 
+            << " " << trackId_slamPP
+            << " " << l_pos_w(0)
+            << " " << l_pos_w(1)
+            << " " << l_pos_w(2)
+            << std::endl;
+          }
+          break;
+          case 1: // inverse depth (reference cam)
+          {
+            IndexT track_owner_camId_omvg = slam_pp_data.owner_track_cam_id[trackId_omvg];        
+            IndexT track_owner_camId_slamPP;
+            if (!slam_pp_total_data.getCamId_SlamPP(track_owner_camId_omvg,track_owner_camId_slamPP))
+            {
+              std::cerr << "Something went wrong with A Camera ID OpenMVG - SlamPP index mapping "<<track_owner_camId_omvg<<"\n";
+            }
+
+            const View * view_owner = sfm_data_.GetViews().at(track_owner_camId_omvg).get();
+            if ( !sfm_data_.IsPoseAndIntrinsicDefined( view_owner ) )
+            {
+              continue;
+            }
+            const Pose3 pose_owner= sfm_data_.GetPoseOrDie(view_owner);
+            const Mat3 rotation_owner = pose_owner.rotation();
+            
+            // Point to owner camera coordinate system
+            Vec3 pt_owner = pose_owner(l_pos_w);
+            pt_owner(0) = pt_owner(0) / pt_owner(2);
+            pt_owner(1) = pt_owner(1) / pt_owner(2);
+            pt_owner(2) = 1.0 / pt_owner(2);
+
+            new_landmarks_stream << "VERTEX:INVD" 
+            << " " << trackId_slamPP
+            << " " << track_owner_camId_slamPP
+            << " " << pt_owner(0)
+            << " " << pt_owner(1)
+            << " " << pt_owner(2)
+            << std::endl;
+          }
+          break;
+        }
+      }
+
+      slam_pp_total_data.initBreadthSearchFirstGraph();
+      // Saved path of predecesors so we dont have to query it for every observation
+      std::vector<IndexT> cam_predecesors;
+      std::pair<IndexT,IndexT> last_queried_path(std::numeric_limits<IndexT>::max(),std::numeric_limits<IndexT>::max());
+
+      // Observations (of old points) - sort them by cam and track id (of slamPP)
+      Hash_Map<IndexT,std::set<IndexT> >observations_slamPP;
+      
+      for (Hash_Map<IndexT, std::set<IndexT> >::iterator it_views_tracks_obs = current_inc_observation.begin(); it_views_tracks_obs != current_inc_observation.end(); ++it_views_tracks_obs)
+      {
+        IndexT camId_slamPP, trackId_slamPP, camId_omvg, trackId_omvg;
+        // Get SlamPP index of camera
+        camId_omvg = it_views_tracks_obs->first;
+        if (!slam_pp_total_data.getCamId_SlamPP(camId_omvg,camId_slamPP))
+        {
+          std::cerr << "Something went wrong with B Camera ID OpenMVG - SlamPP index mapping"<<camId_omvg<<"\n";
+        }
+        // Get iterator to the set of tracks for current view
+        for (std::set<IndexT>::iterator it_view_tracks = it_views_tracks_obs->second.begin() ; it_view_tracks != it_views_tracks_obs->second.end(); ++it_view_tracks)
+        {
+          // Get SlamPP index of track
+          trackId_omvg = *it_view_tracks;
+
+          // If structue was ever removed and the removal was in later iteration that currently inspected --> we skip the structure as it will be removed
+          if (structure_last_removed.count(trackId_omvg) != 0 && !(i_inc_iter > structure_last_removed[trackId_omvg]))
+            continue;
+      
+          // Check if this measurement was deleted after this iteration
+          if (observation_last_removed.count(camId_omvg) != 0 && observation_last_removed[camId_omvg].count(trackId_omvg) != 0 && !(i_inc_iter > observation_last_removed[camId_omvg][trackId_omvg]))
+            continue;    
+
+          // Skip if its a new landmarks - we only add observations of already reconstructed points
+          if (current_inc_structure.find(trackId_omvg) != current_inc_structure.end())
+          {
+            continue;
+          }
+
+          if (!slam_pp_total_data.getTrackId_SlamPP(trackId_omvg,trackId_slamPP))
+          {
+            std::cerr << "Something went wrong with C Track ID OpenMVG A - SlamPP index mapping"<<trackId_omvg<<"\n";
+          }
+      
+
+
+          // observations of this cam already exist -> we just add new
+          observations_slamPP[camId_slamPP].insert(trackId_slamPP);
+          
+        }
+      }
+
+      // Observations of the points already reconstructed (without the newly added camera)
+
+      // Export ordered observations to file
+      for (Hash_Map<IndexT,std::set<IndexT> >::iterator it_obs = observations_slamPP.begin(); it_obs != observations_slamPP.end(); ++it_obs)
+      { 
+        IndexT camId_slamPP, trackId_slamPP, camId_omvg, trackId_omvg;
+        camId_slamPP = it_obs->first;
+        if (!slam_pp_total_data.getCamId_OpenMVG(camId_omvg,camId_slamPP))
+        {
+          std::cerr << "Something went wrong with E CameraID SlamPP - OpenMVG index mapping"<<camId_slamPP<<"\n";
+        }
+        // Get information of the camera -> to undistort the point
+        const View * view = sfm_data_.GetViews().at(camId_omvg).get();
+        std::shared_ptr<cameras::IntrinsicBase> optional_intrinsic (nullptr);
+        if (sfm_data_.GetIntrinsics().count(view->id_intrinsic))
+        {
+          optional_intrinsic = sfm_data_.GetIntrinsics().at(view->id_intrinsic);
+        }
+
+        // Loop throught measurements of the camera
+        std::set<IndexT> & obs_tracks = it_obs->second;
+        for (std::set<IndexT>::iterator it_tracks = obs_tracks.begin(); it_tracks != obs_tracks.end(); ++it_tracks)
+        {
+          trackId_slamPP = *it_tracks;
+          if (!slam_pp_total_data.getTrackId_OpenMVG(trackId_omvg,trackId_slamPP))
+          {
+            std::cerr << "Something went wrong with F TrackID SlamPP - OpenMVG index mapping"<<trackId_slamPP<<"\n";
+          }
+
+          // Get owner camid
+          IndexT track_owner_camId_omvg = slam_pp_data.owner_track_cam_id[trackId_omvg];
+          IndexT track_owner_camId_slamPP;
+          if (!slam_pp_total_data.getCamId_SlamPP(track_owner_camId_omvg,track_owner_camId_slamPP))
+          {
+            std::cerr << "Something went wrong with G Camera ID OpenMVG - SlamPP index mapping"<<track_owner_camId_omvg<<"\n";
+          }
+
+          // Get feature id of the point in camId and trackId
+          const IndexT featId_omvg = map_tracks_[trackId_omvg][camId_omvg];
+          Vec2 pt_2d;
+          pt_2d = features_provider_->feats_per_view.at(camId_omvg)[featId_omvg].coords().cast<double>();
+          if (optional_intrinsic && optional_intrinsic->have_disto())
+          {
+            pt_2d = optional_intrinsic->get_ud_pixel(pt_2d);
+          }
+
+          switch (slam_pp_data.iOutputLandmarkType)
+          {
+            case 0: // Euclidean (world)
+              slam_pp_data.slamPP_DatasetFile << "EDGE_PROJECT_P2MC"
+              << " " << trackId_slamPP
+              << " " << camId_slamPP
+              << " " << pt_2d(0)
+              << " " << pt_2d(1)
+              << " " << "1 0 1"
+              << std::endl;
+            break;
+            case 1:
+              if (camId_slamPP == track_owner_camId_slamPP)
+              {
+                // Actually shouldnt happen because the point should already be in
+                slam_pp_data.slamPP_DatasetFile << "EDGE_PROJ_SELF"
+                << " " << trackId_slamPP
+                << " " << camId_slamPP
+                << " " << pt_2d(0)
+                << " " << pt_2d(1)
+                << " " << "1 0 1"
+                << std::endl;
+              }
+              else
+              {
+                // Only query if its different from the last
+                if (last_queried_path.first != camId_omvg || last_queried_path.second != track_owner_camId_omvg)
+                {
+                  cam_predecesors.clear();
+                  slam_pp_total_data.findPathBetween(camId_omvg,track_owner_camId_omvg,cam_predecesors);
+                  last_queried_path.first = camId_omvg;
+                  last_queried_path.second = track_owner_camId_omvg;
+                }
+                slam_pp_data.slamPP_DatasetFile << "EDGE_PROJ_OTHER"
+                << " " << trackId_slamPP
+                << " " << cam_predecesors.size() + 1
+                << " " << camId_slamPP;
+                for (auto it_pred_camId = cam_predecesors.rbegin(); it_pred_camId != cam_predecesors.rend(); ++it_pred_camId)
+                {
+                  IndexT pred_cam_slamPP;
+                  if (!slam_pp_total_data.getCamId_SlamPP(*it_pred_camId,pred_cam_slamPP))
+                  {
+                    std::cerr << "Something went wrong with H Camera ID OpenMVG - SlamPP index mapping"<<*it_pred_camId<<"\n";
+                  }
+                  slam_pp_data.slamPP_DatasetFile << " " << pred_cam_slamPP;
+                }
+                slam_pp_data.slamPP_DatasetFile << " " << pt_2d(0)
+                << " " << pt_2d(1)
+                << " " << "1 0 1"
+                << std::endl;
+              }
+            break;
+          }
+        }
+      }
+
+
+      // Export consistency marker if there were any observations of old points added
+      if (observations_slamPP.size()!=0)
+      {
+        slam_pp_data.slamPP_DatasetFile << "CONSISTENCY_MARKER\n";
+      }
+      
+      // Dump new stucture
+      slam_pp_data.slamPP_DatasetFile << new_landmarks_stream.str();
+
+      // Add the observations of new points in reference image and other observations of new points
+      observations_slamPP.clear();
+      
+      for (Hash_Map<IndexT, std::set<IndexT> >::iterator it_views_tracks_obs = current_inc_observation.begin(); it_views_tracks_obs != current_inc_observation.end(); ++it_views_tracks_obs)
+      {
+        IndexT camId_slamPP, trackId_slamPP, camId_omvg, trackId_omvg;
+        // Get SlamPP index of camera
+        camId_omvg = it_views_tracks_obs->first;
+
+        if (!slam_pp_total_data.getCamId_SlamPP(camId_omvg,camId_slamPP))
+        {
+          std::cerr << "Something went wrong with I Camera ID OpenMVG - SlamPP index mapping"<<camId_omvg<<"\n";
+        }
+        // Get iterator to the set of tracks for current view
+        for (std::set<IndexT>::iterator it_view_tracks = it_views_tracks_obs->second.begin() ; it_view_tracks != it_views_tracks_obs->second.end(); ++it_view_tracks)
+        {
+          // Get SlamPP index of track
+          trackId_omvg = *it_view_tracks;
+
+          // If structue was ever removed and the removal was in later iteration that currently inspected --> we skip the structure as it will be removed
+          if (structure_last_removed.count(trackId_omvg) != 0 && !(i_inc_iter > structure_last_removed[trackId_omvg]))
+            continue;
+
+          // Check if this measurement was deleted after this iteration
+          if (observation_last_removed.count(camId_omvg) != 0 && observation_last_removed[camId_omvg].count(trackId_omvg) != 0 && !(i_inc_iter > observation_last_removed[camId_omvg][trackId_omvg]))
+            continue;    
+
+          // Skip if its an old landmark (already added)
+          if (current_inc_structure.find(trackId_omvg) == current_inc_structure.end())
+          {
+            continue;
+          }
+
+          if (!slam_pp_total_data.getTrackId_SlamPP(trackId_omvg,trackId_slamPP))
+          {
+            std::cerr << "Something went wrong with JCamera ID OpenMVG - SlamPP index mapping"<<trackId_omvg<<"\n";
+          }
+
+
+          // observations of this cam already exist -> we just add new
+          observations_slamPP[camId_slamPP].insert(trackId_slamPP);
+        }
+      }
+
+      std::ostringstream edge_other_stream;
+
+      // Export ordered observations to file
+      for (Hash_Map<IndexT,std::set<IndexT> >::iterator it_obs = observations_slamPP.begin(); it_obs != observations_slamPP.end(); ++it_obs)
+      { 
+        IndexT camId_slamPP, trackId_slamPP, camId_omvg, trackId_omvg;
+        camId_slamPP = it_obs->first;
+        if (!slam_pp_total_data.getCamId_OpenMVG(camId_omvg,camId_slamPP))
+        {
+          std::cerr << "Something went wrong with K CameraID SlamPP - OpenMVG index mapping"<<camId_slamPP<<"\n";
+        }
+        // Get information of the camera -> to undistort the point
+        const View * view = sfm_data_.GetViews().at(camId_omvg).get();
+        std::shared_ptr<cameras::IntrinsicBase> optional_intrinsic (nullptr);
+        if (sfm_data_.GetIntrinsics().count(view->id_intrinsic))
+        {
+          optional_intrinsic = sfm_data_.GetIntrinsics().at(view->id_intrinsic);
+        }
+
+        // Loop throught measurements of the camera
+        std::set<IndexT> & obs_tracks = it_obs->second;
+        for (std::set<IndexT>::iterator it_tracks = obs_tracks.begin(); it_tracks != obs_tracks.end(); ++it_tracks)
+        {
+          trackId_slamPP = *it_tracks;
+          if (!slam_pp_total_data.getTrackId_OpenMVG(trackId_omvg,trackId_slamPP))
+          {
+            std::cerr << "Something went wrong with J TrackID SlamPP - OpenMVG index mapping"<<trackId_slamPP<<"\n";
+          }
+
+          // Get owner camid
+          IndexT track_owner_camId_omvg = slam_pp_data.owner_track_cam_id[trackId_omvg];
+          IndexT track_owner_camId_slamPP;
+          if (!slam_pp_total_data.getCamId_SlamPP(track_owner_camId_omvg,track_owner_camId_slamPP))
+          {
+            std::cerr << "Something went wrong with K Camera ID OpenMVG - SlamPP index mapping"<<track_owner_camId_omvg<<"\n";
+          }
+
+          // Get feature id of the point in camId and trackId
+          const IndexT featId_omvg = map_tracks_[trackId_omvg][camId_omvg];
+          Vec2 pt_2d;
+          pt_2d = features_provider_->feats_per_view.at(camId_omvg)[featId_omvg].coords().cast<double>();
+          if (optional_intrinsic && optional_intrinsic->have_disto())
+          {
+            pt_2d = optional_intrinsic->get_ud_pixel(pt_2d);
+          }
+
+          switch (slam_pp_data.iOutputLandmarkType)
+          {
+            case 0: // Euclidean (world)
+              slam_pp_data.slamPP_DatasetFile << "EDGE_PROJECT_P2MC"
+              << " " << trackId_slamPP
+              << " " << camId_slamPP
+              << " " << pt_2d(0)
+              << " " << pt_2d(1)
+              << " " << "1 0 1"
+              << std::endl;
+            break;
+            case 1:
+              if (camId_slamPP == track_owner_camId_slamPP)
+              {
+                slam_pp_data.slamPP_DatasetFile << "EDGE_PROJ_SELF"
+                << " " << trackId_slamPP
+                << " " << camId_slamPP
+                << " " << pt_2d(0)
+                << " " << pt_2d(1)
+                << " " << "1 0 1"
+                << std::endl;
+              }
+              else
+              {
+                // Only query if its different from the last
+                if (last_queried_path.first != camId_omvg || last_queried_path.second != track_owner_camId_omvg)
+                {
+                  cam_predecesors.clear();
+                  slam_pp_total_data.findPathBetween(camId_omvg,track_owner_camId_omvg,cam_predecesors);
+                  last_queried_path.first = camId_omvg;
+                  last_queried_path.second = track_owner_camId_omvg;
+                }
+                edge_other_stream << "EDGE_PROJ_OTHER"
+                << " " << trackId_slamPP
+                << " " << cam_predecesors.size() + 1
+                << " " << camId_slamPP;
+                for (auto it_pred_camId = cam_predecesors.rbegin(); it_pred_camId != cam_predecesors.rend(); ++it_pred_camId)
+                {
+                  IndexT pred_cam_slamPP;
+                  if (!slam_pp_total_data.getCamId_SlamPP(*it_pred_camId,pred_cam_slamPP))
+                  {
+                    std::cerr << "Something went wrong with L Camera ID OpenMVG - SlamPP index mapping"<<*it_pred_camId<<"\n";
+                  }
+                  edge_other_stream << " " << pred_cam_slamPP;
+                }
+                edge_other_stream << " " << pt_2d(0)
+                << " " << pt_2d(1)
+                << " " << "1 0 1"
+                << std::endl;
+              }
+            break;
+          }
+        }
+      }
+      slam_pp_data.slamPP_DatasetFile << edge_other_stream.str();
+
+
+      // Export consistency marker
+      slam_pp_data.slamPP_DatasetFile << "CONSISTENCY_MARKER\n";
+    }
+  }
+
 
 
 } // namespace sfm
