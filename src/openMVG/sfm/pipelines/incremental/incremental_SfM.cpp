@@ -159,6 +159,8 @@ bool IncrementalSfMReconstructionEngine::Process() {
       bImageAdded |= Resection(*iter);
       set_remaining_view_id_.erase(*iter);
 
+      badTrackRejector(64.0, 50);
+
       // After every image its a new iteration
       current_recon_iteration++;
       resetIncrementStep();
