@@ -1531,9 +1531,11 @@ bool IncrementalSfMReconstructionEngine::badTrackRejector(double dPrecision, siz
         {
           // Mark that the observation was removed
           observation_last_removed[itObs->first][iterTracks->first] = current_recon_iteration;
-          std::cout<<"Remove observation\n";
-          ++nbOutliers_residualErr;
-          itObs = obs.erase(itObs);
+          std::cout<<"Remove point as the core is wrong\n";
+          obs.clear();
+          
+          /*++nbOutliers_residualErr;
+          itObs = obs.erase(itObs);*/
         }
       else
         ++itObs;
