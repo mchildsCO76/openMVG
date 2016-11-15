@@ -9,11 +9,41 @@
 #include <cstring>
 #include <iostream>
 #include <cmath>
-
+ #include <stdexcept>
 extern "C" {
   #include "png.h"
   #include "tiffio.h"
   #include "jpeglib.h"
+}
+void png_my_error(png_structp p_png_ptr, png_const_charp p_s_message)
+{
+
+throw std::runtime_error(p_s_message);
+}
+
+void
+
+png_my_warning(png_structp p_png_ptr, png_const_charp p_s_message)
+{
+
+#ifdef _DEBUG
+printf("libpng warning: %s - %s\n", p_s_message, (char*)png_get_error_ptr(p_png_ptr)); // debug
+#endif
+
+// _DEBUG
+}
+
+static
+
+inline void this_throws_std_runtime_error() // throw(std::runtime_error)
+{
+
+  uint8_t *p_ptr = new(std::nothrow) uint8_t[1];
+  if(!p_ptr)
+    throw std::runtime_error("failed to alloc 1 byte");
+  delete[] p_ptr;
+  // msvc optimizer workaround - otherwise it can't see that std::runtime_error
+  // could be caught here and optimizes the catch block away
 }
 
 using namespace std;
@@ -265,95 +295,103 @@ int ReadPngStream(FILE *file,
   }
 
   // create the two png(-info) structures
-  png_structp png_ptr = NULL;
-  png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL,
-    (png_error_ptr)NULL, (png_error_ptr)NULL);
-  if (!png_ptr)
+  try
   {
-    return 0;
+    png_structp png_ptr = NULL;
+    png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL,
+      (png_my_error), (png_my_warning));
+    if (!png_ptr)
+    {
+      return 0;
+    }
+    png_infop info_ptr = NULL;
+    info_ptr = png_create_info_struct(png_ptr);
+    if (!info_ptr)
+    {
+      png_destroy_read_struct(&png_ptr, NULL, NULL);
+      return 0;
+    }
+
+    // initialize the png structure
+    png_init_io(png_ptr, file);
+    png_set_sig_bytes(png_ptr, 8);
+
+    // read all PNG info up to image data
+
+    png_read_info(png_ptr, info_ptr);
+
+    // get width, height, bit-depth and color-type
+    png_uint_32 wPNG, hPNG;
+    int                 iBitDepth;
+    int                 iColorType;
+    png_get_IHDR(png_ptr, info_ptr, &wPNG, &hPNG, &iBitDepth,
+      &iColorType, NULL, NULL, NULL);
+
+    // expand images of all color-type to 8-bit
+
+    if (iColorType == PNG_COLOR_TYPE_PALETTE)
+      png_set_expand(png_ptr);
+    if (iBitDepth < 8)
+      png_set_expand(png_ptr);
+    if (png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS))
+      png_set_expand(png_ptr);
+    if (iBitDepth == 16) // convert 16-bit to 8-bit on the fly
+      png_set_strip_16(png_ptr);
+
+    double dGamma;
+    // if required set gamma conversion
+    if (png_get_gAMA(png_ptr, info_ptr, &dGamma))
+      png_set_gamma(png_ptr, (double) 2.2, dGamma);
+
+    // after the transformations are registered, update info_ptr data
+
+    png_read_update_info(png_ptr, info_ptr);
+
+    // get again width, height and the new bit-depth and color-type
+
+    png_get_IHDR(png_ptr, info_ptr, &wPNG, &hPNG, &iBitDepth,
+      &iColorType, NULL, NULL, NULL);
+
+    // Get number of byte along a tow
+    png_uint_32         ulRowBytes;
+    ulRowBytes = png_get_rowbytes(png_ptr, info_ptr);
+
+    // and allocate memory for an array of row-pointers
+    png_byte   **ppbRowPointers = NULL;
+    if ((ppbRowPointers = (png_bytepp) malloc(hPNG
+      * sizeof(png_bytep))) == NULL)
+    {
+      std::cerr << "PNG: out of memory" << std::endl;
+      return 0;
+    }
+
+    *w = wPNG;
+    *h = hPNG;
+    *depth = png_get_channels(png_ptr, info_ptr);
+
+    // now we can allocate memory to store the image
+    ptr->resize((*h)*(*w)*(*depth));
+
+    // set the individual row-pointers to point at the correct offsets
+    for (png_uint_32 i = 0; i < hPNG; i++)
+      ppbRowPointers[i] = &((*ptr)[0]) + i * ulRowBytes;
+
+    // now we can go ahead and just read the whole image
+    png_read_image(png_ptr, ppbRowPointers);
+
+    // read the additional chunks in the PNG file (not really needed)
+    png_read_end(png_ptr, NULL);
+
+    free (ppbRowPointers);
+
+    png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+    return 1;
   }
-  png_infop info_ptr = NULL;
-  info_ptr = png_create_info_struct(png_ptr);
-  if (!info_ptr)
-  {
-    png_destroy_read_struct(&png_ptr, NULL, NULL);
-    return 0;
+  catch(std::runtime_error &r_exc) {
+
+    // bad image
+    std::cout<<"Bad image\n";
   }
-
-  // initialize the png structure
-  png_init_io(png_ptr, file);
-  png_set_sig_bytes(png_ptr, 8);
-
-  // read all PNG info up to image data
-
-  png_read_info(png_ptr, info_ptr);
-
-  // get width, height, bit-depth and color-type
-  png_uint_32 wPNG, hPNG;
-  int                 iBitDepth;
-  int                 iColorType;
-  png_get_IHDR(png_ptr, info_ptr, &wPNG, &hPNG, &iBitDepth,
-    &iColorType, NULL, NULL, NULL);
-
-  // expand images of all color-type to 8-bit
-
-  if (iColorType == PNG_COLOR_TYPE_PALETTE)
-    png_set_expand(png_ptr);
-  if (iBitDepth < 8)
-    png_set_expand(png_ptr);
-  if (png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS))
-    png_set_expand(png_ptr);
-  if (iBitDepth == 16) // convert 16-bit to 8-bit on the fly
-    png_set_strip_16(png_ptr);
-
-  double dGamma;
-  // if required set gamma conversion
-  if (png_get_gAMA(png_ptr, info_ptr, &dGamma))
-    png_set_gamma(png_ptr, (double) 2.2, dGamma);
-
-  // after the transformations are registered, update info_ptr data
-
-  png_read_update_info(png_ptr, info_ptr);
-
-  // get again width, height and the new bit-depth and color-type
-
-  png_get_IHDR(png_ptr, info_ptr, &wPNG, &hPNG, &iBitDepth,
-    &iColorType, NULL, NULL, NULL);
-
-  // Get number of byte along a tow
-  png_uint_32         ulRowBytes;
-  ulRowBytes = png_get_rowbytes(png_ptr, info_ptr);
-
-  // and allocate memory for an array of row-pointers
-  png_byte   **ppbRowPointers = NULL;
-  if ((ppbRowPointers = (png_bytepp) malloc(hPNG
-    * sizeof(png_bytep))) == NULL)
-  {
-    std::cerr << "PNG: out of memory" << std::endl;
-    return 0;
-  }
-
-  *w = wPNG;
-  *h = hPNG;
-  *depth = png_get_channels(png_ptr, info_ptr);
-
-  // now we can allocate memory to store the image
-  ptr->resize((*h)*(*w)*(*depth));
-
-  // set the individual row-pointers to point at the correct offsets
-  for (png_uint_32 i = 0; i < hPNG; i++)
-    ppbRowPointers[i] = &((*ptr)[0]) + i * ulRowBytes;
-
-  // now we can go ahead and just read the whole image
-  png_read_image(png_ptr, ppbRowPointers);
-
-  // read the additional chunks in the PNG file (not really needed)
-  png_read_end(png_ptr, NULL);
-
-  free (ppbRowPointers);
-
-  png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
-  return 1;
 }
 
 int WritePng(const char * filename,
@@ -665,7 +703,7 @@ bool Read_PNG_ImageHeader(const char * filename, ImageHeader * imgheader)
   // create the two png(-info) structures
   png_structp png_ptr = NULL;
   png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL,
-    (png_error_ptr)NULL, (png_error_ptr)NULL);
+    (png_my_error), (png_my_warning));
   if (!png_ptr) {
     fclose(file);
     return false;
