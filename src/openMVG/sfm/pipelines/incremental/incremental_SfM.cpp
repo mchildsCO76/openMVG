@@ -1516,7 +1516,8 @@ bool IncrementalSfMReconstructionEngine::badTrackRejector(double dPrecision, siz
   {
     Observations & obs = iterTracks->second.obs;
     Observations::iterator itObs = obs.begin();
-    while (itObs != obs.end())
+    bool dStructure=false;
+    while (!dStructure && itObs != obs.end())
     {
       const View * view = sfm_data_.views.at(itObs->first).get();
       const geometry::Pose3 pose = sfm_data_.GetPoseOrDie(view);
@@ -1533,6 +1534,7 @@ bool IncrementalSfMReconstructionEngine::badTrackRejector(double dPrecision, siz
           observation_last_removed[itObs->first][iterTracks->first] = current_recon_iteration;
           std::cout<<"Remove point as the core is wrong\n";
           obs.clear();
+          dStructure = true;
           
           /*++nbOutliers_residualErr;
           itObs = obs.erase(itObs);*/
