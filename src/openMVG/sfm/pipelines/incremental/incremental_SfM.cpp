@@ -66,7 +66,7 @@ IncrementalSfMReconstructionEngine::IncrementalSfMReconstructionEngine(
     set_remaining_view_id_.insert(itV->second.get()->id_view);
   }
 
-  dBAThresholdGroup_ = 0.5f;
+  dBAThresholdGroup_ = 0.25f;
 
   performGlobalBA_ = false;
   performInitialTwoViewBA_ = true;
