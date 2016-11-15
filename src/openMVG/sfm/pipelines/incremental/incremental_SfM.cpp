@@ -2683,12 +2683,11 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
           {
             std::cerr << "Something went wrong with C Track ID OpenMVG A - SlamPP index mapping"<<trackId_omvg<<"\n";
           }
-      
-
-
-          // observations of this cam already exist -> we just add new
-          observations_slamPP[camId_slamPP].insert(trackId_slamPP);
-          
+          else
+          {
+            // observations of this cam already exist -> we just add new
+            observations_slamPP[camId_slamPP].insert(trackId_slamPP);
+          }
         }
       }
 
@@ -2841,10 +2840,11 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
           {
             std::cerr << "Something went wrong with JCamera ID OpenMVG - SlamPP index mapping"<<trackId_omvg<<"\n";
           }
-
-
-          // observations of this cam already exist -> we just add new
-          observations_slamPP[camId_slamPP].insert(trackId_slamPP);
+          else
+          {
+            // observations of this cam already exist -> we just add new
+            observations_slamPP[camId_slamPP].insert(trackId_slamPP);
+          }
         }
       }
 
