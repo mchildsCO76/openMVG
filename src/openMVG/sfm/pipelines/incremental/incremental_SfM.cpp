@@ -159,7 +159,7 @@ bool IncrementalSfMReconstructionEngine::Process() {
       bImageAdded |= Resection(*iter);
       set_remaining_view_id_.erase(*iter);
 
-      badTrackRejector(64.0, 50);
+      //badTrackRejector(64.0, 50);
 
       // After every image its a new iteration
       current_recon_iteration++;
@@ -943,78 +943,95 @@ bool IncrementalSfMReconstructionEngine::FindImagesWithPossibleResection(
   if (set_remaining_view_id_.empty() || sfm_data_.GetLandmarks().empty())
     return false;
 
-  // Collect tracksIds
-  std::set<size_t> reconstructed_trackId;
-  std::transform(sfm_data_.GetLandmarks().begin(), sfm_data_.GetLandmarks().end(),
-    std::inserter(reconstructed_trackId, reconstructed_trackId.begin()),
-    stl::RetrieveKey());
+  bool bSequentialImageStep=true;
 
-  Pair_Vec vec_putative; // ImageId, NbPutativeCommonPoint
-#ifdef OPENMVG_USE_OPENMP
-  #pragma omp parallel
-#endif
-  for (std::set<size_t>::const_iterator iter = set_remaining_view_id_.begin();
-        iter != set_remaining_view_id_.end(); ++iter)
+  if (bSequentialImageStep)
   {
-#ifdef OPENMVG_USE_OPENMP
-  #pragma omp single nowait
-#endif
+    size_t max_num_neighbors = std::min<size_t>(10,set_remaining_view_id_.size());
+    std::set<size_t>::iterator it_set = set_remaining_view_id_.begin();
+    for(size_t n_i=0;n_i<max_num_neighbors;n_i)
     {
-      const size_t viewId = *iter;
+      std::advance(it_set,1);
+      vec_possible_indexes.push_back(*it_set);
+    }
+    
+  }
+  else
+  {
 
-      // Compute 2D - 3D possible content
-      openMVG::tracks::STLMAPTracks map_tracksCommon;
-      const std::set<size_t> set_viewId = {viewId};
-      tracks::TracksUtilsMap::GetTracksInImages(set_viewId, map_tracks_, map_tracksCommon);
+    // Collect tracksIds
+    std::set<size_t> reconstructed_trackId;
+    std::transform(sfm_data_.GetLandmarks().begin(), sfm_data_.GetLandmarks().end(),
+      std::inserter(reconstructed_trackId, reconstructed_trackId.begin()),
+      stl::RetrieveKey());
 
-      if (!map_tracksCommon.empty())
+    Pair_Vec vec_putative; // ImageId, NbPutativeCommonPoint
+  #ifdef OPENMVG_USE_OPENMP
+    #pragma omp parallel
+  #endif
+    for (std::set<size_t>::const_iterator iter = set_remaining_view_id_.begin();
+          iter != set_remaining_view_id_.end(); ++iter)
+    {
+  #ifdef OPENMVG_USE_OPENMP
+    #pragma omp single nowait
+  #endif
       {
-        std::set<size_t> set_tracksIds;
-        tracks::TracksUtilsMap::GetTracksIdVector(map_tracksCommon, &set_tracksIds);
+        const size_t viewId = *iter;
 
-        // Count the common possible putative point
-        //  with the already 3D reconstructed trackId
-        std::vector<size_t> vec_trackIdForResection;
-        std::set_intersection(set_tracksIds.begin(), set_tracksIds.end(),
-          reconstructed_trackId.begin(),
-          reconstructed_trackId.end(),
-          std::back_inserter(vec_trackIdForResection));
+        // Compute 2D - 3D possible content
+        openMVG::tracks::STLMAPTracks map_tracksCommon;
+        const std::set<size_t> set_viewId = {viewId};
+        tracks::TracksUtilsMap::GetTracksInImages(set_viewId, map_tracks_, map_tracksCommon);
 
-#ifdef OPENMVG_USE_OPENMP
-        #pragma omp critical
-#endif
+        if (!map_tracksCommon.empty())
         {
-          vec_putative.push_back( make_pair(viewId, vec_trackIdForResection.size()));
+          std::set<size_t> set_tracksIds;
+          tracks::TracksUtilsMap::GetTracksIdVector(map_tracksCommon, &set_tracksIds);
+
+          // Count the common possible putative point
+          //  with the already 3D reconstructed trackId
+          std::vector<size_t> vec_trackIdForResection;
+          std::set_intersection(set_tracksIds.begin(), set_tracksIds.end(),
+            reconstructed_trackId.begin(),
+            reconstructed_trackId.end(),
+            std::back_inserter(vec_trackIdForResection));
+
+  #ifdef OPENMVG_USE_OPENMP
+          #pragma omp critical
+  #endif
+          {
+            vec_putative.push_back( make_pair(viewId, vec_trackIdForResection.size()));
+          }
         }
       }
     }
-  }
 
-  // Sort by the number of matches to the 3D scene.
-  std::sort(vec_putative.begin(), vec_putative.end(), sort_pair_second<size_t, size_t, std::greater<size_t> >());
+    // Sort by the number of matches to the 3D scene.
+    std::sort(vec_putative.begin(), vec_putative.end(), sort_pair_second<size_t, size_t, std::greater<size_t> >());
 
-  // If the list is empty or if the list contains images with no correspdences
-  // -> (no resection will be possible)
-  if (vec_putative.empty() || vec_putative[0].second == 0)
-  {
-    // All remaining images cannot be used for pose estimation
-    set_remaining_view_id_.clear();
-    return false;
-  }
+    // If the list is empty or if the list contains images with no correspdences
+    // -> (no resection will be possible)
+    if (vec_putative.empty() || vec_putative[0].second == 0)
+    {
+      // All remaining images cannot be used for pose estimation
+      set_remaining_view_id_.clear();
+      return false;
+    }
 
-  // Add the image view index that share the most of 2D-3D correspondences
-  vec_possible_indexes.push_back(vec_putative[0].first);
+    // Add the image view index that share the most of 2D-3D correspondences
+    vec_possible_indexes.push_back(vec_putative[0].first);
 
-  int added_points = 0;
+    int added_points = 0;
 
-  // Then, add all the image view indexes that have at least N% of the number of the matches of the best image.
-  const IndexT M = vec_putative[0].second; // Number of 2D-3D correspondences
-  const size_t threshold = static_cast<size_t>(dThresholdGroup * M);
-  for (size_t i = 1; i < vec_putative.size() &&
-    vec_putative[i].second > threshold; ++i)
-  {
-    vec_possible_indexes.push_back(vec_putative[i].first);
-    added_points+=vec_putative[i].second;
+    // Then, add all the image view indexes that have at least N% of the number of the matches of the best image.
+    const IndexT M = vec_putative[0].second; // Number of 2D-3D correspondences
+    const size_t threshold = static_cast<size_t>(dThresholdGroup * M);
+    for (size_t i = 1; i < vec_putative.size() &&
+      vec_putative[i].second > threshold; ++i)
+    {
+      vec_possible_indexes.push_back(vec_putative[i].first);
+      added_points+=vec_putative[i].second;
+    }
   }
   return true;
 }
