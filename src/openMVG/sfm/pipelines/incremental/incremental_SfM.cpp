@@ -949,7 +949,7 @@ bool IncrementalSfMReconstructionEngine::FindImagesWithPossibleResection(
   {
     size_t max_num_neighbors = std::min<size_t>(10,set_remaining_view_id_.size());
     std::set<size_t>::iterator it_set = set_remaining_view_id_.begin();
-    for(size_t n_i=0;n_i<max_num_neighbors;n_i)
+    for(size_t n_i=0;n_i<max_num_neighbors;++n_i)
     {
       std::advance(it_set,1);
       vec_possible_indexes.push_back(*it_set);
