@@ -199,7 +199,7 @@ bool IncrementalSfMReconstructionEngine::Process() {
       else
       {
         // Perform just most wide outlier removal to remove far far away points
-        badTrackRejector(64.0, 0);
+        //badTrackRejector(64.0, 0);
       }
 
       if (performConsistencyCheck_)
