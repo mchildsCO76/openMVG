@@ -175,6 +175,7 @@ private:
   Hash_Map<IndexT, double> map_ACThreshold_; // Per camera confidence (A contrario estimated threshold error)
 
   std::set<size_t> set_remaining_view_id_;     // Remaining camera index that can be used for resection
+  std::set<size_t> set_unsuccessful_view_id_;     // Remaining camera index that can be used for resection
 
   // SlamPP test data properties
   float dBAThresholdGroup_;                   // Insert group of images to BA together (if more than dBAThresholdGroup% of points that the best candidate has)
