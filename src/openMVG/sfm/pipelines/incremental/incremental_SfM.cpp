@@ -950,7 +950,7 @@ bool IncrementalSfMReconstructionEngine::FindImagesWithPossibleResection(
   {
     std::set<size_t> viewsInWindow;
 
-    while (viewsInWindow.empty() && lastUsedViewId_ < sfm_data_.views.size())
+    while (vec_putative.empty() && lastUsedViewId_ < sfm_data_.views.size())
     {
       std::cout<<"\nFinding next candidate views (window "<<orderWindowSize_<<") from view "<<lastUsedViewId_<<":\n";
       for (std::set<size_t>::iterator it_set = set_remaining_view_id_.begin(); it_set != set_remaining_view_id_.end(); ++it_set)
@@ -1010,6 +1010,10 @@ bool IncrementalSfMReconstructionEngine::FindImagesWithPossibleResection(
               }
             }
           }
+        }
+        if (vec_putative.empty())
+        {
+          lastUsedViewId_++;
         }
       }
     }
