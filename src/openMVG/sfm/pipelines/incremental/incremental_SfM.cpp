@@ -952,7 +952,7 @@ bool IncrementalSfMReconstructionEngine::FindImagesWithPossibleResection(
 
     while (viewsInWindow.empty() && lastUsedViewId_ < sfm_data_.views.size())
     {
-      std::cout<<"\nFinding next candidate views (window "<<orderWindowSize_<<") from view "<<lastUsedViewId_<<"\n\n";
+      std::cout<<"\nFinding next candidate views (window "<<orderWindowSize_<<") from view "<<lastUsedViewId_<<":\n";
       for (std::set<size_t>::iterator it_set = set_remaining_view_id_.begin(); it_set != set_remaining_view_id_.end(); ++it_set)
       {
         const size_t v_id = *it_set;
@@ -964,13 +964,59 @@ bool IncrementalSfMReconstructionEngine::FindImagesWithPossibleResection(
           std::cout<<" "<<v_id;
         }
       }
+
       if (viewsInWindow.empty())
       {
         lastUsedViewId_++;
       }
+      else
+      {
+        std::cout<<"\nCheck for inliers in "<<viewsInWindow.size()<<" views\n";
+        // From the candidates in the window order by the number of matches
+  #ifdef OPENMVG_USE_OPENMP
+    #pragma omp parallel
+  #endif
+        for (std::set<size_t>::const_iterator iter = viewsInWindow.begin();
+              iter != viewsInWindow.end(); ++iter)
+        {
+  #ifdef OPENMVG_USE_OPENMP
+    #pragma omp single nowait
+  #endif
+          {
+            const size_t viewId = *iter;
+            // Compute 2D - 3D possible content
+            openMVG::tracks::STLMAPTracks map_tracksCommon;
+            const std::set<size_t> set_viewId = {viewId};
+            tracks::TracksUtilsMap::GetTracksInImages(set_viewId, map_tracks_, map_tracksCommon);
+
+            if (!map_tracksCommon.empty())
+            {
+              std::set<size_t> set_tracksIds;
+              tracks::TracksUtilsMap::GetTracksIdVector(map_tracksCommon, &set_tracksIds);
+
+              // Count the common possible putative point
+              //  with the already 3D reconstructed trackId
+              std::vector<size_t> vec_trackIdForResection;
+              std::set_intersection(set_tracksIds.begin(), set_tracksIds.end(),
+                reconstructed_trackId.begin(),
+                reconstructed_trackId.end(),
+                std::back_inserter(vec_trackIdForResection));
+
+      #ifdef OPENMVG_USE_OPENMP
+              #pragma omp critical
+      #endif
+              {
+                vec_putative.push_back( make_pair(viewId, vec_trackIdForResection.size()));
+              }
+            }
+          }
+        }
+      }
     }
+
+
     // If possible views were found check through the whole set
-    if (viewsInWindow.empty())
+    if (vec_putative.empty())
     {
       if (bTryAllViews_)
       {
@@ -986,55 +1032,11 @@ bool IncrementalSfMReconstructionEngine::FindImagesWithPossibleResection(
     }
     else
     {
-      // From the candidates in the window order by the number of matches
-#ifdef OPENMVG_USE_OPENMP
-  #pragma omp parallel
-#endif
-      for (std::set<size_t>::const_iterator iter = viewsInWindow.begin();
-            iter != viewsInWindow.end(); ++iter)
-      {
-#ifdef OPENMVG_USE_OPENMP
-  #pragma omp single nowait
-#endif
-        {
-          const size_t viewId = *iter;
-
-          // Compute 2D - 3D possible content
-          openMVG::tracks::STLMAPTracks map_tracksCommon;
-          const std::set<size_t> set_viewId = {viewId};
-          tracks::TracksUtilsMap::GetTracksInImages(set_viewId, map_tracks_, map_tracksCommon);
-
-          if (!map_tracksCommon.empty())
-          {
-            std::set<size_t> set_tracksIds;
-            tracks::TracksUtilsMap::GetTracksIdVector(map_tracksCommon, &set_tracksIds);
-
-            // Count the common possible putative point
-            //  with the already 3D reconstructed trackId
-            std::vector<size_t> vec_trackIdForResection;
-            std::set_intersection(set_tracksIds.begin(), set_tracksIds.end(),
-              reconstructed_trackId.begin(),
-              reconstructed_trackId.end(),
-              std::back_inserter(vec_trackIdForResection));
-
-    #ifdef OPENMVG_USE_OPENMP
-            #pragma omp critical
-    #endif
-            {
-              vec_putative.push_back( make_pair(viewId, vec_trackIdForResection.size()));
-            }
-          }
-        }
-      }
       // Sort by the number of matches to the 3D scene.
       std::sort(vec_putative.begin(), vec_putative.end(), sort_pair_second<size_t, size_t, std::greater<size_t> >());
-
-      std::cout<<"PUTATIVE: "<<vec_putative.size()<<"\n";
-
       for (size_t i = 0; i < vec_putative.size(); ++i)
       {
         vec_possible_indexes.push_back(vec_putative[i].first);
-        std::cout<<"AA: "<<vec_possible_indexes[i]<<" :: "<<vec_putative[i].first<<"\n";
       }
       std::cout<<"POSSIBLE: "<<vec_possible_indexes.size()<<"\n";
       return true;
