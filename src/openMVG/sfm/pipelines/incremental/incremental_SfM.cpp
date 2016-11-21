@@ -3090,12 +3090,31 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
     for (auto cam_data : slam_pp_total_data.camera_ids_slamPP_omvg)
     {
       const View * view = sfm_data_.GetViews().at(cam_data.second).get();
-      slamPP_CamFile << cam_data.second <<","<<cam_data.first<<","<< view->s_Img_path<<"\n";
+      slamPP_CamFile << cam_data.second <<","<<cam_data.first<<","<< view->s_Img_path.substr(1,view->s_Img_path.size()-1)<<"\n";
     }
 
     // Close the camfile
     slamPP_CamFile.flush();
     slamPP_CamFile.close();
+
+
+    // Export structure information to a file
+    std::ofstream slamPP_3DFile;
+    slamPP_3DFile.open( pointsfile.c_str(), std::ios::out );
+    
+    // Header
+    slamPP_3DFile << "OpenMVG_ID,SlamPP_ID\n";
+
+    // Loop through tracks
+    for (auto struct_data : slam_pp_total_data.track_ids_slamPP_omvg)
+    {
+      slamPP_3DFile << struct_data.second <<","<<struct_data.first<<"\n";
+    }
+
+    // Close the 3dfile
+    slamPP_3DFile.flush();
+    slamPP_3DFile.close();
+
 
   }
 
