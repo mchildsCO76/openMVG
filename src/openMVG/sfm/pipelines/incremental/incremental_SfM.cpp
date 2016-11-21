@@ -158,13 +158,13 @@ bool IncrementalSfMReconstructionEngine::Process() {
       if (bCurrentImageAdded)
       {
         set_remaining_view_id_.erase(*iter);
-        if (*iter > lastUsedViewId_)
-          lastUsedViewId_ = *iter;
         // After every image its a new iteration
         current_recon_iteration++;
         resetIncrementStep();
         std::cout<<"remove view: "<<*iter<<"\n";
       }
+      if (*iter > lastUsedViewId_)
+        lastUsedViewId_ = *iter;
     }
 
     if (bImageAdded)
