@@ -72,7 +72,15 @@ int main(int argc, char **argv)
   std::string sIntrinsic_refinement_options = "ADJUST_ALL";
   int i_User_camera_model = PINHOLE_CAMERA_RADIAL3;
 
-  std::string graphfile_filename;
+  // Ordered incremental reconstruction settings
+  size_t iWindowSize = 5;
+  bool bOrderedProcessing = true;
+  bool bTryAllViewsAtEnd = true;
+  
+  
+
+  // Graph settings
+  std::string graphFileDir;
   bool bPerformGlobalBA = false;
   bool bPerformLocalPoseBA = false;
   bool bPerformGlobalOutlierRemoval = false;
@@ -81,7 +89,7 @@ int main(int argc, char **argv)
 
   int iCamVertexType = 0;
   int iLandmarkVertexType = 0;
-  bool bExportTwoFoldGraphFile = false;
+  bool bExportTwoFoldGraphFile = true;
 
   cmd.add( make_option('i', sSfM_Data_Filename, "input_file") );
   cmd.add( make_option('m', sMatchesDir, "matchdir") );
@@ -91,11 +99,15 @@ int main(int argc, char **argv)
   cmd.add( make_option('c', i_User_camera_model, "camera_model") );
   cmd.add( make_option('f', sIntrinsic_refinement_options, "refineIntrinsics") );
 
-  cmd.add( make_option('s', graphfile_filename, "graph_file") );
+  cmd.add( make_option('y', bOrderedProcessing, "ordered_processing") );
+  cmd.add( make_option('w', iWindowSize, "order_window_size") );
+  cmd.add( make_option('q', bTryAllViewsAtEnd, "try_all_views") );
+
+  cmd.add( make_option('s', graphFileDir, "graph_file") );
+  cmd.add( make_option('t', bExportTwoFoldGraphFile, "twofold_graph_file") );
 
   cmd.add( make_option('u', iCamVertexType, "camera_vertex_type") );
   cmd.add( make_option('v', iLandmarkVertexType, "landmark_vertex_type") );
-  cmd.add( make_option('t', bExportTwoFoldGraphFile, "twofold_graph_file") );
 
   cmd.add( make_option('g', bPerformGlobalBA, "globalBA") );
   cmd.add( make_option('l', bPerformLocalPoseBA, "localPoseBA") );
@@ -122,6 +134,9 @@ int main(int argc, char **argv)
       << "\t 4: Pinhole radial 3 + tangential 2\n"
       << "\t 5: Pinhole fisheye\n"
     << "[-f|--refineIntrinsics] Intrinsic parameters refinement option\n"
+    << "[-y|--ordered_processing] Follow the list of views or always select the best one (better but slower) (default: true)\n"
+    << "[-w|--order_window_size] Size of window from which the next views are considered (default: 5)\n"
+    << "[-q|--try_all_views] After ordered processing we try again with all the remaining views (default: false)\n"
       << "\t ADJUST_ALL -> refine all existing parameters (default) \n"
       << "\t NONE -> intrinsic parameters are held as constant\n"
       << "\t ADJUST_FOCAL_LENGTH -> refine only the focal length\n"
@@ -134,7 +149,7 @@ int main(int argc, char **argv)
       <<      "\t\t-> refine the focal length & the distortion coefficient(s) (if any)\n"
       << "\t ADJUST_PRINCIPAL_POINT|ADJUST_DISTORTION\n"
       <<      "\t\t-> refine the principal point position & the distortion coefficient(s) (if any)\n"
-    << "[-s|--graph_file] path where incremental graphfile will be stored\n"
+    << "[-s|--graphdir] path where incremental graphfile and other related files will be stored\n"
     << "[-u|--camera_vertex_type] Type of exported camera vertex (in graph file):\n"
       << "\t 0: SE(3) in global reference frame (default)\n"
       << "\t 1: Sim(3) in global reference frame \n"
@@ -231,18 +246,21 @@ int main(int argc, char **argv)
   sfmEngine.Set_Intrinsics_Refinement_Type(intrinsic_refinement_options);
   sfmEngine.SetUnknownCameraType(EINTRINSIC(i_User_camera_model));
 
+
   // Set SlamPP logging data
-  if (graphfile_filename.empty())
-  {
-    graphfile_filename = stlplus::create_filespec(sOutDir, "GraphFile", ".txt");
-  }
-  sfmEngine.setGraphFileOutputFile(graphfile_filename);
-  bool bPerformInitialTwoViewBA = bPerformLocalPoseBA; // Not yet implemented
-  sfmEngine.setBAOptimizations(bPerformGlobalBA, bPerformInitialTwoViewBA, bPerformLocalPoseBA);
+  if (graphFileDir.empty())
+    sfmEngine.setGraphFileOutputFolder(sOutDir);
+  else
+    sfmEngine.setGraphFileOutputFolder(graphFileDir);
+  
+  sfmEngine.setBAOptimizations(bPerformGlobalBA, bPerformLocalPoseBA, bPerformLocalPoseBA);
   sfmEngine.setConsistencyCheck(bPerformConsistencyCheck);
   sfmEngine.setOutlierRemoval(bPerformGlobalOutlierRemoval,bPerformLocalOutlierRemoval);
   sfmEngine.setGraphVertexOutputTypes(iCamVertexType,iLandmarkVertexType);
   sfmEngine.setExportTwoFoldGraphFile(bExportTwoFoldGraphFile);
+  
+  sfmEngine.setProcessingOrder(bOrderedProcessing, iWindowSize, bTryAllViewsAtEnd);
+
 
   // Handle Initial pair parameter
   if (!initialPairString.first.empty() && !initialPairString.second.empty())

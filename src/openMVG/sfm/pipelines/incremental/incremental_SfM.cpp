@@ -66,7 +66,7 @@ IncrementalSfMReconstructionEngine::IncrementalSfMReconstructionEngine(
     set_remaining_view_id_.insert(itV->second.get()->id_view);
   }
 
-  dBAThresholdGroup_ = 0.25f;
+  dBAThresholdGroup_ = 0.5f;
 
   performGlobalBA_ = false;
   performInitialTwoViewBA_ = true;
@@ -75,6 +75,11 @@ IncrementalSfMReconstructionEngine::IncrementalSfMReconstructionEngine(
   performConsistencyCheck_ = true;
 
   performLocalOutlierRemoval_ = false;
+
+
+  bOrderedProcessing_ = true;
+  orderWindowSize_ = 1;
+  bTryAllViews_ = true;
 
 }
 
@@ -103,9 +108,6 @@ bool IncrementalSfMReconstructionEngine::Process() {
   //-------------------
   //-- Incremental reconstruction
   //-------------------
-
-  // Create SlamPP incremental file
-  slam_pp_data.createLogFile();
   current_recon_iteration = 0;
 
   if (!InitLandmarkTracks())
@@ -130,15 +132,6 @@ bool IncrementalSfMReconstructionEngine::Process() {
     return false;
 
   // Initial Incremental step
-/*
-  if(!performGlobalOutlierRemoval_)
-  {
-    if (slam_pp_data.bTwoFoldGraphFile)
-      ExportTwoFoldIncrementToGraphFile_SlamPP();
-    else
-      ExportIncrementToGraphFile_SlamPP();
-  }*/
-
   current_recon_iteration++;
   resetIncrementStep();
 
@@ -149,6 +142,8 @@ bool IncrementalSfMReconstructionEngine::Process() {
   // - group of images will be selected and resection + scene completion will be tried
   size_t resectionGroupIndex = 0;
   std::vector<size_t> vec_possible_resection_indexes;
+
+// bOrderedProcessing_
   while (FindImagesWithPossibleResection(vec_possible_resection_indexes))
   {
     bool bImageAdded = false;
@@ -156,15 +151,16 @@ bool IncrementalSfMReconstructionEngine::Process() {
     for (std::vector<size_t>::const_iterator iter = vec_possible_resection_indexes.begin();
       iter != vec_possible_resection_indexes.end(); ++iter)
     {
-      bImageAdded |= Resection(*iter);
-      set_remaining_view_id_.erase(*iter);
-
-      //badTrackRejector(64.0, 50);
-
-      // After every image its a new iteration
-      current_recon_iteration++;
-      resetIncrementStep();
-
+      bool bCurrentImageAdded = Resection(*iter);
+      bImageAdded |= bCurrentImageAdded;
+      if (bCurrentImageAdded)
+      {
+        set_remaining_view_id_.erase(*iter);
+        lastUsedViewId_ = *iter;
+        // After every image its a new iteration
+        current_recon_iteration++;
+        resetIncrementStep();
+      }
     }
 
     if (bImageAdded)
@@ -189,24 +185,11 @@ bool IncrementalSfMReconstructionEngine::Process() {
       {
         badTrackRejector(16.0, 50);
       }
-
-      badTrackRejector(64.0, 50);
-/*
-      else if(performLocalOutlierRemoval_)
+      else
       {
-        badTrackRejector(4.0, 50)
-      }*/
-    
-      /*
-      if(!performGlobalOutlierRemoval_)
-      {
-        if (slam_pp_data.bTwoFoldGraphFile)
-          ExportTwoFoldIncrementToGraphFile_SlamPP();
-        else
-          ExportIncrementToGraphFile_SlamPP();
-      }*/
-      
-
+        // Perform just most wide outlier removal to remove far far away points
+        badTrackRejector(64.0, 0);
+      }
 
       if (performConsistencyCheck_)
         checkIncrementalConsistency();
@@ -214,6 +197,7 @@ bool IncrementalSfMReconstructionEngine::Process() {
     }
     ++resectionGroupIndex;
   }
+
 /*
   // Ensure there is no remaining outliers
   if (performGlobalOutlierRemoval_)
@@ -224,18 +208,12 @@ bool IncrementalSfMReconstructionEngine::Process() {
     }
   }
 */
-  // Go through incremental logs and put everything to file
-  //if(performGlobalOutlierRemoval_)
-  //{
-    ExportTwoFoldTotalProcessByIncrementToGraphFile_SlamPP();
-  //}
 
+  // Go through incremental logs and put everything to file
+  ExportTwoFoldTotalProcessByIncrementToGraphFile_SlamPP();
 
 
   //-- Reconstruction done.
-
-  // Create SlamPP incremental file
-  slam_pp_data.closeLogFile();
 
   //-- Display some statistics
   std::cout << "\n\n-------------------------------" << "\n"
@@ -648,7 +626,11 @@ bool IncrementalSfMReconstructionEngine::MakeInitialPair3D(const Pair & current_
   slam_pp_data.parent_cam_id[view_I->id_view] = view_J->id_view;
   slam_pp_data.addCamWithParentToGraph(view_I->id_view,view_J->id_view);
 
-
+  // Save view info if we want to do order-style reconstruction
+  if (bOrderedProcessing_)
+  {
+    lastUsedViewId_ = I;
+  }
 
   const bool bRefine_using_BA = performInitialTwoViewBA_;
 
@@ -750,7 +732,7 @@ bool IncrementalSfMReconstructionEngine::MakeInitialPair3D(const Pair & current_
   }
   else
   {
-
+    // With no BA -> just add the points as they are triangulated
     // Init poses
     const Pose3 & pose_I = sfm_data_.poses[view_I->id_pose] = Pose3(Mat3::Identity(), Vec3::Zero());
     const Pose3 & pose_J = sfm_data_.poses[view_J->id_pose] = relativePose_info.relativePose;
@@ -943,98 +925,132 @@ bool IncrementalSfMReconstructionEngine::FindImagesWithPossibleResection(
   if (set_remaining_view_id_.empty() || sfm_data_.GetLandmarks().empty())
     return false;
 
-  bool bSequentialImageStep=true;
 
-  if (bSequentialImageStep)
+  // Go through remaining images and add the ones fitting the window
+  if (bOrderedProcessing_)
   {
-    size_t max_num_neighbors = std::min<size_t>(10,set_remaining_view_id_.size());
-    std::set<size_t>::iterator it_set = set_remaining_view_id_.begin();
-    for(size_t n_i=0;n_i<max_num_neighbors;++n_i)
+    while (vec_possible_indexes.empty() && lastUsedViewId_ < sfm_data_.views.size())
     {
-      std::advance(it_set,1);
-      vec_possible_indexes.push_back(*it_set);
-    }
-    
-  }
-  else
-  {
-
-    // Collect tracksIds
-    std::set<size_t> reconstructed_trackId;
-    std::transform(sfm_data_.GetLandmarks().begin(), sfm_data_.GetLandmarks().end(),
-      std::inserter(reconstructed_trackId, reconstructed_trackId.begin()),
-      stl::RetrieveKey());
-
-    Pair_Vec vec_putative; // ImageId, NbPutativeCommonPoint
-  #ifdef OPENMVG_USE_OPENMP
-    #pragma omp parallel
-  #endif
-    for (std::set<size_t>::const_iterator iter = set_remaining_view_id_.begin();
-          iter != set_remaining_view_id_.end(); ++iter)
-    {
-  #ifdef OPENMVG_USE_OPENMP
-    #pragma omp single nowait
-  #endif
+      std::cout<<"\nFinding next candidate views (window "<<orderWindowSize_<<") from view "<<lastUsedViewId_<<":\n";
+      for (std::set<size_t>::iterator it_set = set_remaining_view_id_.begin(); it_set != set_remaining_view_id_.end(); ++it_set)
       {
-        const size_t viewId = *iter;
-
-        // Compute 2D - 3D possible content
-        openMVG::tracks::STLMAPTracks map_tracksCommon;
-        const std::set<size_t> set_viewId = {viewId};
-        tracks::TracksUtilsMap::GetTracksInImages(set_viewId, map_tracks_, map_tracksCommon);
-
-        if (!map_tracksCommon.empty())
+        const size_t v_id = *it_set;
+        const size_t min_id = std::max<size_t>(0, lastUsedViewId_ - orderWindowSize_);
+        const size_t max_id = std::min<size_t>(sfm_data_.views.size()-1, lastUsedViewId_ + orderWindowSize_);
+        if (v_id >= min_id && v_id <= max_id)
         {
-          std::set<size_t> set_tracksIds;
-          tracks::TracksUtilsMap::GetTracksIdVector(map_tracksCommon, &set_tracksIds);
+          vec_possible_indexes.emplace_back(v_id);
+          std::cout<<" "<<v_id;
+        }
+      }
+      if (vec_possible_indexes.empty())
+      {
+        lastUsedViewId_++;
+      }
+    }
+    // If possible views were found check through the whole set
+    if (vec_possible_indexes.empty())
+    {
+      if (bTryAllViews_)
+      {
+        std::cout<<"Force from rest of the views\n\n";  
 
-          // Count the common possible putative point
-          //  with the already 3D reconstructed trackId
-          std::vector<size_t> vec_trackIdForResection;
-          std::set_intersection(set_tracksIds.begin(), set_tracksIds.end(),
-            reconstructed_trackId.begin(),
-            reconstructed_trackId.end(),
-            std::back_inserter(vec_trackIdForResection));
+      }
+      else
+      {
+        set_remaining_view_id_.clear();
+        return false;
+      }
+    }
+    else
+    {
+      return true;
+    }
+  }
 
-  #ifdef OPENMVG_USE_OPENMP
-          #pragma omp critical
-  #endif
-          {
-            vec_putative.push_back( make_pair(viewId, vec_trackIdForResection.size()));
-          }
+  // Find best view from all un-used views
+
+  // Collect tracksIds
+  std::set<size_t> reconstructed_trackId;
+  std::transform(sfm_data_.GetLandmarks().begin(), sfm_data_.GetLandmarks().end(),
+    std::inserter(reconstructed_trackId, reconstructed_trackId.begin()),
+    stl::RetrieveKey());
+
+  Pair_Vec vec_putative; // ImageId, NbPutativeCommonPoint
+#ifdef OPENMVG_USE_OPENMP
+  #pragma omp parallel
+#endif
+  for (std::set<size_t>::const_iterator iter = set_remaining_view_id_.begin();
+        iter != set_remaining_view_id_.end(); ++iter)
+  {
+#ifdef OPENMVG_USE_OPENMP
+  #pragma omp single nowait
+#endif
+    {
+      const size_t viewId = *iter;
+
+      // Compute 2D - 3D possible content
+      openMVG::tracks::STLMAPTracks map_tracksCommon;
+      const std::set<size_t> set_viewId = {viewId};
+      tracks::TracksUtilsMap::GetTracksInImages(set_viewId, map_tracks_, map_tracksCommon);
+
+      if (!map_tracksCommon.empty())
+      {
+        std::set<size_t> set_tracksIds;
+        tracks::TracksUtilsMap::GetTracksIdVector(map_tracksCommon, &set_tracksIds);
+
+        // Count the common possible putative point
+        //  with the already 3D reconstructed trackId
+        std::vector<size_t> vec_trackIdForResection;
+        std::set_intersection(set_tracksIds.begin(), set_tracksIds.end(),
+          reconstructed_trackId.begin(),
+          reconstructed_trackId.end(),
+          std::back_inserter(vec_trackIdForResection));
+
+#ifdef OPENMVG_USE_OPENMP
+        #pragma omp critical
+#endif
+        {
+          vec_putative.push_back( make_pair(viewId, vec_trackIdForResection.size()));
         }
       }
     }
-
-    // Sort by the number of matches to the 3D scene.
-    std::sort(vec_putative.begin(), vec_putative.end(), sort_pair_second<size_t, size_t, std::greater<size_t> >());
-
-    // If the list is empty or if the list contains images with no correspdences
-    // -> (no resection will be possible)
-    if (vec_putative.empty() || vec_putative[0].second == 0)
-    {
-      // All remaining images cannot be used for pose estimation
-      set_remaining_view_id_.clear();
-      return false;
-    }
-
-    // Add the image view index that share the most of 2D-3D correspondences
-    vec_possible_indexes.push_back(vec_putative[0].first);
-
-    int added_points = 0;
-
-    // Then, add all the image view indexes that have at least N% of the number of the matches of the best image.
-    const IndexT M = vec_putative[0].second; // Number of 2D-3D correspondences
-    const size_t threshold = static_cast<size_t>(dThresholdGroup * M);
-    for (size_t i = 1; i < vec_putative.size() &&
-      vec_putative[i].second > threshold; ++i)
-    {
-      vec_possible_indexes.push_back(vec_putative[i].first);
-      added_points+=vec_putative[i].second;
-    }
   }
+
+  // Sort by the number of matches to the 3D scene.
+  std::sort(vec_putative.begin(), vec_putative.end(), sort_pair_second<size_t, size_t, std::greater<size_t> >());
+
+  // If the list is empty or if the list contains images with no correspdences
+  // -> (no resection will be possible)
+  if (vec_putative.empty() || vec_putative[0].second == 0)
+  {
+    // All remaining images cannot be used for pose estimation
+    set_remaining_view_id_.clear();
+    return false;
+  }
+
+  // Add the image view index that share the most of 2D-3D correspondences
+  vec_possible_indexes.push_back(vec_putative[0].first);
+
+  int added_points = 0;
+
+  // Then, add all the image view indexes that have at least N% of the number of the matches of the best image.
+  const IndexT M = vec_putative[0].second; // Number of 2D-3D correspondences
+  const size_t threshold = static_cast<size_t>(dThresholdGroup * M);
+  for (size_t i = 1; i < vec_putative.size() &&
+    vec_putative[i].second > threshold; ++i)
+  {
+    vec_possible_indexes.push_back(vec_putative[i].first);
+    added_points+=vec_putative[i].second;
+  }
+  
   return true;
 }
+
+
+
+
+
 
 /**
  * @brief Add one image to the 3D reconstruction. To the resectioning of
@@ -1783,7 +1799,7 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
   increment_observation_.first.clear();
 }
 
-
+/*
   void IncrementalSfMReconstructionEngine::ExportIncrementToGraphFile_SlamPP()
   {
 
@@ -2497,10 +2513,20 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
 
   }
 
-
+*/
 
   void IncrementalSfMReconstructionEngine::ExportTwoFoldTotalProcessByIncrementToGraphFile_SlamPP()
   {
+
+    // Create output files
+    std::string graphfile = stlplus::create_filespec(slam_pp_data.graphOutputDir, "GraphFile", ".txt");
+    std::string camfile = stlplus::create_filespec(slam_pp_data.graphOutputDir, "CAM_OpenMVG_SlamPP", ".txt");
+    std::string pointsfile = stlplus::create_filespec(slam_pp_data.graphOutputDir, "3D_OpenMVG_SlamPP", ".txt");
+
+    // Open graph file
+    std::ofstream slamPP_GraphFile;
+    slamPP_GraphFile.open( graphfile.c_str(), std::ios::out );
+
     SlamPP_Data slam_pp_total_data;
     slam_pp_total_data.initCamParentsGraph();
 
@@ -2545,7 +2571,7 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
             const Vec3 center = pose.center();
             Eigen::Quaterniond q( rotation ) ;
             // Export to graph file
-            slam_pp_data.slamPP_DatasetFile << "VERTEX_CAM" 
+            slamPP_GraphFile << "VERTEX_CAM" 
               << " " << camId_slamPP
               << " " << center[0]
               << " " << center[1]
@@ -2571,7 +2597,7 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
             double angleAxis[3];
             ceres::RotationMatrixToAngleAxis((const double*)rotation.data(), angleAxis);
             // Export to graph file
-            slam_pp_data.slamPP_DatasetFile << "VERTEX_CAM:SIM3" 
+            slamPP_GraphFile << "VERTEX_CAM:SIM3" 
               << " " << camId_slamPP
               << " " << center[0]
               << " " << center[1]
@@ -2671,8 +2697,10 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
       std::pair<IndexT,IndexT> last_queried_path(std::numeric_limits<IndexT>::max(),std::numeric_limits<IndexT>::max());
 
       // Observations (of old points) - sort them by cam and track id (of slamPP)
-      Hash_Map<IndexT,std::set<IndexT> >observations_slamPP;
-      
+      Hash_Map<IndexT,std::set<IndexT> > oldPoints_observations_slamPP;
+      // Observations (of new points) - sort them by cam and track id (of slamPP)
+      Hash_Map<IndexT,std::set<IndexT> > newPoints_observations_slamPP;
+
       for (Hash_Map<IndexT, std::set<IndexT> >::iterator it_views_tracks_obs = current_inc_observation.begin(); it_views_tracks_obs != current_inc_observation.end(); ++it_views_tracks_obs)
       {
         IndexT camId_slamPP, trackId_slamPP, camId_omvg, trackId_omvg;
@@ -2696,28 +2724,29 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
           if (observation_last_removed.count(camId_omvg) != 0 && observation_last_removed[camId_omvg].count(trackId_omvg) != 0 && !(i_inc_iter > observation_last_removed[camId_omvg][trackId_omvg]))
             continue;    
 
-          // Skip if its a new landmarks - we only add observations of already reconstructed points
-          if (current_inc_structure.find(trackId_omvg) != current_inc_structure.end())
-          {
-            continue;
-          }
-
           if (!slam_pp_total_data.getTrackId_SlamPP(trackId_omvg,trackId_slamPP))
           {
             std::cerr << "Something went wrong with C Track ID OpenMVG A - SlamPP index mapping"<<trackId_omvg<<"\n";
           }
           else
           {
-            // observations of this cam already exist -> we just add new
-            observations_slamPP[camId_slamPP].insert(trackId_slamPP);
+            // Skip if its a new landmarks - we only add observations of already reconstructed points
+            if (current_inc_structure.find(trackId_omvg) == current_inc_structure.end())
+            {
+              // observations of this cam already exist -> we just add new
+              oldPoints_observations_slamPP[camId_slamPP].insert(trackId_slamPP);
+            }
+            else
+            {
+              // observations of this cam already exist -> we just add new
+              newPoints_observations_slamPP[camId_slamPP].insert(trackId_slamPP);
+            }
           }
         }
       }
 
-      // Observations of the points already reconstructed (without the newly added camera)
-
-      // Export ordered observations to file
-      for (Hash_Map<IndexT,std::set<IndexT> >::iterator it_obs = observations_slamPP.begin(); it_obs != observations_slamPP.end(); ++it_obs)
+      // Export ordered observations of old points to file
+      for (Hash_Map<IndexT,std::set<IndexT> >::iterator it_obs = oldPoints_observations_slamPP.begin(); it_obs != oldPoints_observations_slamPP.end(); ++it_obs)
       { 
         IndexT camId_slamPP, trackId_slamPP, camId_omvg, trackId_omvg;
         camId_slamPP = it_obs->first;
@@ -2763,7 +2792,7 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
           switch (slam_pp_data.iOutputLandmarkType)
           {
             case 0: // Euclidean (world)
-              slam_pp_data.slamPP_DatasetFile << "EDGE_PROJECT_P2MC"
+              slamPP_GraphFile << "EDGE_PROJECT_P2MC"
               << " " << trackId_slamPP
               << " " << camId_slamPP
               << " " << pt_2d(0)
@@ -2775,7 +2804,7 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
               if (camId_slamPP == track_owner_camId_slamPP)
               {
                 // Actually shouldnt happen because the point should already be in
-                slam_pp_data.slamPP_DatasetFile << "EDGE_PROJ_SELF"
+                slamPP_GraphFile << "EDGE_PROJ_SELF"
                 << " " << trackId_slamPP
                 << " " << camId_slamPP
                 << " " << pt_2d(0)
@@ -2793,7 +2822,7 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
                   last_queried_path.first = camId_omvg;
                   last_queried_path.second = track_owner_camId_omvg;
                 }
-                slam_pp_data.slamPP_DatasetFile << "EDGE_PROJ_OTHER"
+                slamPP_GraphFile << "EDGE_PROJ_OTHER"
                 << " " << trackId_slamPP
                 << " " << cam_predecesors.size() + 1
                 << " " << camId_slamPP;
@@ -2804,9 +2833,9 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
                   {
                     std::cerr << "Something went wrong with H Camera ID OpenMVG - SlamPP index mapping"<<*it_pred_camId<<"\n";
                   }
-                  slam_pp_data.slamPP_DatasetFile << " " << pred_cam_slamPP;
+                  slamPP_GraphFile << " " << pred_cam_slamPP;
                 }
-                slam_pp_data.slamPP_DatasetFile << " " << pt_2d(0)
+                slamPP_GraphFile << " " << pt_2d(0)
                 << " " << pt_2d(1)
                 << " " << "1 0 1"
                 << std::endl;
@@ -2816,65 +2845,20 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
         }
       }
 
-
       // Export consistency marker if there were any observations of old points added
-      if (observations_slamPP.size()!=0)
+      if (oldPoints_observations_slamPP.size()!=0)
       {
-        slam_pp_data.slamPP_DatasetFile << "CONSISTENCY_MARKER\n";
+        slamPP_GraphFile << "CONSISTENCY_MARKER\n";
       }
       
-      // Dump new stucture
-      slam_pp_data.slamPP_DatasetFile << new_landmarks_stream.str();
+      // Dump new stucture points to the graph file
+      slamPP_GraphFile << new_landmarks_stream.str();
 
-      // Add the observations of new points in reference image and other observations of new points
-      observations_slamPP.clear();
-      
-      for (Hash_Map<IndexT, std::set<IndexT> >::iterator it_views_tracks_obs = current_inc_observation.begin(); it_views_tracks_obs != current_inc_observation.end(); ++it_views_tracks_obs)
-      {
-        IndexT camId_slamPP, trackId_slamPP, camId_omvg, trackId_omvg;
-        // Get SlamPP index of camera
-        camId_omvg = it_views_tracks_obs->first;
-
-        if (!slam_pp_total_data.getCamId_SlamPP(camId_omvg,camId_slamPP))
-        {
-          std::cerr << "Something went wrong with I Camera ID OpenMVG - SlamPP index mapping"<<camId_omvg<<"\n";
-        }
-        // Get iterator to the set of tracks for current view
-        for (std::set<IndexT>::iterator it_view_tracks = it_views_tracks_obs->second.begin() ; it_view_tracks != it_views_tracks_obs->second.end(); ++it_view_tracks)
-        {
-          // Get SlamPP index of track
-          trackId_omvg = *it_view_tracks;
-
-          // If structue was ever removed and the removal was in later iteration that currently inspected --> we skip the structure as it will be removed
-          if (structure_last_removed.count(trackId_omvg) != 0 && !(i_inc_iter > structure_last_removed[trackId_omvg]))
-            continue;
-
-          // Check if this measurement was deleted after this iteration
-          if (observation_last_removed.count(camId_omvg) != 0 && observation_last_removed[camId_omvg].count(trackId_omvg) != 0 && !(i_inc_iter > observation_last_removed[camId_omvg][trackId_omvg]))
-            continue;    
-
-          // Skip if its an old landmark (already added)
-          if (current_inc_structure.find(trackId_omvg) == current_inc_structure.end())
-          {
-            continue;
-          }
-
-          if (!slam_pp_total_data.getTrackId_SlamPP(trackId_omvg,trackId_slamPP))
-          {
-            std::cerr << "Something went wrong with JCamera ID OpenMVG - SlamPP index mapping"<<trackId_omvg<<"\n";
-          }
-          else
-          {
-            // observations of this cam already exist -> we just add new
-            observations_slamPP[camId_slamPP].insert(trackId_slamPP);
-          }
-        }
-      }
-
+      // First we add the measurements on the owner camera and then the other measurements of the point ("EDGE_OTHER")
       std::ostringstream edge_other_stream;
 
-      // Export ordered observations to file
-      for (Hash_Map<IndexT,std::set<IndexT> >::iterator it_obs = observations_slamPP.begin(); it_obs != observations_slamPP.end(); ++it_obs)
+      // Export ordered observations of new points to file
+      for (Hash_Map<IndexT,std::set<IndexT> >::iterator it_obs = newPoints_observations_slamPP.begin(); it_obs != newPoints_observations_slamPP.end(); ++it_obs)
       { 
         IndexT camId_slamPP, trackId_slamPP, camId_omvg, trackId_omvg;
         camId_slamPP = it_obs->first;
@@ -2920,7 +2904,7 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
           switch (slam_pp_data.iOutputLandmarkType)
           {
             case 0: // Euclidean (world)
-              slam_pp_data.slamPP_DatasetFile << "EDGE_PROJECT_P2MC"
+              slamPP_GraphFile << "EDGE_PROJECT_P2MC"
               << " " << trackId_slamPP
               << " " << camId_slamPP
               << " " << pt_2d(0)
@@ -2931,7 +2915,7 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
             case 1:
               if (camId_slamPP == track_owner_camId_slamPP)
               {
-                slam_pp_data.slamPP_DatasetFile << "EDGE_PROJ_SELF"
+                slamPP_GraphFile << "EDGE_PROJ_SELF"
                 << " " << trackId_slamPP
                 << " " << camId_slamPP
                 << " " << pt_2d(0)
@@ -2971,12 +2955,36 @@ void IncrementalSfMReconstructionEngine::resetIncrementStep()
           }
         }
       }
-      slam_pp_data.slamPP_DatasetFile << edge_other_stream.str();
-
+      // Add the data of measurements of non-owner cameras to the graphfile
+      slamPP_GraphFile << edge_other_stream.str();
 
       // Export consistency marker
-      slam_pp_data.slamPP_DatasetFile << "CONSISTENCY_MARKER\n";
+      slamPP_GraphFile << "CONSISTENCY_MARKER\n";
     }
+
+    // Close the graphfile
+    slamPP_GraphFile.flush();
+    slamPP_GraphFile.close();
+
+
+    // Export camera information to a file
+    std::ofstream slamPP_CamFile;
+    slamPP_CamFile.open( camfile.c_str(), std::ios::out );
+    
+    // Header
+    slamPP_CamFile << "OpenMVG_ID,SlamPP_ID,image_filename\n";
+
+    // Loop through cameras
+    for (auto cam_data : slam_pp_total_data.camera_ids_slamPP_omvg)
+    {
+      const View * view = sfm_data_.GetViews().at(cam_data.second).get();
+      slamPP_CamFile << cam_data.second <<","<<cam_data.first<<","<< view->s_Img_path<<"\n";
+    }
+
+    // Close the camfile
+    slamPP_CamFile.flush();
+    slamPP_CamFile.close();
+
   }
 
 

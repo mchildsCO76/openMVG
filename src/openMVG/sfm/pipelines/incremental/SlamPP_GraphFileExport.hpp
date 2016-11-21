@@ -41,18 +41,10 @@ struct SlamPP_Data
   int iOutputLandmarkType = 0; // 0 - Eucliean (world); 1 - inverse depth (reference)
   bool bTwoFoldGraphFile = false; 
 
-  std::string slamPP_dataset_filename;
-  std::ofstream slamPP_DatasetFile;
-  
-  void createLogFile()
-  {
-    slamPP_DatasetFile.open( slamPP_dataset_filename.c_str(), std::ios::out );
-  }
-  void closeLogFile()
-  {
-    slamPP_DatasetFile.flush();
-    slamPP_DatasetFile.close();
-  }
+  std::string graphOutputDir;
+
+  //std::ofstream slamPP_DatasetFile;
+ 
 
   // Get Index Of Camera
   bool getCamId_SlamPP(IndexT &camId_omvg, IndexT &camId_slamPP)
@@ -110,11 +102,6 @@ struct SlamPP_Data
     IndexT freeId = next_free_id_slamPP;
     next_free_id_slamPP++;
     return freeId;
-  }
-
-  void setGraphFileOutputFile(std::string &filename)
-  {
-    slamPP_dataset_filename = filename;
   }
 
   void initCamParentsGraph()

@@ -82,8 +82,6 @@ public:
   {
     performGlobalOutlierRemoval_ = performGOR;
     performLocalOutlierRemoval_ = performLOR;
-    
-  std::cout<<"OUTLIUE C: "<<performGlobalOutlierRemoval_<<"\n";
   }
   /// Set if consistency check of incremental log is done
   void setConsistencyCheck(const bool &performCC)
@@ -91,9 +89,9 @@ public:
     performConsistencyCheck_ = performCC;
   }
 
-  void setGraphFileOutputFile(const std::string &filename)
+  void setGraphFileOutputFolder(const std::string &dirname)
   {
-    slam_pp_data.slamPP_dataset_filename = filename;
+    slam_pp_data.graphOutputDir = dirname;
   }
   void setGraphVertexOutputTypes(const int camVertexOutputType, const int landmarkOutputType)
   {
@@ -109,6 +107,14 @@ public:
   void ExportIncrementToGraphFile_SlamPP();
   void ExportTwoFoldIncrementToGraphFile_SlamPP();
   void ExportTwoFoldTotalProcessByIncrementToGraphFile_SlamPP();
+  
+  void setProcessingOrder(const bool &ordered = false, const size_t &win_size = 5, const bool &try_views = false)
+  {
+    bOrderedProcessing_ = ordered;
+    bTryAllViews_ = try_views;
+    orderWindowSize_ = win_size;
+  }
+
 protected:
 
 
@@ -184,6 +190,13 @@ private:
   // SLAM++
   SlamPP_Data slam_pp_data;
   IndexT current_recon_iteration;
+
+  // Order reconstruction
+  bool bOrderedProcessing_;
+  bool bTryAllViews_;                       // At the end try to reconstruct the views that have not been tried before regardless of the order
+  size_t orderWindowSize_;
+  IndexT lastUsedViewId_;
+  
 };
 
 } // namespace sfm
