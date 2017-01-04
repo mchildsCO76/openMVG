@@ -23,6 +23,8 @@ using AKAZE_Liop_Regions = Scalar_Regions<SIOPointFeature,unsigned char,144>;
 /// Define the AKAZE Keypoint (with a binary descriptor saved in an uchar array)
 using AKAZE_Binary_Regions = Binary_Regions<SIOPointFeature,64>;
 
+/// Define the FAST DIPOLE Keypoint
+using FAST_Dipole_Regions = Scalar_Regions<PointFeature,float,20>;
 } // namespace features
 } // namespace openMVG
 
@@ -40,5 +42,7 @@ CEREAL_REGISTER_TYPE_WITH_NAME(openMVG::features::AKAZE_Liop_Regions, "AKAZE_Lio
 CEREAL_REGISTER_POLYMORPHIC_RELATION(openMVG::features::Regions, openMVG::features::AKAZE_Liop_Regions)
 CEREAL_REGISTER_TYPE_WITH_NAME(openMVG::features::AKAZE_Binary_Regions, "AKAZE_Binary_Regions");
 CEREAL_REGISTER_POLYMORPHIC_RELATION(openMVG::features::Regions, openMVG::features::AKAZE_Binary_Regions)
+CEREAL_REGISTER_TYPE_WITH_NAME(openMVG::features::FAST_Dipole_Regions, "FAST_Dipole_Regions");
+CEREAL_REGISTER_POLYMORPHIC_RELATION(openMVG::features::Regions, openMVG::features::FAST_Dipole_Regions)
 
 #endif // OPENMVG_FEATURES_REGIONS_FACTORY_HPP

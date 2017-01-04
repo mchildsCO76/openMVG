@@ -19,15 +19,16 @@ struct Abstract_Tracker
 {
   enum TRACKING_STATUS
   {
-    IDLE = 0,
-    NOT_INITIALIZED = 0,
-    OK = 1,
-    LOST = 2
+    NOT_INIT = 0,
+    INIT = 1,
+    OK = 2,
+    LOST = 3,
+    IDLE = 4
   };
 
   Abstract_Tracker() = default;
 
-  TRACKING_STATUS tStatus = TRACKING_STATUS::IDLE;
+  TRACKING_STATUS trackingStatus = TRACKING_STATUS::NOT_INIT;
   size_t max_tracked_points = 1500;
 
   std::shared_ptr<Frame> mPrevFrame;

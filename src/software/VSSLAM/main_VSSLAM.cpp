@@ -17,6 +17,11 @@
 // Tracker
 #include <software/VSSLAM/slam/Abstract_Tracker.hpp>
 #include <software/VSSLAM/slam/Abstract_FeatureExtractor.hpp>
+#include <software/VSSLAM/slam/Tracker_Features.hpp>
+#include <software/VSSLAM/slam/Feat_Extractor_FastDipole.hpp>
+
+#include <software/VSSLAM/slam/SLAM_Monocular.hpp>
+
 
 using namespace openMVG;
 
@@ -109,11 +114,92 @@ int main(int argc, char **argv)
   using namespace openMVG::VSSLAM;
 
   // Tracker and Feature detector/matcher interface
-  std::unique_ptr<Abstract_Tracker> tracker_ptr;
-  std::unique_ptr<Abstract_FeatureExtractor> feat_extractor_ptr;
+  std::shared_ptr<Abstract_Tracker> tracker_ptr;
+  std::shared_ptr<Abstract_FeatureExtractor> feat_extractor_ptr;
+
+  switch (uTracker)
+  {
+    case 0:
+      tracker_ptr.reset(new Tracker_Features);
+      // Set Fast Dipole feature detector/descriptor
+      feat_extractor_ptr.reset(new Feat_Extractor_FastDipole);
+      dynamic_cast<Tracker_Features*>(tracker_ptr.get())->setFeatureExtractor(feat_extractor_ptr);
+    break;
+    default:
+    std::cerr << "Unknow tracking method" << std::endl;
+    return EXIT_FAILURE;
+  }
+
+  if (!tracker_ptr)
+  {
+    std::cerr << "Cannot instantiate the tracking interface" << std::endl;
+    return EXIT_FAILURE;
+  }
 
 
+  // Initialize the monocular tracking framework
+  SLAM_Monocular monocular_slam(tracker_ptr, maxTrackedFeatures);
 
+  size_t frameId = 0;
+  for (std::vector<std::string>::const_iterator iterFile = vec_image.begin();
+    iterFile != vec_image.end(); ++iterFile, ++frameId)
+  {
+    const std::string sImageFilename = stlplus::create_filespec( sImaDirectory, *iterFile );
+    if (openMVG::image::ReadImage( sImageFilename.c_str(), &currentImage))
+    {
+      if (window._height < 0)
+      {
+        // no window created yet, initialize it with the first frame
+
+        const double aspect_ratio = currentImage.Width()/(double)currentImage.Height();
+        window.Init(640, 640/aspect_ratio, "VisualOdometry--TrackingViewer");
+        glGenTextures(1,&text2D);             //allocate the memory for texture
+        glBindTexture(GL_TEXTURE_2D, text2D); //Binding the texture
+        glEnable(GL_TEXTURE_2D);              //Enable texture
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE,
+          currentImage.Width(), currentImage.Height(), 0,
+          GL_LUMINANCE, GL_UNSIGNED_BYTE, currentImage.data());
+      }
+      glBindTexture(GL_TEXTURE_2D, text2D); //Binding the texture
+      glEnable(GL_TEXTURE_2D);              //Enable texture
+      //-- Update the openGL texture with the current frame pixel values
+      glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
+        currentImage.Width(), currentImage.Height(),
+        GL_LUMINANCE, GL_UNSIGNED_BYTE,
+        currentImage.data());
+
+      //-- Draw the current image
+      window.SetOrtho(currentImage.Width(), currentImage.Height());
+      window.DrawFullScreenTexQuad(currentImage.Width(), currentImage.Height());
+      glDisable(GL_TEXTURE_2D);
+
+      // Clear the depth buffer so the drawn image become the background
+      glClear(GL_DEPTH_BUFFER_BIT);
+      glDisable(GL_LIGHTING);
+
+      //--
+      //-- Feature tracking
+      //    . track features
+      //    . if some tracks are cut, detect and insert new features
+      //--
+      monocular_slam.nextFrame(currentImage, frameId);
+
+      //--
+      // Draw feature trajectories
+      //--
+      glColor3f(0.f, 1.f, 0.f);
+      glLineWidth(2.f);
+
+
+      glFlush();
+
+      window.Swap(); // Swap openGL buffer
+    }
+  }
+
+  //glfwTerminate();
 
   return 0;
 }

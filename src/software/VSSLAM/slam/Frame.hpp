@@ -17,9 +17,14 @@ namespace openMVG  {
 namespace VSSLAM  {
 
 /// Frame
-struct Frame
+struct Frame:enable_shared_from_this<Frame>
 {
   Frame(const uint32_t fId): frameId_(fId) {}
+
+  std::shared_ptr<Frame> share_ptr()
+  {
+    return shared_from_this();
+  }
 
   uint32_t frameId_;
 
