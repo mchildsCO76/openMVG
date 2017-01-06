@@ -7,6 +7,9 @@
 
 #pragma once
 
+#include <openMVG/types.hpp>
+#include <numeric>
+
 #include <software/VSSLAM/slam/Frame.hpp>
 #include <software/VSSLAM/slam/Abstract_FeatureExtractor.hpp>
 
@@ -16,8 +19,9 @@ namespace VSSLAM  {
 
 struct Feat_Extractor_FastDipole : public Abstract_FeatureExtractor
 {
+
   // suggest new feature point for tracking (count point are kept)
-  bool detect
+  size_t detect
   (
     const image::Image<unsigned char> & ima,
     std::vector<features::PointFeature> & pt_to_track,
@@ -25,7 +29,7 @@ struct Feat_Extractor_FastDipole : public Abstract_FeatureExtractor
   ) const override
   {
     // If we detect less than that its a fail
-    size_t min_detected_features = 100;
+    size_t min_detected_features = 10;
 
     if (count > 0)
     {
@@ -48,8 +52,9 @@ struct Feat_Extractor_FastDipole : public Abstract_FeatureExtractor
           pt_to_track.swap(feats);
           break;
         }
-        else if (fast_score == scores[scores.size()-1] && feats.size() > min_detected_features)
+        else if (fast_score == scores[scores.size()-1])
         {
+          // if it is the last step we return what we have
           pt_to_track.swap(feats);
           break;
         }
@@ -63,23 +68,33 @@ struct Feat_Extractor_FastDipole : public Abstract_FeatureExtractor
       fastCornerDetector.detect(ima, pt_to_track);
     }
 
-    if (pt_to_track.size() < min_detected_features)
-    {
-      return false; // Cannot compute a sufficient number of points for the given image
-    }
-    return true;
+    // Return number of detected features
+    return pt_to_track.size();
   }
 
   bool allocate
   (
-    std::shared_ptr<Frame> frame,
+    std::unique_ptr<features::Regions> & regions,
     size_t max_elements
   ) override
   {
-    frame->regions.reset(new features::FAST_Dipole_Regions());
-    features::FAST_Dipole_Regions * regionsCasted = dynamic_cast<features::FAST_Dipole_Regions*>(frame->regions.get());
+    regions.reset(new features::FAST_Dipole_Regions());
+    features::FAST_Dipole_Regions * regionsCasted = dynamic_cast<features::FAST_Dipole_Regions*>(regions.get());
     regionsCasted->Features().reserve(max_elements);
     regionsCasted->Descriptors().reserve(max_elements);
+    return true;
+  }
+
+  bool resize
+  (
+    std::unique_ptr<features::Regions> & regions,
+    size_t n_elements
+  ) override
+  {
+    regions.reset(new features::FAST_Dipole_Regions());
+    features::FAST_Dipole_Regions * regionsCasted = dynamic_cast<features::FAST_Dipole_Regions*>(regions.get());
+    regionsCasted->Features().resize(n_elements);
+    regionsCasted->Descriptors().resize(n_elements);
     return true;
   }
 
@@ -87,7 +102,7 @@ struct Feat_Extractor_FastDipole : public Abstract_FeatureExtractor
   (
     const image::Image<unsigned char> & ima,
     std::vector<features::PointFeature> & new_pts,
-    std::unique_ptr<features::Regions> &regions
+    std::unique_ptr<features::Regions> & regions
   ) override
   {
     const size_t n_new_pts = new_pts.size();
@@ -108,21 +123,133 @@ struct Feat_Extractor_FastDipole : public Abstract_FeatureExtractor
     return true;
   }
 
-  bool insert
+  bool describe
   (
-    std::shared_ptr<Frame> current_frame,
-    std::unique_ptr<features::Regions> &new_regions
+    const image::Image<unsigned char> & ima,
+    features::PointFeature & pt,
+    std::unique_ptr<void *> & desc
+    //std::unique_ptr<Eigen::Matrix> & desc
   ) override
   {
-    features::FAST_Dipole_Regions * regionsCasted = dynamic_cast<features::FAST_Dipole_Regions*>(current_frame->regions.get());
-    features::FAST_Dipole_Regions * newRegionsCasted = dynamic_cast<features::FAST_Dipole_Regions*>(new_regions.get());
 
-    // Copy features
-    std::copy(newRegionsCasted->Features().begin(),newRegionsCasted->Features().end(),std::back_inserter(regionsCasted->Features()));
-    std::copy(newRegionsCasted->Descriptors().begin(),newRegionsCasted->Descriptors().end(),std::back_inserter(regionsCasted->Descriptors()));
-
+    std::cout<<"CC2: "<<desc.get()<<"\n";
+    //features::FAST_Dipole_Regions::DescriptorT * descCasted = dynamic_cast<features::FAST_Dipole_Regions::DescriptorT *>((features::FAST_Dipole_Regions::DescriptorT *)desc.get());
+    /*void * vv = new features::FAST_Dipole_Regions::DescriptorT();
+    std::unique_ptr<void *> uu;
+    uu.reset(vv);
+    //std::unique_ptr<void *> vvv = std::unique_ptr<void*>((void*)new features::FAST_Dipole_Regions::DescriptorT());
+    desc.reset();
+    std::cout<<"CCC2: "<<descCasted<<"\n";
+    //desc.reset(vv);
+    //descCasted =  new features::FAST_Dipole_Regions::DescriptorT();
+    //desc.reset((void*)new features::FAST_Dipole_Regions::DescriptorT);
+    std::cout<<"CCC3: "<<descCasted<<"\n";
+    std::cout<<"CC3: "<<desc.get()<<"\n";
+    //desc = new Eigen::Matrix<features::FAST_Dipole_Regions::FeatureT, 20, 1>();
+  // desc.reset(new openMVG::Vecf);
+    features::PickASDipole(ima, pt.x(), pt.y(), 10.5f, 0.0f, descCasted->data());
+*/
     return true;
   }
+
+  bool getDescriptorFromFrame
+  (
+    const std::shared_ptr<Frame> & ref_frame,
+    const size_t feature_id,
+    openMVG::Vecf * desc
+  )
+  {
+    /*if (feature_id < ref_frame->regions->RegionCount())
+    {
+      features::FAST_Dipole_Regions * regionsCasted = dynamic_cast<features::FAST_Dipole_Regions*>(ref_frame->regions.get());
+      desc = &(regionsCasted->Descriptors()[feature_id]);
+      return true;
+    }*/
+    return false;
+  }
+
+
+  double SquaredDescriptorDistance
+  (
+      openMVG::Vecf * desc_A,
+      openMVG::Vecf * desc_B
+  )
+  {
+    /*
+    features::FAST_Dipole_Regions::DescriptorT* d_A = dynamic_cast<features::FAST_Dipole_Regions::DescriptorT*>(desc_A);
+    features::FAST_Dipole_Regions::DescriptorT* d_B = dynamic_cast<features::FAST_Dipole_Regions::DescriptorT*>(desc_B);
+    openMVG::matching::L2_Vectorized<features::FAST_Dipole_Regions::FeatureT> metric;
+    return metric(d_A->data(), d_B->data(), features::FAST_Dipole_Regions::DescriptorT::static_size);*/
+    return 50.0;
+  }
+
+
+  bool insert
+  (
+    std::unique_ptr<features::Regions> & regions,
+    features::PointFeature & pt,
+    std::unique_ptr<openMVG::Vecf> & desc,
+    size_t idx
+  ) override
+  {
+    /*features::FAST_Dipole_Regions * regionsCasted = dynamic_cast<features::FAST_Dipole_Regions*>(current_frame->regions.get());
+    features::FAST_Dipole_Regions::DescriptorT descCasted = dynamic_cast<features::FAST_Dipole_Regions::DescriptorT*>(desc.get());
+    // Copy features
+    regionsCasted->Features()[idx] = pt;
+    regionsCasted->Descriptors()[idx] = features::FAST_Dipole_Regions::DescriptorT(*descCasted);*/
+    return true;
+  }
+/*
+  size_t getFrameMatching
+  (
+      std::shared_ptr<Frame> ref_frame,
+      const image::Image<unsigned char> & current_ima,
+      std::vector<features::PointFeature> & candidate_pts,
+      std::vector<bool> & candidate_pts_used,
+      const size_t window,
+      const float ratio,
+      std::unique_ptr<features::Regions> & new_feat_regions,
+      Hash_Map<size_t,size_t> & feat_cur_new_matches_ids
+  )override
+  {
+    // Loop through all the features from prev frame
+    // and identify the ones in certain window (later checked with descriptors)
+    {
+
+      // Extract descriptors that we need
+      // vector of pointers (we will use only the ones that are actually used)
+      std::vector<std::unique_ptr<features::Descriptor<float, 20> > > candidate_desc(candidate_pts.size());
+
+      std::cout<<"Extracting possible candidate descriptors\n";
+      #ifdef OPENMVG_USE_OPENMP
+      #pragma omp parallel for schedule(dynamic)
+      #endif
+      for (int c_i=0; c_i < (int)candidate_pts.size(); ++c_i)
+      {
+        if (candidate_pts_used[c_i])
+        {
+          candidate_desc[c_i].reset(new features::Descriptor<float, 20>);
+          features::PickASDipole(current_ima, candidate_pts[c_i].x(), candidate_pts[c_i].y(), 10.5f, 0.0f, candidate_desc[c_i]->data());
+        }
+      }
+
+      size_t valid_desc=0;
+      for (int c_i=0; c_i < (int)candidate_pts.size(); ++c_i)
+      {
+        if(candidate_desc[c_i])
+          valid_desc++;
+      }
+      std::cout<<"Valid desc: "<<valid_desc<<" \n";
+      // Compare points
+
+      // Save matches to new_feat_regions
+
+
+      return 0;
+    }
+  }
+*/
+
 };
 
 }

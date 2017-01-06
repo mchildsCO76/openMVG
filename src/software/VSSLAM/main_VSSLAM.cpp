@@ -114,8 +114,8 @@ int main(int argc, char **argv)
   using namespace openMVG::VSSLAM;
 
   // Tracker and Feature detector/matcher interface
-  std::shared_ptr<Abstract_Tracker> tracker_ptr;
-  std::shared_ptr<Abstract_FeatureExtractor> feat_extractor_ptr;
+  std::unique_ptr<Abstract_Tracker> tracker_ptr;
+  std::unique_ptr<Abstract_FeatureExtractor> feat_extractor_ptr;
 
   switch (uTracker)
   {
@@ -123,7 +123,7 @@ int main(int argc, char **argv)
       tracker_ptr.reset(new Tracker_Features);
       // Set Fast Dipole feature detector/descriptor
       feat_extractor_ptr.reset(new Feat_Extractor_FastDipole);
-      dynamic_cast<Tracker_Features*>(tracker_ptr.get())->setFeatureExtractor(feat_extractor_ptr);
+      dynamic_cast<Tracker_Features*>(tracker_ptr.get())->setFeatureExtractor(feat_extractor_ptr.get());
     break;
     default:
     std::cerr << "Unknow tracking method" << std::endl;
@@ -138,7 +138,7 @@ int main(int argc, char **argv)
 
 
   // Initialize the monocular tracking framework
-  SLAM_Monocular monocular_slam(tracker_ptr, maxTrackedFeatures);
+  SLAM_Monocular monocular_slam(tracker_ptr.get(), maxTrackedFeatures);
 
   size_t frameId = 0;
   for (std::vector<std::string>::const_iterator iterFile = vec_image.begin();
@@ -184,6 +184,7 @@ int main(int argc, char **argv)
       //    . track features
       //    . if some tracks are cut, detect and insert new features
       //--
+
       monocular_slam.nextFrame(currentImage, frameId);
 
       //--
@@ -192,14 +193,45 @@ int main(int argc, char **argv)
       glColor3f(0.f, 1.f, 0.f);
       glLineWidth(2.f);
 
-
+      if(monocular_slam.tracker_->init_ref_frame && monocular_slam.tracker_->mPrevFrame){
+      for (auto track : monocular_slam.tracker_->feat_cur_prev_matches_ids)
+      {
+        // Draw the line from prev
+        glBegin(GL_LINE_STRIP);
+        glColor3f(0.f, 1.f, 0.f);
+        const Vec2 & p0 = monocular_slam.tracker_->init_ref_frame->regions->GetRegionPosition(track.second);
+        const Vec2 & p1 = monocular_slam.tracker_->mPrevFrame->regions->GetRegionPosition(track.first);
+        std::cout<<"A: "<<p0(0)<< ", "<<p0(1)<<" :: "<<p1(0)<< ", "<<p1(1)<<"\n";
+        glVertex2f(p0(0), p0(1));
+        glVertex2f(p1(0), p1(1));
+        glEnd();
+      }
+      }
+      else
+      {
+        std::cout<<"AABAB\n";
+      }
+/*
+      for (auto p : monocular_slam.tracker_->mCurrentFrame->regions->GetRegionsPositions())
+      {
+        // draw the current tracked point
+        {
+          glPointSize(4.0f);
+          glBegin(GL_POINTS);
+          glColor3f(1.f, 1.f, 0.f); // Yellow
+          //const Vec2f & p0 = iter->pos_;
+          glVertex2f(p.x(), p.y());
+          glEnd();
+        }
+      }
+*/
       glFlush();
-
       window.Swap(); // Swap openGL buffer
+      sleep(2);
     }
   }
 
-  //glfwTerminate();
+  glfwTerminate();
 
   return 0;
 }

@@ -10,6 +10,7 @@
 #include <memory>
 
 #include <software/VSSLAM/slam/Frame.hpp>
+#include <openMVG/types.hpp>
 
 namespace openMVG  {
 namespace VSSLAM  {
@@ -26,14 +27,22 @@ struct Abstract_Tracker
     IDLE = 4
   };
 
-  Abstract_Tracker() = default;
-
+  // Tracking stats
   TRACKING_STATUS trackingStatus = TRACKING_STATUS::NOT_INIT;
   size_t max_tracked_points = 1500;
 
+
+  // Frames
+  std::shared_ptr<Frame> mLastRefFrame;
   std::shared_ptr<Frame> mPrevFrame;
   std::shared_ptr<Frame> mCurrentFrame;
-  std::vector<size_t> prev_tracked_ids;
+
+  // Initialization
+  std::shared_ptr<Frame> init_ref_frame;
+
+  Hash_Map<size_t,size_t> feat_cur_prev_matches_ids;
+
+  Abstract_Tracker() = default;
 
   // Try to track the pt_to_track features
   virtual bool track
@@ -47,9 +56,32 @@ struct Abstract_Tracker
   (
     const image::Image<unsigned char> & ima,
     std::vector<features::PointFeature> & pt_to_track,
-    const size_t count
+    const size_t count,
+    const size_t min_count = 0
   ) const = 0;
 
+  void printTrackingStatus()
+  {
+    std::cout<<"Tracking STATUS: ";
+    switch (trackingStatus)
+    {
+    case Abstract_Tracker::TRACKING_STATUS::OK:
+      std::cout<<"OK\n";
+      break;
+    case Abstract_Tracker::TRACKING_STATUS::LOST:
+      std::cout<<"LOST\n";
+      break;
+    case Abstract_Tracker::TRACKING_STATUS::INIT:
+      std::cout<<"INIT\n";
+      break;
+    case Abstract_Tracker::TRACKING_STATUS::NOT_INIT:
+      std::cout<<"NOT_INIT\n";
+      break;
+    case Abstract_Tracker::TRACKING_STATUS::IDLE:
+      std::cout<<"IDLE\n";
+      break;
+    }
+  }
 };
 
 } // namespace VO

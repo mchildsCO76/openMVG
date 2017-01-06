@@ -54,12 +54,13 @@ struct SLAM_Monocular
   std::shared_ptr<Frame> current_frame;
 
   // Tracking
-  std::shared_ptr<Abstract_Tracker> tracker_;
+  Abstract_Tracker * tracker_;
+  //
 
 
   SLAM_Monocular
   (
-    std::shared_ptr<Abstract_Tracker> tracker,
+    Abstract_Tracker * tracker,
     const uint32_t maxTrackedFeatures = 1500
     // Add an abstract camera model here
   )
