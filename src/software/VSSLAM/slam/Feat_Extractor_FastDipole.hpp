@@ -123,34 +123,6 @@ struct Feat_Extractor_FastDipole : public Abstract_FeatureExtractor
     return true;
   }
 
-  bool describe
-  (
-    const image::Image<unsigned char> & ima,
-    features::PointFeature & pt,
-    std::unique_ptr<void *> & desc
-    //std::unique_ptr<Eigen::Matrix> & desc
-  ) override
-  {
-
-    std::cout<<"CC2: "<<desc.get()<<"\n";
-    //features::FAST_Dipole_Regions::DescriptorT * descCasted = dynamic_cast<features::FAST_Dipole_Regions::DescriptorT *>((features::FAST_Dipole_Regions::DescriptorT *)desc.get());
-    /*void * vv = new features::FAST_Dipole_Regions::DescriptorT();
-    std::unique_ptr<void *> uu;
-    uu.reset(vv);
-    //std::unique_ptr<void *> vvv = std::unique_ptr<void*>((void*)new features::FAST_Dipole_Regions::DescriptorT());
-    desc.reset();
-    std::cout<<"CCC2: "<<descCasted<<"\n";
-    //desc.reset(vv);
-    //descCasted =  new features::FAST_Dipole_Regions::DescriptorT();
-    //desc.reset((void*)new features::FAST_Dipole_Regions::DescriptorT);
-    std::cout<<"CCC3: "<<descCasted<<"\n";
-    std::cout<<"CC3: "<<desc.get()<<"\n";
-    //desc = new Eigen::Matrix<features::FAST_Dipole_Regions::FeatureT, 20, 1>();
-  // desc.reset(new openMVG::Vecf);
-    features::PickASDipole(ima, pt.x(), pt.y(), 10.5f, 0.0f, descCasted->data());
-*/
-    return true;
-  }
 
   bool getDescriptorFromFrame
   (

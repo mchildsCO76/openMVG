@@ -37,12 +37,6 @@ struct Abstract_FeatureExtractor
     std::vector<features::PointFeature> & new_pts,
     std::unique_ptr<features::Regions> & regions
   )=0;
-  virtual bool describe
-  (
-    const image::Image<unsigned char> & ima,
-    features::PointFeature & pt,
-    std::unique_ptr<void *> & desc
-  )=0;
   virtual bool insert
   (
     std::unique_ptr<features::Regions> & regions,

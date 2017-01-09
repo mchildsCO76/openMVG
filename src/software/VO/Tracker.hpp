@@ -47,6 +47,7 @@ struct Tracker_fast_dipole : public Abstract_Tracker
       features::PointFeatures current_feats;
       features::FastCornerDetector fastCornerDetector(9, 5);
       fastCornerDetector.detect(ima, current_feats);
+      std::cout<<"AA: "<<current_feats.size()<<"\n";
       std::vector<float> current_descriptors(20*current_feats.size());
       for (size_t i=0; i < current_feats.size(); ++i)
       {

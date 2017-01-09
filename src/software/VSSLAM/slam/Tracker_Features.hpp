@@ -52,23 +52,25 @@ struct Tracker_Features : public Abstract_Tracker
     std::shared_ptr<Frame> current_frame
   ) override
   {
-    bool bNewReferenceframe = true;
-
     feat_cur_prev_matches_ids.clear();
     // Set current frame
     mCurrentFrame = current_frame->share_ptr();
     // Allocate space for all features
     featureExtractor_->allocate(mCurrentFrame->regions,max_tracked_points);
 
-
     if (trackingStatus == TRACKING_STATUS::NOT_INIT)
     {
       // Detect new features and add frame as init reference frame
       std::cout<<"DETECT FROM STRACH A!\n";
       // We detect enough new points to fill to max_tracked_points
+      double startTime = omp_get_wtime();
       bool bDetect = detect(ima,candidate_pts,max_tracked_points,min_init_ref_tracks);
       candidate_pts_used.resize(candidate_pts.size());
       std::fill(candidate_pts_used.begin(),candidate_pts_used.end(),false);
+
+      double stopTime = omp_get_wtime();
+      double secsElapsed = stopTime - startTime; // that's all !
+      std::cout<<"Detect features time:"<<secsElapsed<<"\n";
 
       std::cout<<"Candidate features: "<<candidate_pts.size()<<" :: "<<candidate_pts_used.size()<<"\n";
 
@@ -76,10 +78,18 @@ struct Tracker_Features : public Abstract_Tracker
       if (bDetect)
       {
         // Retrieve descriptors and add to frame
+        startTime = omp_get_wtime();
         featureExtractor_->describe(ima,candidate_pts,mCurrentFrame->regions);
+
+        stopTime = omp_get_wtime();
+        secsElapsed = stopTime - startTime; // that's all !
+        std::cout<<"Describe features time:"<<secsElapsed<<"\n";
+
         std::cout<<"Feats after insertion: "<<mCurrentFrame->getTracksSize()<<" \n";
 
         trackingStatus = TRACKING_STATUS::INIT;
+        startTime = omp_get_wtime();
+
         setReferenceSystemInitialization(mCurrentFrame);
 
       }
@@ -96,9 +106,14 @@ struct Tracker_Features : public Abstract_Tracker
 
       // Detect features from frame and try to match to reference initialization frame
       // Detect all possible (hence 0)
+      double startTime = omp_get_wtime();
       bool bDetect = detect(ima,candidate_pts,max_frame_tracks,min_frame_tracks);
       candidate_pts_used.resize(candidate_pts.size());
       std::fill(candidate_pts_used.begin(),candidate_pts_used.end(),false);
+
+      double stopTime = omp_get_wtime();
+      double secsElapsed = stopTime - startTime; // that's all !
+      std::cout<<"Detect features time B:"<<secsElapsed<<"\n";
 
       std::cout<<"Candidate features: "<<candidate_pts.size()<<" :: "<<candidate_pts_used.size()<<"\n";
       std::cout<<"Init ref features: "<<init_ref_frame->getTracksSize()<<"\n";
@@ -300,7 +315,8 @@ struct Tracker_Features : public Abstract_Tracker
     // Update frame structure in tracker
     //if (bNewReferenceframe)
     //{
-      mPrevFrame.swap(mCurrentFrame);
+
+    mPrevFrame.swap(mCurrentFrame);
     //}
 
     mCurrentFrame.reset();
@@ -367,9 +383,14 @@ struct Tracker_Features : public Abstract_Tracker
       size_t win_size = 50;
       float desc_ratio = 0.8;
 
+      double startTime = omp_get_wtime();
       // Map between current(matched_regions) and ref_regions ids
       //Hash_Map<size_t,size_t> feat_cur_ref_matches_ids;
       size_t n_feat_frame_matches = matchFramesFeatureMatchingNoMM(init_ref_frame,ima,candidate_pts,candidate_pts_used,win_size,desc_ratio,mCurrentFrame->regions,feat_cur_prev_matches_ids);
+
+      double stopTime = omp_get_wtime();
+      double secsElapsed = stopTime - startTime; // that's all !
+      std::cout<<"NMM time:"<<secsElapsed<<"\n";
 
       if (n_feat_frame_matches > min_matches_init_pose)
       {
@@ -480,10 +501,17 @@ struct Tracker_Features : public Abstract_Tracker
       // Set of id of points from ref and all possible match_id of features from current frame
       std::vector<std::set<size_t> > vec_ref_cur_candidates(ref_frame->getTracksSize());
 
+      double startTime = omp_get_wtime();
       // Get pos of features in the reference frame
       features::PointFeatures ref_points_pos = ref_frame->regions->GetRegionsPositions();
 
+      double stopTime = omp_get_wtime();
+      double secsElapsed = stopTime - startTime; // that's all !
+      std::cout<<"ref points time:"<<secsElapsed<<"\n";
+
       std::cout<<"Finding possible candidate matches (ref->cur) "<<ref_frame->frameId_<<"\n";
+
+      startTime = omp_get_wtime();
       #ifdef OPENMVG_USE_OPENMP
       #pragma omp parallel for schedule(dynamic)
       #endif
@@ -491,33 +519,42 @@ struct Tracker_Features : public Abstract_Tracker
       {
         for (size_t c_i=0; c_i < candidate_pts.size(); ++c_i)
         {
-          if ((candidate_pts[c_i].coords() - ref_points_pos[p_i].coords()).norm() < win_size)
-          {
+          //if ((candidate_pts[c_i].coords() - ref_points_pos[p_i].coords()).norm() < win_size)
+          //{
             vec_ref_cur_candidates[p_i].emplace(c_i);
             candidate_pts_used[c_i] = true;
-          }
+          //}
         }
       }
+
+      stopTime = omp_get_wtime();
+      secsElapsed = stopTime - startTime; // that's all !
+      std::cout<<"Find possible candidates:"<<secsElapsed<<"\n";
+
       // Compute how many new points we will investigate
+      startTime = omp_get_wtime();
       int n_to_check_newpts = std::count(candidate_pts_used.begin(), candidate_pts_used.end(), true);
       std::cout<<"Need to check: "<<n_to_check_newpts<<" new points\n";
 
 
-
-      // Get only useful candidates
+      // Compute descriptors
       std::cout<<"Describe useful candidates\n";
       std::unique_ptr<features::Regions> candidate_regions;
-
+      startTime = omp_get_wtime();
       featureExtractor_->describe(current_ima,candidate_pts,candidate_regions);
 
+      stopTime = omp_get_wtime();
+      secsElapsed = stopTime - startTime; // that's all !
+      std::cout<<"describe candidates:"<<secsElapsed<<"\n";
 
       // Try to match point in reference frame with the identified candidates
       std::vector<int>matches_ref_cur_idxs(ref_points_pos.size(),-1);
 
       std::cout<<"Matching candidates "<<candidate_regions->RegionCount()<<"\n";
-      #ifdef OPENMVG_USE_OPENMP
-      #pragma omp parallel for schedule(dynamic)
-      #endif
+      startTime = omp_get_wtime();
+      //#ifdef OPENMVG_USE_OPENMP
+      //#pragma omp parallel for schedule(dynamic)
+      //#endif
       for (size_t p_i=0; p_i < ref_points_pos.size(); ++p_i)
       {
         if (vec_ref_cur_candidates[p_i].empty())
@@ -530,6 +567,8 @@ struct Tracker_Features : public Abstract_Tracker
 
         for (size_t c_i : vec_ref_cur_candidates[p_i])
         {
+          std::cout<<"P: "<<p_i<<" C: "<<c_i<<"\n";
+
           double distance = ref_frame->regions->SquaredDescriptorDistance(p_i,candidate_regions.get(),c_i);
           //double distance = featureExtractor_->SquaredDescriptorDistance(ref_pt_desc,candidate_descs[c_i].get());
 
@@ -548,25 +587,31 @@ struct Tracker_Features : public Abstract_Tracker
         }
         if (best_idx != std::numeric_limits<size_t>::infinity())
         {
-          if (second_best_idx != std::numeric_limits<size_t>::infinity())
-          {
-            if ((best_distance / second_best_distance) > ratio)
-            {
+          //if (second_best_idx != std::numeric_limits<size_t>::infinity())
+          //{
+            //if ((best_distance / second_best_distance) > ratio)
+            //{
               // Best is unique enough
-              matches_ref_cur_idxs[p_i] = best_idx;
-            }
-          }
-          else
-          {
+             // matches_ref_cur_idxs[p_i] = best_idx;
+            //}
+         // }
+          //else
+          //{
             // Best is unique
             matches_ref_cur_idxs[p_i] = best_idx;
-          }
+         // }
         }
       }
 
+      stopTime = omp_get_wtime();
+      secsElapsed = stopTime - startTime; // that's all !
+      std::cout<<"match candidates:"<<secsElapsed<<"\n";
 
       std::cout<<"Purging candidates\n";
+      startTime = omp_get_wtime();
       size_t n_matches=0;
+      size_t new_match_idx=0;
+
       // Check that two are not matching the same point
       for (size_t i=0; i<ref_points_pos.size(); ++i)
       {
@@ -585,8 +630,9 @@ struct Tracker_Features : public Abstract_Tracker
           if (!bDuplicate)
           {
             //Unique match -> add to the features
-            feat_cur_ref_matches_ids[n_matches] = i;
-            n_matches++;
+            feat_cur_ref_matches_ids[new_match_idx] = i;
+            candidate_regions->CopyRegion(matches_ref_cur_idxs[i],new_feat_regions.get());
+            new_match_idx++;
           }
           else
           {
@@ -595,13 +641,18 @@ struct Tracker_Features : public Abstract_Tracker
         }
       }
 
-      std::cout<<"Copy feature data to frame "<<n_matches<<"\n";
+      stopTime = omp_get_wtime();
+      secsElapsed = stopTime - startTime; // that's all !
+      std::cout<<"purge time:"<<secsElapsed<<"\n";
       //featureExtractor_->resize(new_feat_regions,n_matches);
-
+/*
       std::cout<<"Copy feature data to frame "<<n_matches<<"\n";
       //#ifdef OPENMVG_USE_OPENMP
       //#pragma omp parallel for schedule(dynamic)
       //#endif
+
+      startTime = omp_get_wtime();
+      for (auto pair_match : feat_cur_ref_matches_ids)
       for (size_t i=0; i<n_matches; ++i)
       {
         const size_t & ref_pt_idx = feat_cur_ref_matches_ids[i];
@@ -611,9 +662,12 @@ struct Tracker_Features : public Abstract_Tracker
         candidate_regions->CopyRegion(candidate_pt_idx,new_feat_regions.get());
       }
 
+      stopTime = omp_get_wtime();
+      secsElapsed = stopTime - startTime; // that's all !
+      std::cout<<"Copy tim e:"<<secsElapsed<<"\n";
       std::cout<<"Features copied: " <<new_feat_regions->RegionCount()<< " :: "<<n_matches<<"\n";
 
-
+*/
 
 
 
@@ -621,7 +675,7 @@ struct Tracker_Features : public Abstract_Tracker
     // Get feature candidates
    // size_t n_frame_matches = featureExtractor_->getFrameMatching(frame,current_ima,candidate_pts,win_size,ratio,new_feat_regions,feat_cur_ref_matches_ids);
 
-    return n_matches;
+    return feat_cur_ref_matches_ids.size();
   }
 
 /*

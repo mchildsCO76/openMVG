@@ -75,12 +75,18 @@ struct SLAM_Monocular
     const size_t frameId
   )
   {
+
     std::cout<<"Frame "<<frameId<<"\n";
     // Create Frame
     current_frame = std::make_shared<Frame>(frameId);
 
+    double startTime = omp_get_wtime();
     // Track frame
     tracker_->track(ima,current_frame);
+
+    double stopTime = omp_get_wtime();
+    double secsElapsed = stopTime - startTime; // that's all !
+    std::cout<<"Track time:"<<secsElapsed<<"\n";
 
     const Abstract_Tracker::TRACKING_STATUS systemStatus = tracker_->trackingStatus;
     switch (systemStatus)

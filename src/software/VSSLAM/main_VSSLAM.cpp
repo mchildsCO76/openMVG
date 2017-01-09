@@ -152,7 +152,7 @@ int main(int argc, char **argv)
         // no window created yet, initialize it with the first frame
 
         const double aspect_ratio = currentImage.Width()/(double)currentImage.Height();
-        window.Init(640, 640/aspect_ratio, "VisualOdometry--TrackingViewer");
+        window.Init(1280, 1280/aspect_ratio, "VisualOdometry--TrackingViewer");
         glGenTextures(1,&text2D);             //allocate the memory for texture
         glBindTexture(GL_TEXTURE_2D, text2D); //Binding the texture
         glEnable(GL_TEXTURE_2D);              //Enable texture
@@ -166,9 +166,9 @@ int main(int argc, char **argv)
       glEnable(GL_TEXTURE_2D);              //Enable texture
       //-- Update the openGL texture with the current frame pixel values
       glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
-        currentImage.Width(), currentImage.Height(),
-        GL_LUMINANCE, GL_UNSIGNED_BYTE,
-        currentImage.data());
+       currentImage.Width(), currentImage.Height(),
+      GL_LUMINANCE, GL_UNSIGNED_BYTE,
+      currentImage.data());
 
       //-- Draw the current image
       window.SetOrtho(currentImage.Width(), currentImage.Height());
@@ -185,8 +185,13 @@ int main(int argc, char **argv)
       //    . if some tracks are cut, detect and insert new features
       //--
 
+      double startTime = omp_get_wtime();
+      // do stuff
       monocular_slam.nextFrame(currentImage, frameId);
 
+      double stopTime = omp_get_wtime();
+      double secsElapsed = stopTime - startTime; // that's all !
+      std::cout<<"MonocularSLAM time:"<<secsElapsed<<"\n";
       //--
       // Draw feature trajectories
       //--
@@ -201,7 +206,6 @@ int main(int argc, char **argv)
         glColor3f(0.f, 1.f, 0.f);
         const Vec2 & p0 = monocular_slam.tracker_->init_ref_frame->regions->GetRegionPosition(track.second);
         const Vec2 & p1 = monocular_slam.tracker_->mPrevFrame->regions->GetRegionPosition(track.first);
-        std::cout<<"A: "<<p0(0)<< ", "<<p0(1)<<" :: "<<p1(0)<< ", "<<p1(1)<<"\n";
         glVertex2f(p0(0), p0(1));
         glVertex2f(p1(0), p1(1));
         glEnd();
@@ -211,8 +215,8 @@ int main(int argc, char **argv)
       {
         std::cout<<"AABAB\n";
       }
-/*
-      for (auto p : monocular_slam.tracker_->mCurrentFrame->regions->GetRegionsPositions())
+
+      for (auto p : monocular_slam.tracker_->mPrevFrame->regions->GetRegionsPositions())
       {
         // draw the current tracked point
         {
@@ -224,10 +228,23 @@ int main(int argc, char **argv)
           glEnd();
         }
       }
-*/
+
+      for (auto p : monocular_slam.tracker_->init_ref_frame->regions->GetRegionsPositions())
+      {
+        // draw the current tracked point
+        {
+          glPointSize(4.0f);
+          glBegin(GL_POINTS);
+          glColor3f(1.f, 0.f, 1.f); // Yellow
+          //const Vec2f & p0 = iter->pos_;
+          glVertex2f(p.x(), p.y());
+          glEnd();
+        }
+      }
       glFlush();
       window.Swap(); // Swap openGL buffer
-      sleep(2);
+      if (frameId>0)
+        sleep(2);
     }
   }
 
