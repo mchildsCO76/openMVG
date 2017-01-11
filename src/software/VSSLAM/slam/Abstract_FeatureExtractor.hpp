@@ -11,14 +11,14 @@
 
 namespace openMVG  {
 namespace VSSLAM  {
-
 struct Abstract_FeatureExtractor
 {
   virtual size_t detect
   (
     const image::Image<unsigned char> & ima,
-    std::vector<features::PointFeature> & pt_to_track,
-    const size_t count
+    std::unique_ptr<features::Regions> & regions_to_track,
+    const size_t min_count,
+    const size_t max_count
   ) const = 0;
 
   virtual bool allocate
@@ -28,44 +28,39 @@ struct Abstract_FeatureExtractor
   ) = 0;
   virtual bool resize
   (
-    std::unique_ptr<features::Regions> & regions,
+    features::Regions * regions,
     size_t n_elements
   )=0;
   virtual bool describe
   (
     const image::Image<unsigned char> & ima,
-    std::vector<features::PointFeature> & new_pts,
-    std::unique_ptr<features::Regions> & regions
+    features::Regions * regions
   )=0;
-  virtual bool insert
+ /* virtual bool describe
   (
-    std::unique_ptr<features::Regions> & regions,
-    features::PointFeature & pt,
-    std::unique_ptr<openMVG::Vecf> & desc,
-    size_t idx
-  )=0;
+    const image::Image<unsigned char> & ima,
+    features::PointFeature & new_pt,
+    void * desc_raw
+  ) =0;*/
+  virtual void getDescriptorRaw
+  (
+    features::Regions * regions,
+    const size_t i,
+    void ** desc
+  ) =0;
   virtual double SquaredDescriptorDistance
   (
-    openMVG::Vecf * desc_A,
-    openMVG::Vecf * desc_B
-  )=0;
-  virtual bool getDescriptorFromFrame
+    void * desc_A,
+    void * desc_B
+  ) =0;
+  /*
+  virtual size_t InsertRegion
   (
-    const std::shared_ptr<Frame> & ref_frame,
-    const size_t feature_id,
-    openMVG::Vecf * desc
-  )=0;
-/*
-  virtual size_t getFrameMatching
-  (
-    std::shared_ptr<Frame> ref_frame,
-    const image::Image<unsigned char> & current_ima,
-    std::vector<features::PointFeature> & candidate_pts,
-    const size_t window,
-    const float ratio,
-    std::unique_ptr<features::Regions> & new_feat_regions,
-    Hash_Map<size_t,size_t> & feat_cur_new_matches_ids
-  )=0;*/
+    features::Regions * regions,
+    features::PointFeature & pt,
+    void * desc
+  ) =0;*/
+
 };
 
 } // namespace VSSLAM

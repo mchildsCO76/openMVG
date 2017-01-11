@@ -42,6 +42,12 @@ struct Tracker_fast_dipole : public Abstract_Tracker
       for (size_t i=0; i < pt_to_track.size(); ++i)
       {
         features::PickASDipole(_prev_img, _prevPts[i].x(), _prevPts[i].y(), 10.5f, 0.0f, &prev_descriptors[i*20]);
+        std::cout<<"I: "<<i<<" :: "<<_prevPts[i].x()<<", "<<_prevPts[i].y()<<" :: ";
+        for (int jj=0;jj<20;++jj)
+        {
+          std::cout<<prev_descriptors[i*20+jj]<<" ";
+        }
+        std::cout<<"\n";
       }
 
       features::PointFeatures current_feats;
@@ -52,13 +58,14 @@ struct Tracker_fast_dipole : public Abstract_Tracker
       for (size_t i=0; i < current_feats.size(); ++i)
       {
         features::PickASDipole(ima, current_feats[i].x(), current_feats[i].y(), 10.5f, 0.0f, &current_descriptors[i*20]);
+
       }
 
       // Compute the matches
       {
-        #ifdef OPENMVG_USE_OPENMP
-        #pragma omp parallel for schedule(dynamic)
-        #endif
+        //#ifdef OPENMVG_USE_OPENMP
+        //#pragma omp parallel for schedule(dynamic)
+        //#endif
         for (int i=0; i < (int)pt_to_track.size(); ++i)
         {
           size_t best_idx = std::numeric_limits<size_t>::infinity();
@@ -81,6 +88,13 @@ struct Tracker_fast_dipole : public Abstract_Tracker
           if (best_idx != std::numeric_limits<size_t>::infinity())
           {
             pt_tracked[i].coords() << current_feats[best_idx].x(), current_feats[best_idx].y();
+            std::cout<<"II: "<<i<<" :: "<<best_idx<<"("<<best_distance<<") -- "<<current_feats[best_idx].x()<<", "<<current_feats[best_idx].y()<<" :: ";
+
+            for (int jj=0;jj<20;++jj)
+            {
+              std::cout<<current_descriptors[best_idx*20+jj]<<" ";
+            }
+            std::cout<<"\n";
             status[i] = true;
           }
           else

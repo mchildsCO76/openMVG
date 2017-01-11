@@ -124,7 +124,7 @@ int main(int argc, char **argv)
   }
 
   // Initialize the monocular tracking framework
-  VO_Monocular monocular_vo(tracker_ptr.get(), 1500);
+  VO_Monocular monocular_vo(tracker_ptr.get(), 15);
 
   size_t frameId = 0;
   for (std::vector<std::string>::const_iterator iterFile = vec_image.begin();
@@ -234,6 +234,7 @@ int main(int argc, char **argv)
       glFlush();
 
       window.Swap(); // Swap openGL buffer
+sleep(2);
     }
   }
 

@@ -61,7 +61,7 @@ struct SLAM_Monocular
   SLAM_Monocular
   (
     Abstract_Tracker * tracker,
-    const uint32_t maxTrackedFeatures = 1500
+    const uint32_t maxTrackedFeatures = 15
     // Add an abstract camera model here
   )
   : tracker_(tracker)
@@ -88,25 +88,7 @@ struct SLAM_Monocular
     double secsElapsed = stopTime - startTime; // that's all !
     std::cout<<"Track time:"<<secsElapsed<<"\n";
 
-    const Abstract_Tracker::TRACKING_STATUS systemStatus = tracker_->trackingStatus;
-    switch (systemStatus)
-    {
-    case Abstract_Tracker::TRACKING_STATUS::OK:
-      std::cout<<"Tracking OK\n";
-      break;
-    case Abstract_Tracker::TRACKING_STATUS::LOST:
-      std::cout<<"Tracking LOST\n";
-      break;
-    case Abstract_Tracker::TRACKING_STATUS::NOT_INIT:
-      std::cout<<"Tracking NOT_INIT\n";
-      break;
-    case Abstract_Tracker::TRACKING_STATUS::INIT:
-      std::cout<<"Tracking INIT\n";
-      break;
-    case Abstract_Tracker::TRACKING_STATUS::IDLE:
-      std::cout<<"Tracking IDLE\n";
-      break;
-    }
+    tracker_->printTrackingStatus();
 
     /*
     // Check if system is initialized

@@ -40,7 +40,6 @@ struct Abstract_Tracker
   // Initialization
   std::shared_ptr<Frame> init_ref_frame;
 
-  Hash_Map<size_t,size_t> feat_cur_prev_matches_ids;
 
   Abstract_Tracker() = default;
 
@@ -52,13 +51,13 @@ struct Abstract_Tracker
   ) = 0;
 
   // suggest new feature point for tracking (count point are kept)
-  virtual bool detect
+  /*virtual bool detect
   (
     const image::Image<unsigned char> & ima,
     std::vector<features::PointFeature> & pt_to_track,
     const size_t count,
     const size_t min_count = 0
-  ) const = 0;
+  ) const = 0;*/
 
   void printTrackingStatus()
   {

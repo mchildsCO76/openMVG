@@ -173,8 +173,6 @@ public:
 
     const Scalar_Regions<FeatT, T, L> * regionsT = dynamic_cast<const Scalar_Regions<FeatT, T, L> *>(regions);
     matching::L2_Vectorized<T> metric;
-    std::cout<<"A: "<<vec_descs_[i]<<"\n";
-    std::cout<<"B: "<<regionsT->vec_descs_[j]<<"\n";
     return metric(vec_descs_[i].data(), regionsT->vec_descs_[j].data(), DescriptorT::static_size);
   }
 

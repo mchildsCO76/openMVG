@@ -198,24 +198,41 @@ int main(int argc, char **argv)
       glColor3f(0.f, 1.f, 0.f);
       glLineWidth(2.f);
 
-      if(monocular_slam.tracker_->init_ref_frame && monocular_slam.tracker_->mPrevFrame){
-      for (auto track : monocular_slam.tracker_->feat_cur_prev_matches_ids)
+      if(monocular_slam.tracker_->init_ref_frame && monocular_slam.tracker_->mPrevFrame)
       {
-        // Draw the line from prev
-        glBegin(GL_LINE_STRIP);
-        glColor3f(0.f, 1.f, 0.f);
-        const Vec2 & p0 = monocular_slam.tracker_->init_ref_frame->regions->GetRegionPosition(track.second);
-        const Vec2 & p1 = monocular_slam.tracker_->mPrevFrame->regions->GetRegionPosition(track.first);
-        glVertex2f(p0(0), p0(1));
-        glVertex2f(p1(0), p1(1));
-        glEnd();
-      }
+        Tracker_Features * tr = dynamic_cast<Tracker_Features*>(monocular_slam.tracker_);
+
+        for (auto track : tr->tracking_feat_cur_ref_ids)
+        {
+          // Draw the line from prev
+          glBegin(GL_LINE_STRIP);
+          glColor3f(0.f, 1.f, 0.f);
+          const Vec2 & p0 = tr->init_ref_frame->regions->GetRegionPosition(track.second);
+          const Vec2 & p1 = tr->mPrevFrame->regions->GetRegionPosition(track.first);
+          glVertex2f(p0(0), p0(1));
+          glVertex2f(p1(0), p1(1));
+          //std::cout<<"H: "<<track.first<<" - "<<track.second<<" :: "<<p0<<" :: "<<p1<<"\n";
+          glEnd();
+        }
+
+        for (auto p : tr->init_ref_frame->regions->GetRegionsPositions())
+        {
+          // draw the current tracked point
+          {
+            glPointSize(4.0f);
+            glBegin(GL_POINTS);
+            glColor3f(1.f, 0.f, 1.f); // Yellow
+            //const Vec2f & p0 = iter->pos_;
+            glVertex2f(p.x(), p.y());
+            glEnd();
+          }
+        }
       }
       else
       {
         std::cout<<"AABAB\n";
       }
-
+/*
       for (auto p : monocular_slam.tracker_->mPrevFrame->regions->GetRegionsPositions())
       {
         // draw the current tracked point
@@ -226,25 +243,14 @@ int main(int argc, char **argv)
           //const Vec2f & p0 = iter->pos_;
           glVertex2f(p.x(), p.y());
           glEnd();
+          //std::cout<<"I: "<<p.x()<<", "<<p.y()<<"\n";
         }
-      }
+      }*/
 
-      for (auto p : monocular_slam.tracker_->init_ref_frame->regions->GetRegionsPositions())
-      {
-        // draw the current tracked point
-        {
-          glPointSize(4.0f);
-          glBegin(GL_POINTS);
-          glColor3f(1.f, 0.f, 1.f); // Yellow
-          //const Vec2f & p0 = iter->pos_;
-          glVertex2f(p.x(), p.y());
-          glEnd();
-        }
-      }
       glFlush();
       window.Swap(); // Swap openGL buffer
-      if (frameId>0)
-        sleep(2);
+      //if (frameId>0)
+        //sleep(2);
     }
   }
 

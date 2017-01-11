@@ -17,6 +17,7 @@ namespace openMVG  {
 namespace VSSLAM  {
 
 /// Frame
+
 struct Frame:enable_shared_from_this<Frame>
 {
   Frame(const size_t fId): frameId_(fId) {}
@@ -36,6 +37,9 @@ struct Frame:enable_shared_from_this<Frame>
 
   /// Detected features
   std::unique_ptr<features::Regions> regions;
+  features::PointFeatures pts_undist;
+
+  // Shared pointer to camera parameters
 };
 
 
