@@ -12,6 +12,9 @@
 #include <software/VSSLAM/slam/Frame.hpp>
 #include <openMVG/types.hpp>
 
+using namespace openMVG;
+using namespace openMVG::cameras;
+
 namespace openMVG  {
 namespace VSSLAM  {
 
@@ -27,10 +30,8 @@ struct Abstract_Tracker
     IDLE = 4
   };
 
-  // Tracking stats
-  TRACKING_STATUS trackingStatus = TRACKING_STATUS::NOT_INIT;
-  size_t max_tracked_points = 1500;
-
+  // Camera intrinsics
+  IntrinsicBase * cam_intrinsic_;
 
   // Frames
   std::shared_ptr<Frame> mLastRefFrame;
@@ -40,6 +41,8 @@ struct Abstract_Tracker
   // Initialization
   std::shared_ptr<Frame> init_ref_frame;
 
+  // Tracking stats
+  TRACKING_STATUS trackingStatus = TRACKING_STATUS::NOT_INIT;
 
   Abstract_Tracker() = default;
 

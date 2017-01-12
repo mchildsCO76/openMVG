@@ -20,7 +20,18 @@ namespace VSSLAM  {
 
 struct Frame:enable_shared_from_this<Frame>
 {
-  Frame(const size_t fId): frameId_(fId) {}
+  // Basic stats
+  size_t frameId_;
+
+  /// Detected features
+  std::unique_ptr<features::Regions> regions;
+  std::vector<Vec2> pts_undist;
+
+  Frame
+  (
+    const size_t fId
+  ): frameId_(fId)
+  {}
 
   std::shared_ptr<Frame> share_ptr()
   {
@@ -32,14 +43,10 @@ struct Frame:enable_shared_from_this<Frame>
     return regions->RegionCount();
   }
 
-  // Basic stats
-  size_t frameId_;
 
-  /// Detected features
-  std::unique_ptr<features::Regions> regions;
-  features::PointFeatures pts_undist;
 
-  // Shared pointer to camera parameters
+
+
 };
 
 
@@ -48,3 +55,4 @@ struct Frame:enable_shared_from_this<Frame>
 
 
 #endif // FRAME_VSSLAM_HPP}
+

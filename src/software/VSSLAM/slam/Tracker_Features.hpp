@@ -14,6 +14,8 @@
 #include <software/VSSLAM/slam/Abstract_Tracker.hpp>
 #include <software/VSSLAM/slam/Abstract_FeatureExtractor.hpp>
 
+#include <software/VSSLAM/slam/PoseEstimation.hpp>
+
 namespace openMVG  {
 namespace VSSLAM  {
 
@@ -28,6 +30,7 @@ struct Tracker_Features : public Abstract_Tracker
   //std::vector<bool> candidate_pts_used;
 
   // Tracking data
+  size_t max_tracked_points = 1500;
   Hash_Map<size_t,size_t> tracking_feat_cur_ref_ids;
 
   // Tracking settings
@@ -36,9 +39,13 @@ struct Tracker_Features : public Abstract_Tracker
   size_t max_frame_tracks = 0; // Max number of feats detected in a frame (0 - unlimited)
   size_t min_matches_init_pose = 500; // Min number of matches for init pose estimation
 
+  Tracker_Features
+  (
+    Abstract_FeatureExtractor * featExtractor,
+    const size_t max_features_tracked = 1500
+  ): featureExtractor_(featExtractor), max_tracked_points(max_features_tracked)
+  {}
 
-
-  Tracker_Features(){}
 
   void setFeatureExtractor(Abstract_FeatureExtractor * featExtractor)
   {
@@ -49,8 +56,6 @@ struct Tracker_Features : public Abstract_Tracker
   {
     max_tracked_points = max_feats;
   }
-
-
 
   void clearTrackingData()
   {
@@ -70,7 +75,6 @@ struct Tracker_Features : public Abstract_Tracker
     mCurrentFrame = current_frame->share_ptr();
     // Clear data for tracking from prev frame
     tracking_feat_cur_ref_ids.clear();
-
 
     // Detect features
     std::cout<<"Start detection:\n";
@@ -117,9 +121,7 @@ struct Tracker_Features : public Abstract_Tracker
         // not enough features detected
         resetSystemInitialization();
       }
-
     }
-
 
     std::cout<<"Tracks available: "<<mCurrentFrame->regions->RegionCount()<<"\n";
 
@@ -129,23 +131,8 @@ struct Tracker_Features : public Abstract_Tracker
     // Return if tracking is ok
     return trackingStatus==TRACKING_STATUS::OK;
   }
-/*
-  // suggest new feature point for tracking (count point are kept)
-  bool detect
-  (
-    const image::Image<unsigned char> & ima,
-    std::vector<features::PointFeature> & pt_to_track,
-    const size_t count,
-    const size_t min_count
-  ) const override
-  {
-    size_t n_feats = featureExtractor_->detect(ima,pt_to_track,count);
 
-    if (n_feats < min_count)
-      return true;
-    return true;
-  }
-*/
+
   /// INITIALIZATION
 
   void resetSystemInitialization()
@@ -225,6 +212,29 @@ struct Tracker_Features : public Abstract_Tracker
       if (n_feat_frame_matches > min_matches_init_pose)
       {
         // Try to estimate the H and F from mathces
+        Mat2X pt2D_ref(2, match_cur_ref_idx.size());
+        Mat2X pt2D_cur(2, match_cur_ref_idx.size());
+
+        // Copy data of matched points
+        #ifdef OPENMVG_USE_OPENMP
+        #pragma omp parallel for schedule(dynamic)
+        #endif
+        for (int m_i = 0; m_i < match_cur_ref_idx.size(); ++m_i)
+        {
+          Hash_Map<size_t,size_t>::iterator m_iter = match_cur_ref_idx.begin();
+          std::advance(m_iter,m_i);
+          pt2D_ref.col(m_i) = init_ref_frame->pts_undist[m_iter->second].cast<double>();
+          pt2D_cur.col(m_i) = mCurrentFrame->pts_undist[m_iter->first].cast<double>();
+        }
+
+        const std::pair<size_t, size_t>  img_size(1280,960);
+        // Try to estimate H
+        Mat3 H;
+        double threshH;
+        bool validH = computeH(pt2D_ref,pt2D_cur,img_size,H,threshH);
+
+        // Try to estimate E
+
 
         // if ok...try more matches with model
         tracking_feat_cur_ref_ids = match_cur_ref_idx;
@@ -247,9 +257,9 @@ struct Tracker_Features : public Abstract_Tracker
   size_t matchFramesFeatureMatchingNoMM
   (
     features::Regions * ref_feat_regions,
-    features::PointFeatures & ref_feat_undist,
+    std::vector<Vec2> & ref_feat_undist,
     features::Regions * candidate_feat_regions,
-    features::PointFeatures & candidate_feat_undist,
+    std::vector<Vec2> & candidate_feat_undist,
     Hash_Map<size_t,size_t> & match_cur_ref_feat_ids,
     const size_t win_size = 50,
     const float ratio = 0.8
@@ -288,7 +298,7 @@ struct Tracker_Features : public Abstract_Tracker
       for (size_t c_i=0; c_i < candidate_feat_undist.size(); ++c_i)
       {
         // Check if points are close enough
-        if ((candidate_feat_undist[c_i].coords() - ref_feat_undist[p_i].coords()).norm() > win_size)
+        if ((candidate_feat_undist[c_i] - ref_feat_undist[p_i]).norm() > win_size)
           continue;
 
         // Get candidate descriptor
@@ -384,7 +394,7 @@ struct Tracker_Features : public Abstract_Tracker
   bool detect
   (
     const image::Image<unsigned char> & ima,
-    std::shared_ptr<Frame> &frame,
+    std::shared_ptr<Frame> & frame,
     const size_t min_count,
     const size_t max_count
   )
@@ -394,7 +404,28 @@ struct Tracker_Features : public Abstract_Tracker
     // Describe detected features
     featureExtractor_->describe(ima,frame->regions.get());
     // Undistort points
-    frame->pts_undist = frame->regions->GetRegionsPositions();
+    frame->pts_undist.resize(frame->regions->RegionCount());
+    if (cam_intrinsic_->have_disto())
+    {
+      #ifdef OPENMVG_USE_OPENMP
+      #pragma omp parallel for
+      #endif
+      for ( int i = 0; i < frame->regions->RegionCount(); ++i )
+      {
+        frame->pts_undist[i] = cam_intrinsic_->remove_disto(frame->regions->GetRegionPosition(i));
+      }
+    }
+    else
+    {
+      #ifdef OPENMVG_USE_OPENMP
+      #pragma omp parallel for
+      #endif
+      for ( int i = 0; i < frame->regions->RegionCount(); ++i )
+      {
+        frame->pts_undist[i] = frame->regions->GetRegionPosition(i);
+      }
+    }
+
     std::cout<<"PP: "<<frame->pts_undist.size();
     if (n_feats_detected > 0)
       return true;

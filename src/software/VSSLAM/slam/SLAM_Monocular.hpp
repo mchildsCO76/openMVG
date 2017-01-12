@@ -18,6 +18,8 @@
 #include <deque>
 #include <set>
 
+using namespace openMVG;
+using namespace openMVG::cameras;
 
 namespace openMVG  {
 namespace VSSLAM  {
@@ -53,21 +55,46 @@ struct SLAM_Monocular
   // Current frame
   std::shared_ptr<Frame> current_frame;
 
+  // Camera
+  IntrinsicBase * cam_intrinsic_;
+
   // Tracking
   Abstract_Tracker * tracker_;
   //
 
-
   SLAM_Monocular
   (
     Abstract_Tracker * tracker,
-    const uint32_t maxTrackedFeatures = 15
-    // Add an abstract camera model here
+    IntrinsicBase * mono_cam_intrinsic
   )
-  : tracker_(tracker)
+  : tracker_(tracker), cam_intrinsic_(mono_cam_intrinsic)
   {
-    tracker_->max_tracked_points = maxTrackedFeatures;
+    if (tracker_)
+    {
+      tracker_->cam_intrinsic_ = mono_cam_intrinsic;
+    }
   }
+
+  // -------------------
+  // --- System Initialization
+  // -------------------
+  bool isReady()
+  {
+    // if either of tracker or intrinsic are not initialized is not ready
+    if (!tracker_)
+    {
+      std::cerr << "ERROR: MonoSLAM: Tracker not initialized!" << std::endl;
+      return false;
+    }
+    if (!cam_intrinsic_)
+    {
+      std::cerr << "ERROR: MonoSLAM: Camera intrinsics not initialized!" << std::endl;
+      return false;
+    }
+    return true;
+  }
+
+
 
   bool nextFrame
   (
@@ -75,7 +102,6 @@ struct SLAM_Monocular
     const size_t frameId
   )
   {
-
     std::cout<<"Frame "<<frameId<<"\n";
     // Create Frame
     current_frame = std::make_shared<Frame>(frameId);
@@ -90,42 +116,9 @@ struct SLAM_Monocular
 
     tracker_->printTrackingStatus();
 
-    /*
-    // Check if system is initialized
-    if (systemStatus == Abstract_Tracker::TRACKING_STATUS::INIT)
-    {
-      MonocularSystemInitialization(ima);
-    }*/
   }
 
-/*
-  // Try to initialize system
-  bool MonocularSystemInitialization
-  (
-    const image::Image<unsigned char> & ima
-  )
-  {
-    std::cout<<"System not initialized yet!\n";
 
-    // Check if we have enough features in the frame
-    if (tracker_->trackingStatus != Abstract_Tracker::TRACKING_STATUS::FAILED)
-    {
-      // Check if we have a reference init frame
-      if (!init_ref_frame)
-      {
-        // Set current frame as the new reference frame for initialization
-        std::cout<<"Set: INIT REFERENCE\n";
-        init_ref_frame.reset(current_frame.get());
-      }
-      else if (tracker_->trackingStatus == Abstract_Tracker::TRACKING_STATUS::OK)
-      {
-        // Tracking from previous frame was successful
-        std::cout<<"Try to initialize\n";
-
-      }
-    }
-  }
-*/
 
 
 };
