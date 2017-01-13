@@ -31,6 +31,7 @@ struct Abstract_Tracker
   };
 
   // Camera intrinsics
+  bool bCalibratedCamera = true;
   IntrinsicBase * cam_intrinsic_;
 
   // Frames

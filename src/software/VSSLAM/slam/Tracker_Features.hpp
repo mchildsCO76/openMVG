@@ -211,9 +211,19 @@ struct Tracker_Features : public Abstract_Tracker
 
       if (n_feat_frame_matches > min_matches_init_pose)
       {
+        std::cout<<"Try computing H and F\n";
+        double startTimeA = omp_get_wtime();
+
         // Try to estimate the H and F from mathces
         Mat2X pt2D_ref(2, match_cur_ref_idx.size());
         Mat2X pt2D_cur(2, match_cur_ref_idx.size());
+
+        // Results
+        float RH = 0.0, SH = 0.0, SE = 0.0;
+
+        Mat3 H, E;
+        double dThresh_H, dThresh_E, dThresh_M;
+        bool bValid_H, bValid_E;
 
         // Copy data of matched points
         #ifdef OPENMVG_USE_OPENMP
@@ -227,13 +237,79 @@ struct Tracker_Features : public Abstract_Tracker
           pt2D_cur.col(m_i) = mCurrentFrame->pts_undist[m_iter->first].cast<double>();
         }
 
-        const std::pair<size_t, size_t>  img_size(1280,960);
-        // Try to estimate H
-        Mat3 H;
-        double threshH;
-        bool validH = computeH(pt2D_ref,pt2D_cur,img_size,H,threshH);
+        double stopTimeA = omp_get_wtime();
+        double secsElapsedA = stopTimeA - startTimeA; // that's all !
+        std::cout<<"Copy data to matrix: "<<secsElapsedA<<"\n";
 
-        // Try to estimate E
+        // Try to estimate H
+        double startTimeB = omp_get_wtime();
+
+        bValid_H = computeH(pt2D_ref,pt2D_cur,cam_intrinsic_->w(), cam_intrinsic_->h(),H, dThresh_H);
+
+        stopTimeA = omp_get_wtime();
+        secsElapsedA = stopTimeA - startTimeB; // that's all !
+        std::cout<<"Compute H: "<<secsElapsedA<<"\n";
+
+        if (bCalibratedCamera)
+        {
+          // Try to estimate E
+          startTimeB = omp_get_wtime();
+
+          const Pinhole_Intrinsic * cam_ = dynamic_cast<const Pinhole_Intrinsic*>(cam_intrinsic_);
+          bValid_E = computeE(cam_->K(),pt2D_ref,pt2D_cur,cam_intrinsic_->w(), cam_intrinsic_->h(),E, dThresh_E);
+
+          stopTimeA = omp_get_wtime();
+          secsElapsedA = stopTimeA - startTimeB; // that's all !
+          std::cout<<"Compute E: "<<secsElapsedA<<"\n";
+        }
+        else
+        {
+          std::cerr << "Uncalibrated camera case not supported yet!\n";
+          return;
+        }
+
+        std::cout<<"Model status H: "<<bValid_H<<" F/E: "<<bValid_E<<"\n";
+
+        if (bValid_H)
+        {
+          if (bValid_E)
+          {
+            dThresh_M = std::max<double>(dThresh_H,dThresh_E);
+          }
+          else
+          {
+            dThresh_M = dThresh_H;
+          }
+        }
+        else
+        {
+          if (bValid_E)
+          {
+            dThresh_M = bValid_E;
+          }
+          else
+          {
+            // Neither models were successful! - skip this frame
+            std::cout<<"No models available - ABORT initialization and try with next frame\n";
+            return;
+          }
+        }
+
+        if (bValid_H)
+        {
+          SH = computeHomographyScore(H,pt2D_ref,pt2D_cur, dThresh_M);
+        }
+        if (bValid_E)
+        {
+          Mat K = dynamic_cast<const Pinhole_Intrinsic*>(cam_intrinsic_)->K();
+          // Get F from E and K
+          Mat3 F;
+          FundamentalFromEssential(E, K, K, &F);
+          SE = computeEpipolarScore(F,pt2D_ref,pt2D_cur, dThresh_M);
+        }
+        RH = SH / (SH+SE);
+
+        std::cout<<"MM: SH: "<<SH<<" SE: "<<SE<<" :: RH"<<RH<<"\n";
 
 
         // if ok...try more matches with model
@@ -400,10 +476,26 @@ struct Tracker_Features : public Abstract_Tracker
   )
   {
     // Detect feature points
+    //double startTime = omp_get_wtime();
+
     size_t n_feats_detected = featureExtractor_->detect(ima,frame->regions,min_count,max_count);
+
+    //double stopTime = omp_get_wtime();
+    //double secsElapsed = stopTime - startTime; // that's all !
+    //std::cout<<"Detect time:"<<secsElapsed<<"\n";
     // Describe detected features
+
+    //startTime = omp_get_wtime();
+
     featureExtractor_->describe(ima,frame->regions.get());
+
+    //stopTime = omp_get_wtime();
+    //secsElapsed = stopTime - startTime; // that's all !
+    //std::cout<<"Describe time:"<<secsElapsed<<"\n";
+
     // Undistort points
+
+    //startTime = omp_get_wtime();
     frame->pts_undist.resize(frame->regions->RegionCount());
     if (cam_intrinsic_->have_disto())
     {
@@ -425,8 +517,10 @@ struct Tracker_Features : public Abstract_Tracker
         frame->pts_undist[i] = frame->regions->GetRegionPosition(i);
       }
     }
+    //stopTime = omp_get_wtime();
+    //secsElapsed = stopTime - startTime; // that's all !
+    //std::cout<<"Undistort time:"<<secsElapsed<<" :: Have dist: "<<cam_intrinsic_->have_disto()<<"\n";
 
-    std::cout<<"PP: "<<frame->pts_undist.size();
     if (n_feats_detected > 0)
       return true;
     return false;

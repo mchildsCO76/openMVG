@@ -111,9 +111,9 @@ struct Feat_Extractor_FastDipole : public Abstract_FeatureExtractor
     #endif
     for (size_t i = 0; i < pts.size(); ++i)
     {
-      features::PickASDipole(ima, pts[i].x(), pts[i].y(), 10.5f, 0.0f, descs[i].data());
+      const Vec2f & pt_pos = pts[i].coords();
+      features::PickASDipole(ima, pt_pos(0), pt_pos(1), 10.5f, 0.0f, descs[i].data());
     }
-    std::cout<<"DN: "<<descs.size()<<"\n";
     return true;
   }
 /*
