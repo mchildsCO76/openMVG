@@ -17,12 +17,12 @@
 #include "openMVG/stl/split.hpp"
 
 // Tracker
-#include <software/VSSLAM/slam/Abstract_Tracker.hpp>
-#include <software/VSSLAM/slam/Abstract_FeatureExtractor.hpp>
-#include <software/VSSLAM/slam/Tracker_Features.hpp>
-#include <software/VSSLAM/slam/Feat_Extractor_FastDipole.hpp>
+#include <openMVG/vsslam/tracking/Abstract_Tracker.hpp>
+#include <openMVG/vsslam/tracking/Abstract_FeatureExtractor.hpp>
+#include <openMVG/vsslam/tracking/Tracker_Features.hpp>
+#include <openMVG/vsslam/tracking/Feat_Extractor_FastDipole.hpp>
 
-#include <software/VSSLAM/slam/SLAM_Monocular.hpp>
+#include <openMVG/vsslam/SLAM_Monocular.hpp>
 
 
 using namespace openMVG;
@@ -293,6 +293,8 @@ int main(int argc, char **argv)
 
   // Initialize the monocular tracking framework
   SLAM_Monocular monocular_slam(tracker_ptr.get(),cam_0_intrinsic.get());
+  // Add information about the cameras
+  monocular_slam.addCameraIntrinsics(0,cam_0_intrinsic.get());
 
   if(!monocular_slam.isReady())
   {
@@ -371,15 +373,14 @@ int main(int argc, char **argv)
           // Draw the line from prev
           glBegin(GL_LINE_STRIP);
           glColor3f(0.f, 1.f, 0.f);
-          const Vec2 & p0 = tr->init_ref_frame->regions->GetRegionPosition(track.second);
-          const Vec2 & p1 = tr->mPrevFrame->regions->GetRegionPosition(track.first);
+          const Vec2 & p0 = tr->init_ref_frame->regions_->GetRegionPosition(track.second);
+          const Vec2 & p1 = tr->mPrevFrame->regions_->GetRegionPosition(track.first);
           glVertex2f(p0(0), p0(1));
           glVertex2f(p1(0), p1(1));
-          //std::cout<<"H: "<<track.first<<" - "<<track.second<<" :: "<<p0<<" :: "<<p1<<"\n";
           glEnd();
         }
 
-        for (auto p : tr->init_ref_frame->regions->GetRegionsPositions())
+        for (auto p : tr->init_ref_frame->regions_->GetRegionsPositions())
         {
           // draw the current tracked point
           {

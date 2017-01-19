@@ -49,6 +49,62 @@ struct Similarity3
   }
 
   /**
+  * @brief Get Rotation matrix
+  * @return Rotation matrix
+  */
+  const Mat3& rotation() const
+  {
+    return pose_.rotation();
+  }
+
+  /**
+  * @brief Get Rotation matrix
+  * @return Rotation matrix
+  */
+  Mat3& rotation()
+  {
+    return pose_.rotation();
+  }
+
+  /**
+  * @brief Get center of rotation
+  * @return center of rotation
+  */
+  const Vec3& center() const
+  {
+    return pose_.center();
+  }
+
+  /**
+  * @brief Get center of rotation
+  * @return Center of rotation
+  */
+  Vec3& center()
+  {
+    return pose_.center();
+  }
+
+  /**
+  * @brief Get translation vector
+  * @return translation vector
+  * @note t = -RC
+  */
+  inline Vec3 translation() const
+  {
+    return pose_.translation();
+  }
+
+  double& scale()
+  {
+    return scale_;
+  }
+
+  const double& scale() const
+  {
+    return scale_;
+  }
+
+  /**
   * @brief Apply transformation to a point
   * @param point Input point
   * @return transformed point
@@ -76,6 +132,19 @@ struct Similarity3
   {
     return Similarity3(pose_.inverse(), 1.0 / scale_);
   }
+
+
+
+  Mat4 transformation() const
+  {
+    Mat4 T;
+    T.block(0,0,3,3) << scale_*pose_.rotation();
+    T.block(0,3,3,1) << pose_.translation();
+    T(3,3) = 1;
+    return T;
+  }
+
+
 
 };
 

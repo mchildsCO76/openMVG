@@ -11,10 +11,11 @@
 #include "openMVG/features/features.hpp"
 #include <openMVG/numeric/numeric.h>
 
-#include <software/VSSLAM/slam/Frame.hpp>
-#include <software/VSSLAM/slam/Abstract_Tracker.hpp>
-#include <software/VSSLAM/slam/Abstract_FeatureExtractor.hpp>
-
+#include <openMVG/vsslam/Frame.hpp>
+#include <openMVG/vsslam/tracking/Abstract_Tracker.hpp>
+#include <openMVG/vsslam/tracking/Abstract_FeatureExtractor.hpp>
+#include <openMVG/vsslam/VSSLAM_Data.hpp>
+#include <openMVG/vsslam/mapping/Cartographer.hpp>
 #include <deque>
 #include <set>
 
@@ -24,29 +25,6 @@ using namespace openMVG::cameras;
 namespace openMVG  {
 namespace VSSLAM  {
 
-/// Store an image observation of a landmark
-struct Measurement
-{
-  Measurement
-  (
-    const uint32_t & frameId,
-    const Vec2f & p
-  ): frameId_(frameId), pos_(p)
-  { }
-  Measurement( const Measurement & src ) = default ;
-
-  uint32_t frameId_;
-  Vec2f pos_;
-};
-
-/// A 3D point with it's associated image observations
-struct Landmark
-{
-  Landmark():pt_(-1,-1,-1) {}
-
-  Vec3 pt_;
-  std::deque<Measurement> obs_;
-};
 
 
 /// Monocular test interface
@@ -60,7 +38,9 @@ struct SLAM_Monocular
 
   // Tracking
   Abstract_Tracker * tracker_;
-  //
+
+  // Map
+  std::shared_ptr<Cartographer> cartographer_;
 
   SLAM_Monocular
   (
@@ -69,9 +49,11 @@ struct SLAM_Monocular
   )
   : tracker_(tracker), cam_intrinsic_(mono_cam_intrinsic)
   {
+    cartographer_ = std::make_shared<Cartographer>();
     if (tracker_)
     {
       tracker_->cam_intrinsic_ = mono_cam_intrinsic;
+      tracker_->cartographer_ = cartographer_.get();
     }
   }
 
@@ -94,6 +76,10 @@ struct SLAM_Monocular
     return true;
   }
 
+  void addCameraIntrinsics(const size_t & cam_id, IntrinsicBase * cam_intrinsic_)
+  {
+    cartographer_->addCameraIntrinsicData(cam_id,cam_intrinsic_);
+  }
 
 
   bool nextFrame
@@ -104,7 +90,7 @@ struct SLAM_Monocular
   {
     std::cout<<"Frame "<<frameId<<"\n";
     // Create Frame
-    current_frame = std::make_shared<Frame>(frameId);
+    current_frame = std::make_shared<Frame>(frameId, 0, cam_intrinsic_);
 
     double startTime = omp_get_wtime();
     // Track frame

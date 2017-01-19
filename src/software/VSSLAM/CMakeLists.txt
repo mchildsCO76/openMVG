@@ -1,8 +1,6 @@
 
 IF (OpenMVG_BUILD_OPENGL_EXAMPLES)
 
-  ADD_SUBDIRECTORY(slam)
-
   #
   # OpenGL
   #

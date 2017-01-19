@@ -424,7 +424,8 @@ set(OpenMVG_LIBRARIES
   openMVG_multiview
   openMVG_lInftyComputerVision
   openMVG_system
-  openMVG_sfm)
+  openMVG_sfm
+  openMVG_vsslam)
 
 FOREACH(omvglib ${OpenMVG_LIBRARIES})
   set_property(TARGET ${omvglib} PROPERTY FOLDER OpenMVG/OpenMVG)

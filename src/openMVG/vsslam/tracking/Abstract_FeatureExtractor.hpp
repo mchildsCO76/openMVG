@@ -7,12 +7,16 @@
 #pragma once
 
 #include <openMVG/types.hpp>
-#include <software/VSSLAM/slam/Frame.hpp>
+#include <openMVG/vsslam/Frame.hpp>
 
 namespace openMVG  {
 namespace VSSLAM  {
-struct Abstract_FeatureExtractor
+
+class Abstract_FeatureExtractor
 {
+public:
+  virtual ~Abstract_FeatureExtractor(){};
+
   virtual size_t detect
   (
     const image::Image<unsigned char> & ima,
@@ -36,12 +40,7 @@ struct Abstract_FeatureExtractor
     const image::Image<unsigned char> & ima,
     features::Regions * regions
   )=0;
- /* virtual bool describe
-  (
-    const image::Image<unsigned char> & ima,
-    features::PointFeature & new_pt,
-    void * desc_raw
-  ) =0;*/
+
   virtual void getDescriptorRaw
   (
     features::Regions * regions,
@@ -53,13 +52,6 @@ struct Abstract_FeatureExtractor
     void * desc_A,
     void * desc_B
   ) =0;
-  /*
-  virtual size_t InsertRegion
-  (
-    features::Regions * regions,
-    features::PointFeature & pt,
-    void * desc
-  ) =0;*/
 
 };
 

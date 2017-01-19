@@ -9,8 +9,9 @@
 #include <iostream>
 #include <memory>
 
-#include <software/VSSLAM/slam/Frame.hpp>
+#include <openMVG/vsslam/Frame.hpp>
 #include <openMVG/types.hpp>
+#include <openMVG/vsslam/mapping/Cartographer.hpp>
 
 using namespace openMVG;
 using namespace openMVG::cameras;
@@ -18,9 +19,9 @@ using namespace openMVG::cameras;
 namespace openMVG  {
 namespace VSSLAM  {
 
-
-struct Abstract_Tracker
+class Abstract_Tracker
 {
+public:
   enum TRACKING_STATUS
   {
     NOT_INIT = 0,
@@ -30,6 +31,9 @@ struct Abstract_Tracker
     IDLE = 4
   };
 
+  // ---------------
+  // Parameters
+  // ---------------
   // Camera intrinsics
   bool bCalibratedCamera = true;
   IntrinsicBase * cam_intrinsic_;
@@ -39,13 +43,23 @@ struct Abstract_Tracker
   std::shared_ptr<Frame> mPrevFrame;
   std::shared_ptr<Frame> mCurrentFrame;
 
+  // Motion model
+  Mat motionModel;
+
+  // Map
+  Cartographer * cartographer_;
+
   // Initialization
   std::shared_ptr<Frame> init_ref_frame;
 
   // Tracking stats
   TRACKING_STATUS trackingStatus = TRACKING_STATUS::NOT_INIT;
 
-  Abstract_Tracker() = default;
+  // ---------------
+  // Methods
+  // ---------------
+
+  virtual ~Abstract_Tracker(){};
 
   // Try to track the pt_to_track features
   virtual bool track
@@ -53,15 +67,6 @@ struct Abstract_Tracker
     const image::Image<unsigned char> & ima,
     std::shared_ptr<Frame> current_frame
   ) = 0;
-
-  // suggest new feature point for tracking (count point are kept)
-  /*virtual bool detect
-  (
-    const image::Image<unsigned char> & ima,
-    std::vector<features::PointFeature> & pt_to_track,
-    const size_t count,
-    const size_t min_count = 0
-  ) const = 0;*/
 
   void printTrackingStatus()
   {

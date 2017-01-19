@@ -10,24 +10,24 @@
 #include <memory>
 
 #include <openMVG/types.hpp>
-#include <software/VSSLAM/slam/Frame.hpp>
-#include <software/VSSLAM/slam/Abstract_Tracker.hpp>
-#include <software/VSSLAM/slam/Abstract_FeatureExtractor.hpp>
+#include <openMVG/vsslam/Frame.hpp>
+#include <openMVG/vsslam/tracking/Abstract_Tracker.hpp>
+#include <openMVG/vsslam/tracking/Abstract_FeatureExtractor.hpp>
 
-#include <software/VSSLAM/slam/PoseEstimation.hpp>
+#include <openMVG/vsslam/tracking/PoseEstimation.hpp>
 
 namespace openMVG  {
 namespace VSSLAM  {
 
-struct Tracker_Features : public Abstract_Tracker
+class Tracker_Features : public Abstract_Tracker
 {
+public:
+  // ---------------
+  // Parameters
+  // ---------------
+
   /// Feature extractor
   Abstract_FeatureExtractor * featureExtractor_;
-
-  // Tracking candidates
-  //std::unique_ptr<features::Regions> candidate_regions;
-  //features::PointFeatures candidate_pts_undist;
-  //std::vector<bool> candidate_pts_used;
 
   // Tracking data
   size_t max_tracked_points = 1500;
@@ -39,6 +39,10 @@ struct Tracker_Features : public Abstract_Tracker
   size_t max_frame_tracks = 0; // Max number of feats detected in a frame (0 - unlimited)
   size_t min_matches_init_pose = 500; // Min number of matches for init pose estimation
 
+
+  // ---------------
+  // Parameters
+  // ---------------
   Tracker_Features
   (
     Abstract_FeatureExtractor * featExtractor,
@@ -46,6 +50,7 @@ struct Tracker_Features : public Abstract_Tracker
   ): featureExtractor_(featExtractor), max_tracked_points(max_features_tracked)
   {}
 
+  ~Tracker_Features() = default;
 
   void setFeatureExtractor(Abstract_FeatureExtractor * featExtractor)
   {
@@ -60,7 +65,6 @@ struct Tracker_Features : public Abstract_Tracker
   void clearTrackingData()
   {
     tracking_feat_cur_ref_ids.clear();
-
   }
 
   /// Try to track current point set in the provided image
@@ -81,7 +85,8 @@ struct Tracker_Features : public Abstract_Tracker
     double startTime = omp_get_wtime();
 
     detect(ima,mCurrentFrame,max_tracked_points,0);
-    size_t n_feats_detected = mCurrentFrame->regions->RegionCount();
+
+    size_t n_feats_detected = mCurrentFrame->regions_->RegionCount();
     std::cout<<"Candidate features: "<<n_feats_detected<<"\n";
 
     double stopTime = omp_get_wtime();
@@ -108,7 +113,7 @@ struct Tracker_Features : public Abstract_Tracker
     }
     else if (trackingStatus == TRACKING_STATUS::INIT)
     {
-      std::cout<<"TRY TO TRACK FROM INIT REF FRAME ID: "<<init_ref_frame->frameId_<<": features"<<init_ref_frame->getTracksSize()<<"!\n";
+      std::cout<<"TRY TO TRACK FROM INIT REF FRAME ID: "<<init_ref_frame->frameId_<<": features"<<init_ref_frame->N_feats()<<"!\n";
 
       // Check if enough features are detected
       if (n_feats_detected > min_init_ref_tracks)
@@ -120,10 +125,11 @@ struct Tracker_Features : public Abstract_Tracker
       {
         // not enough features detected
         resetSystemInitialization();
+        trackingStatus = Abstract_Tracker::TRACKING_STATUS::NOT_INIT;
       }
     }
 
-    std::cout<<"Tracks available: "<<mCurrentFrame->regions->RegionCount()<<"\n";
+    std::cout<<"Tracks available: "<<mCurrentFrame->regions_->RegionCount()<<"\n";
 
     mPrevFrame.swap(mCurrentFrame);
     mCurrentFrame.reset();
@@ -142,19 +148,14 @@ struct Tracker_Features : public Abstract_Tracker
     {
       init_ref_frame.reset();
     }
-    trackingStatus = Abstract_Tracker::TRACKING_STATUS::NOT_INIT;
   }
 
   void setReferenceSystemInitialization(std::shared_ptr<Frame> & frame)
   {
-    std::cout<<"System initialized process A!\n";
-
     // Reset all initialization settings
     resetSystemInitialization();
     // Set current frame as the new reference frame for initialization
     init_ref_frame = frame->share_ptr();
-
-    trackingStatus = Abstract_Tracker::TRACKING_STATUS::INIT;
     std::cout<<"Set new reference initialization frame\n";
   }
 
@@ -168,10 +169,8 @@ struct Tracker_Features : public Abstract_Tracker
     if (trackingStatus == Abstract_Tracker::TRACKING_STATUS::NOT_INIT)
     {
       // Clear all data that could be initialized
-
       // Set new reference initialization frame
-      init_ref_frame = mCurrentFrame->share_ptr();
-
+      setReferenceSystemInitialization(mCurrentFrame);
       // Set system to INIT
       trackingStatus = Abstract_Tracker::TRACKING_STATUS::INIT;
     }
@@ -180,9 +179,15 @@ struct Tracker_Features : public Abstract_Tracker
       // Check that we have actual reference image
       if (!init_ref_frame)
       {
-        resetSystemInitialization();
-        return;
+        // We dont have initialization reference frame (SHOULDNT  HAPPEN)
+        // Just in case we reset the system and set the current frame as reference frame
+        setReferenceSystemInitialization(mCurrentFrame);
+        // Set system to INIT
+        trackingStatus = Abstract_Tracker::TRACKING_STATUS::INIT;
       }
+
+      // We try to match current frame to initialization reference frame
+
 
       // -------------------
       // -- Match current frame to init reference frame (no MM)
@@ -195,136 +200,102 @@ struct Tracker_Features : public Abstract_Tracker
       // -------------------
       // -- Find matches reference init frame - currrent frame
       // -------------------
-      std::cout<<"Try matching with init reference image\n";
-      Hash_Map<size_t,size_t> match_cur_ref_idx;
+      Hash_Map<size_t,size_t> putative_matches_cur_ref_idx;
 
       double startTime = omp_get_wtime();
 
-      size_t n_feat_frame_matches = matchFramesFeatureMatchingNoMM(init_ref_frame->regions.get(), init_ref_frame->pts_undist, mCurrentFrame->regions.get(), mCurrentFrame->pts_undist, match_cur_ref_idx, win_size, desc_ratio);
-
-      std::cout<<"Matches with ref frame: "<<n_feat_frame_matches<<"\n";
+      size_t n_feat_cur_ref_matches = matchFramesFeatureMatchingNoMM(init_ref_frame->regions_.get(), init_ref_frame->pts_undist_, mCurrentFrame->regions_.get(), mCurrentFrame->pts_undist_, putative_matches_cur_ref_idx, win_size, desc_ratio);
 
       double stopTime = omp_get_wtime();
       double secsElapsed = stopTime - startTime; // that's all !
       std::cout<<"Matching time (no MM):"<<secsElapsed<<"\n";
 
+      std::cout<<"Matches with ref frame: "<<n_feat_cur_ref_matches<<"\n";
 
-      if (n_feat_frame_matches > min_matches_init_pose)
+      // -------------------
+      // -- Find relative pose cur_T_ref = [ cur_R_ref t_ref]
+      // -- Initialize motion model
+      // -- Initialize map
+      // -------------------
+
+      // Check if enough matches with reference image
+      if (n_feat_cur_ref_matches > min_matches_init_pose)
       {
-        std::cout<<"Try computing H and F\n";
-        double startTimeA = omp_get_wtime();
-
-        // Try to estimate the H and F from mathces
-        Mat2X pt2D_ref(2, match_cur_ref_idx.size());
-        Mat2X pt2D_cur(2, match_cur_ref_idx.size());
-
-        // Results
-        float RH = 0.0, SH = 0.0, SE = 0.0;
-
-        Mat3 H, E;
-        double dThresh_H, dThresh_E, dThresh_M;
-        bool bValid_H, bValid_E;
-
-        // Copy data of matched points
-        #ifdef OPENMVG_USE_OPENMP
-        #pragma omp parallel for schedule(dynamic)
-        #endif
-        for (int m_i = 0; m_i < match_cur_ref_idx.size(); ++m_i)
-        {
-          Hash_Map<size_t,size_t>::iterator m_iter = match_cur_ref_idx.begin();
-          std::advance(m_iter,m_i);
-          pt2D_ref.col(m_i) = init_ref_frame->pts_undist[m_iter->second].cast<double>();
-          pt2D_cur.col(m_i) = mCurrentFrame->pts_undist[m_iter->first].cast<double>();
-        }
-
-        double stopTimeA = omp_get_wtime();
-        double secsElapsedA = stopTimeA - startTimeA; // that's all !
-        std::cout<<"Copy data to matrix: "<<secsElapsedA<<"\n";
-
-        // Try to estimate H
-        double startTimeB = omp_get_wtime();
-
-        bValid_H = computeH(pt2D_ref,pt2D_cur,cam_intrinsic_->w(), cam_intrinsic_->h(),H, dThresh_H);
-
-        stopTimeA = omp_get_wtime();
-        secsElapsedA = stopTimeA - startTimeB; // that's all !
-        std::cout<<"Compute H: "<<secsElapsedA<<"\n";
+        startTime = omp_get_wtime();
+        Mat3 c_R_r;
+        Vec3 c_t_r; // Center of origin of w (reference cam) in c (current cam)
+        double c_s_r;
+        double thresh_AC;
+        // Save triangulated points in the process
+        std::vector<size_t> inliers;
+        std::vector<Vec3> pts3D;
+        bool bMotion = false;
 
         if (bCalibratedCamera)
         {
-          // Try to estimate E
-          startTimeB = omp_get_wtime();
-
-          const Pinhole_Intrinsic * cam_ = dynamic_cast<const Pinhole_Intrinsic*>(cam_intrinsic_);
-          bValid_E = computeE(cam_->K(),pt2D_ref,pt2D_cur,cam_intrinsic_->w(), cam_intrinsic_->h(),E, dThresh_E);
-
-          stopTimeA = omp_get_wtime();
-          secsElapsedA = stopTimeA - startTimeB; // that's all !
-          std::cout<<"Compute E: "<<secsElapsedA<<"\n";
+          bMotion = estimateRobustRelativePoseHE(init_ref_frame, mCurrentFrame, putative_matches_cur_ref_idx, c_R_r, c_t_r, inliers, thresh_AC);
+          // Estimate scale of current camera
+          c_s_r = 1.0;
         }
         else
         {
-          std::cerr << "Uncalibrated camera case not supported yet!\n";
-          return;
+          // TODO: Compute HF
         }
 
-        std::cout<<"Model status H: "<<bValid_H<<" F/E: "<<bValid_E<<"\n";
+        stopTime = omp_get_wtime();
+        secsElapsed = stopTime - startTime; // that's all !
+        std::cout<<"Motion time:"<<secsElapsed<<"\n";
 
-        if (bValid_H)
+        if (bMotion)
         {
-          if (bValid_E)
+          std::cout<<"Init motion SUCCESS\n";
+
+          // -------------------
+          // -- Save pose information
+          // -------------------
+          init_ref_frame->setReferenceFrame_Rts(nullptr,Mat3::Identity(),Vec3::Zero(),1.0);
+          init_ref_frame->AC_threshold_ = thresh_AC;
+          mCurrentFrame->setReferenceFrame_Rts(nullptr,c_R_r,c_t_r,c_s_r);
+          mCurrentFrame->AC_threshold_ = thresh_AC;
+
+          // Map initialization
+          if (cartographer_->initializeMap(init_ref_frame,mCurrentFrame, putative_matches_cur_ref_idx, inliers))
           {
-            dThresh_M = std::max<double>(dThresh_H,dThresh_E);
+            // Map was initialized
+
+            // Set motion model
+
+            // Mark tracked points
+            tracking_feat_cur_ref_ids.clear();
+            for (int m_i = 0; m_i < inliers.size(); ++m_i)
+            {
+              Hash_Map<size_t,size_t>::iterator m_iter = putative_matches_cur_ref_idx.begin();
+              std::advance(m_iter,inliers[m_i]);
+              tracking_feat_cur_ref_ids.insert(*m_iter);
+            }
+
+            // Set tracking to OK
+            trackingStatus = Abstract_Tracker::TRACKING_STATUS::OK;
+
           }
           else
           {
-            dThresh_M = dThresh_H;
+            std::cout<<"Map init FAILED...try next frame\n";
+
           }
+
         }
         else
         {
-          if (bValid_E)
-          {
-            dThresh_M = bValid_E;
-          }
-          else
-          {
-            // Neither models were successful! - skip this frame
-            std::cout<<"No models available - ABORT initialization and try with next frame\n";
-            return;
-          }
+          std::cout<<"Init motion FAILED...try next frame\n";
         }
-
-        if (bValid_H)
-        {
-          SH = computeHomographyScore(H,pt2D_ref,pt2D_cur, dThresh_M);
-        }
-        if (bValid_E)
-        {
-          Mat K = dynamic_cast<const Pinhole_Intrinsic*>(cam_intrinsic_)->K();
-          // Get F from E and K
-          Mat3 F;
-          FundamentalFromEssential(E, K, K, &F);
-          SE = computeEpipolarScore(F,pt2D_ref,pt2D_cur, dThresh_M);
-        }
-        RH = SH / (SH+SE);
-
-        std::cout<<"MM: SH: "<<SH<<" SE: "<<SE<<" :: RH"<<RH<<"\n";
-
-
-        // if ok...try more matches with model
-        tracking_feat_cur_ref_ids = match_cur_ref_idx;
-
-
-        std::cout<<"Init motion recovery...try next frame\n";
-        // If fails try with next frame
-        //selectNewFeaturesForTracking(ima, candidate_pts, candidate_pts_used, candidate_descs, mCurrentFrame->regions.get(), max_tracked_points - n_feat_frame_matches);
 
       }
       else
       {
         std::cout<<"Not enough matches for initialization process - setting this as REF frame\n";
         setReferenceSystemInitialization(mCurrentFrame);
+        trackingStatus = Abstract_Tracker::TRACKING_STATUS::INIT;
       }
 
     }
@@ -467,6 +438,7 @@ struct Tracker_Features : public Abstract_Tracker
     return match_cur_ref_feat_ids.size();
   }
 
+
   bool detect
   (
     const image::Image<unsigned char> & ima,
@@ -478,7 +450,7 @@ struct Tracker_Features : public Abstract_Tracker
     // Detect feature points
     //double startTime = omp_get_wtime();
 
-    size_t n_feats_detected = featureExtractor_->detect(ima,frame->regions,min_count,max_count);
+    size_t n_feats_detected = featureExtractor_->detect(ima,frame->regions_,min_count,max_count);
 
     //double stopTime = omp_get_wtime();
     //double secsElapsed = stopTime - startTime; // that's all !
@@ -487,7 +459,7 @@ struct Tracker_Features : public Abstract_Tracker
 
     //startTime = omp_get_wtime();
 
-    featureExtractor_->describe(ima,frame->regions.get());
+    featureExtractor_->describe(ima,frame->regions_.get());
 
     //stopTime = omp_get_wtime();
     //secsElapsed = stopTime - startTime; // that's all !
@@ -495,36 +467,20 @@ struct Tracker_Features : public Abstract_Tracker
 
     // Undistort points
 
+    frame->updateFeaturesData(bCalibratedCamera);
+
     //startTime = omp_get_wtime();
-    frame->pts_undist.resize(frame->regions->RegionCount());
-    if (cam_intrinsic_->have_disto())
-    {
-      #ifdef OPENMVG_USE_OPENMP
-      #pragma omp parallel for
-      #endif
-      for ( int i = 0; i < frame->regions->RegionCount(); ++i )
-      {
-        frame->pts_undist[i] = cam_intrinsic_->remove_disto(frame->regions->GetRegionPosition(i));
-      }
-    }
-    else
-    {
-      #ifdef OPENMVG_USE_OPENMP
-      #pragma omp parallel for
-      #endif
-      for ( int i = 0; i < frame->regions->RegionCount(); ++i )
-      {
-        frame->pts_undist[i] = frame->regions->GetRegionPosition(i);
-      }
-    }
     //stopTime = omp_get_wtime();
     //secsElapsed = stopTime - startTime; // that's all !
-    //std::cout<<"Undistort time:"<<secsElapsed<<" :: Have dist: "<<cam_intrinsic_->have_disto()<<"\n";
+    //std::cout<<"Undistort time:"<<secsElapsed<<"\n";
 
     if (n_feats_detected > 0)
       return true;
     return false;
   }
+
+
+
 
 
 };

@@ -10,16 +10,17 @@
 #include <openMVG/types.hpp>
 #include <numeric>
 
-#include <software/VSSLAM/slam/Frame.hpp>
-#include <software/VSSLAM/slam/Abstract_FeatureExtractor.hpp>
-
+#include <openMVG/vsslam/Frame.hpp>
+#include <openMVG/vsslam/tracking/Abstract_FeatureExtractor.hpp>
 
 namespace openMVG  {
 namespace VSSLAM  {
 
-struct Feat_Extractor_FastDipole : public Abstract_FeatureExtractor
+class Feat_Extractor_FastDipole : public Abstract_FeatureExtractor
 {
   using RegionT = features::FAST_Dipole_Regions;
+
+ // ~Feat_Extractor_FastDipole(){};
 
   // suggest new feature point for tracking (count point are kept)
   size_t detect
@@ -153,22 +154,6 @@ struct Feat_Extractor_FastDipole : public Abstract_FeatureExtractor
 
     return metric(d_A, d_B, RegionT::DescriptorT::static_size);
   }
-/*
-
-  size_t InsertRegion
-  (
-    features::Regions * regions,
-    RegionT::FeatureT & pt,
-    void * desc
-  ) override
-  {
-    RegionT * regionsCasted = dynamic_cast<RegionT *>(regions);
-    RegionT::DescriptorT * descCasted = static_cast<RegionT::DescriptorT*>(desc);
-    // Copy features
-    regionsCasted->Features().emplace_back(pt);
-    regionsCasted->Descriptors().emplace_back(*descCasted);
-    return regionsCasted->RegionCount()-1;
-  }*/
 
 };
 
