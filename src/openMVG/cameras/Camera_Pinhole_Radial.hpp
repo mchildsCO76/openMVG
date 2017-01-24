@@ -5,12 +5,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-#ifndef OPENMVG_CAMERA_PINHOLE_RADIAL_K_HPP
-#define OPENMVG_CAMERA_PINHOLE_RADIAL_K_HPP
+#ifndef OPENMVG_CAMERAS_CAMERA_PINHOLE_RADIAL_HPP
+#define OPENMVG_CAMERAS_CAMERA_PINHOLE_RADIAL_HPP
 
-#include "openMVG/numeric/numeric.h"
 #include "openMVG/cameras/Camera_Common.hpp"
 #include "openMVG/cameras/Camera_Pinhole.hpp"
+#include "openMVG/numeric/numeric.h"
 
 #include <vector>
 
@@ -77,7 +77,7 @@ double bisection_Radius_Solve(
  */
 class Pinhole_Intrinsic_Radial_K1 : public Pinhole_Intrinsic
 {
-  typedef Pinhole_Intrinsic_Radial_K1 class_type;
+  using class_type = Pinhole_Intrinsic_Radial_K1;
 
   protected:
     /// center of distortion is applied by the Intrinsics class
@@ -292,7 +292,7 @@ class Pinhole_Intrinsic_Radial_K1 : public Pinhole_Intrinsic
 */
 class Pinhole_Intrinsic_Radial_K3 : public Pinhole_Intrinsic
 {
-  typedef Pinhole_Intrinsic_Radial_K3 class_type;
+  using class_type = Pinhole_Intrinsic_Radial_K3;
 
   protected:
     // center of distortion is applied by the Intrinsics class
@@ -518,5 +518,4 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(openMVG::cameras::IntrinsicBase, openMVG::c
 CEREAL_REGISTER_TYPE_WITH_NAME(openMVG::cameras::Pinhole_Intrinsic_Radial_K3, "pinhole_radial_k3");
 CEREAL_REGISTER_POLYMORPHIC_RELATION(openMVG::cameras::IntrinsicBase, openMVG::cameras::Pinhole_Intrinsic_Radial_K3);
 
-#endif // #ifndef OPENMVG_CAMERA_PINHOLE_RADIAL_K_HPP
-
+#endif // #ifndef OPENMVG_CAMERAS_CAMERA_PINHOLE_RADIAL_K_HPP

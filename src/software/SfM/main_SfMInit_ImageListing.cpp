@@ -6,6 +6,8 @@
 #include "openMVG/exif/exif_IO_EasyExif.hpp"
 
 #include "openMVG/exif/sensor_width_database/ParseDatabase.hpp"
+#include "openMVG/exif/exif_IO_EasyExif.hpp"
+#include "openMVG/geodesy/geodesy.hpp"
 
 #include "openMVG/image/image.hpp"
 #include "openMVG/stl/split.hpp"
@@ -30,9 +32,9 @@
 using namespace openMVG;
 using namespace openMVG::cameras;
 using namespace openMVG::exif;
+using namespace openMVG::geodesy;
 using namespace openMVG::image;
 using namespace openMVG::sfm;
-
 
 /// Check that Kmatrix is a string like "f;0;ppx;0;f;ppy;0;0;1"
 /// With f,ppx,ppy as valid numerical value
@@ -58,6 +60,62 @@ bool checkIntrinsicStringValidity(const std::string & Kmatrix, double & focal, d
     if (i==5) ppy = readvalue;
   }
   return true;
+}
+
+std::pair<bool, Vec3> checkGPS
+(
+  const std::string & filename
+)
+{
+  std::pair<bool, Vec3> val(false, Vec3::Zero());
+  std::unique_ptr<Exif_IO> exifReader(new Exif_IO_EasyExif);
+  if (exifReader)
+  {
+    // Try to parse EXIF metada & check existence of EXIF data
+    if ( exifReader->open( filename ) && exifReader->doesHaveExifInfo() )
+    {
+      // Check existence of GPS coordinates
+      double latitude, longitude, altitude;
+      if ( exifReader->GPSLatitude( &latitude ) &&
+           exifReader->GPSLongitude( &longitude ) &&
+           exifReader->GPSAltitude( &altitude ) )
+      {
+        // Add ECEF XYZ position to the GPS position array
+        val.first = true;
+        val.second = lla_to_ecef( latitude, longitude, altitude );
+      }
+    }
+  }
+  return val;
+}
+
+/// Check string of prior weights
+std::pair<bool, Vec3> checkPriorWeightsString
+(
+  const std::string &sWeights
+)
+{
+  std::pair<bool, Vec3> val(true, Vec3::Zero());
+  std::vector<std::string> vec_str;
+  stl::split(sWeights, ';', vec_str);
+  if (vec_str.size() != 3)
+  {
+    std::cerr << "\n Missing ';' character in prior weights" << std::endl;
+    val.first = false;
+  }
+  // Check that all weight values are valid numbers
+  for (size_t i = 0; i < vec_str.size(); ++i)
+  {
+    double readvalue = 0.0;
+    std::stringstream ss;
+    ss.str(vec_str[i]);
+    if (! (ss >> readvalue) )  {
+      std::cerr << "\n Used an invalid not a number character in local frame origin" << std::endl;
+      val.first = false;
+    }
+    val.second[i] = readvalue;
+  }
+  return val;
 }
 
 
@@ -168,7 +226,6 @@ bool checkCamsRegexStringValidity(const std::string & camsRegex, std::vector<Reg
   return true;
 }
 #endif
-
 //
 // Create the description of an input image dataset for OpenMVG toolsuite
 // - Export a SfM_Data file with View & Intrinsic data
@@ -181,6 +238,10 @@ int main(int argc, char **argv)
     sfileDatabase = "",
     sOutputDir = "",
     sKmatrix;
+  std::string sPriorWeights;
+  std::pair<bool, Vec3> prior_w_info(false, Vec3(1.0,1.0,1.0));
+
+
 #ifdef OPENMVG_USE_CXX11
   std::string sCamsParamsRegex;
 #endif
@@ -198,6 +259,8 @@ int main(int argc, char **argv)
   cmd.add( make_option('k', sKmatrix, "intrinsics") );
   cmd.add( make_option('c', i_User_camera_model, "camera_model") );
   cmd.add( make_option('g', b_Group_camera_model, "group_camera_model") );
+  cmd.add( make_switch('P', "use_pose_prior") );
+  cmd.add( make_option('W', sPriorWeights, "prior_weigths"));
 #ifdef OPENMVG_USE_CXX11
   cmd.add( make_option('r', sCamsParamsRegex, "regex") );
 #endif
@@ -220,6 +283,9 @@ int main(int argc, char **argv)
       << "[-g|--group_camera_model]\n"
       << "\t 0-> each view have it's own camera intrinsic parameters,\n"
       << "\t 1-> (default) view can share some camera intrinsic parameters\n"
+      << "\n"
+      << "[-P|--use_pose_prior] Use pose prior if GPS EXIF pose is available"
+      << "[-W|--prior_weigths] \"x;y;z;\" of weights for each dimension of the prior (default: 1.0)\n"
 #ifdef OPENMVG_USE_CXX11
       << "[-r|--regex] Regex: \"{regex;camera_model;f;ppx;ppy;{dist param 1;dist param 2;etc.};]{1,n}\"\n"
 #endif
@@ -300,6 +366,16 @@ int main(int argc, char **argv)
        << ", please specify a valid file." << std::endl;
       return EXIT_FAILURE;
     }
+  }
+
+  // Check if prior weights are given
+  if (cmd.used('P') && !sPriorWeights.empty())
+  {
+    prior_w_info = checkPriorWeightsString(sPriorWeights);
+  }
+  else if (cmd.used('P'))
+  {
+    prior_w_info.first = true;
   }
 
   std::vector<std::string> vec_image = stlplus::folder_files( sImageDir );
@@ -504,23 +580,55 @@ int main(int argc, char **argv)
 #endif
 
     // Build the view corresponding to the image
-    View v(*iter_image, views.size(), views.size(), views.size(), width, height);
-
-    // Add intrinsic related to the image (if any)
-    if (intrinsic == NULL)
+    const std::pair<bool, Vec3> gps_info = checkGPS(sImageFilename);
+    if (gps_info.first && cmd.used('P'))
     {
-      //Since the view have invalid intrinsic data
-      // (export the view, with an invalid intrinsic field value)
-      v.id_intrinsic = UndefinedIndexT;
+      ViewPriors v(*iter_image, views.size(), views.size(), views.size(), width, height);
+
+      // Add intrinsic related to the image (if any)
+      if (intrinsic == NULL)
+      {
+        //Since the view have invalid intrinsic data
+        // (export the view, with an invalid intrinsic field value)
+        v.id_intrinsic = UndefinedIndexT;
+      }
+      else
+      {
+        // Add the defined intrinsic to the sfm_container
+        intrinsics[v.id_intrinsic] = intrinsic;
+      }
+
+      v.b_use_pose_center_ = true;
+      v.pose_center_ = gps_info.second;
+      // prior weights
+      if (prior_w_info.first == true)
+      {
+        v.center_weight_ = prior_w_info.second;
+      }
+
+      // Add the view to the sfm_container
+      views[v.id_view] = std::make_shared<ViewPriors>(v);
     }
     else
     {
-      // Add the defined intrinsic to the sfm_container
-      intrinsics[v.id_intrinsic] = intrinsic;
-    }
+      View v(*iter_image, views.size(), views.size(), views.size(), width, height);
 
-    // Add the view to the sfm_container
-    views[v.id_view] = std::make_shared<View>(v);
+      // Add intrinsic related to the image (if any)
+      if (intrinsic == NULL)
+      {
+        //Since the view have invalid intrinsic data
+        // (export the view, with an invalid intrinsic field value)
+        v.id_intrinsic = UndefinedIndexT;
+      }
+      else
+      {
+        // Add the defined intrinsic to the sfm_container
+        intrinsics[v.id_intrinsic] = intrinsic;
+      }
+
+      // Add the view to the sfm_container
+      views[v.id_view] = std::make_shared<View>(v);
+    }
   }
 
   // Display saved warning & error messages if any.
@@ -549,7 +657,8 @@ int main(int argc, char **argv)
   std::cout << std::endl
     << "SfMInit_ImageListing report:\n"
     << "listed #File(s): " << vec_image.size() << "\n"
-    << "usable #File(s) listed in sfm_data: " << sfm_data.GetViews().size() << std::endl;
+    << "usable #File(s) listed in sfm_data: " << sfm_data.GetViews().size() << "\n"
+    << "usable #Intrinsic(s) listed in sfm_data: " << sfm_data.GetIntrinsics().size() << std::endl;
 
   return EXIT_SUCCESS;
 }
