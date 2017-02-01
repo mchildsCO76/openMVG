@@ -64,7 +64,8 @@ bool checkIntrinsicStringValidity(const std::string & Kmatrix, double & focal, d
 
 std::pair<bool, Vec3> checkGPS
 (
-  const std::string & filename
+  const std::string & filename,
+  const int & GPS_to_XYZ_method = 0
 )
 {
   std::pair<bool, Vec3> val(false, Vec3::Zero());
@@ -80,14 +81,24 @@ std::pair<bool, Vec3> checkGPS
            exifReader->GPSLongitude( &longitude ) &&
            exifReader->GPSAltitude( &altitude ) )
       {
-        // Add ECEF XYZ position to the GPS position array
+        // Add ECEF or UTM XYZ position to the GPS position array
         val.first = true;
-        val.second = lla_to_ecef( latitude, longitude, altitude );
+        switch(GPS_to_XYZ_method)
+        {
+          case 1:
+            val.second = lla_to_utm( latitude, longitude, altitude );
+            break;
+          case 0:
+          default:
+            val.second = lla_to_ecef( latitude, longitude, altitude );
+            break;
+        }
       }
     }
   }
   return val;
 }
+
 
 /// Check string of prior weights
 std::pair<bool, Vec3> checkPriorWeightsString
@@ -120,7 +131,7 @@ std::pair<bool, Vec3> checkPriorWeightsString
 
 
 #ifdef OPENMVG_USE_CXX11
-typedef tuple <string, EINTRINSIC, std::vector<double> > Regex_Camera_Parameters;
+using Regex_Camera_Parameters = std::tuple <std::string, EINTRINSIC, std::vector<double> > ;
 /// Check that sCamsParamsRegex is a string like "imgRegex;camType;Kmatrix"
 bool checkCamsRegexStringValidity(const std::string & camsRegex, std::vector<Regex_Camera_Parameters> & vecCamParams)
 {
@@ -238,6 +249,7 @@ int main(int argc, char **argv)
     sfileDatabase = "",
     sOutputDir = "",
     sKmatrix;
+
   std::string sPriorWeights;
   std::pair<bool, Vec3> prior_w_info(false, Vec3(1.0,1.0,1.0));
 
@@ -250,6 +262,8 @@ int main(int argc, char **argv)
 
   bool b_Group_camera_model = true;
 
+  int i_GPS_XYZ_method = 0;
+
   double focal_pixels = -1.0;
 
   cmd.add( make_option('i', sImageDir, "imageDirectory") );
@@ -261,9 +275,11 @@ int main(int argc, char **argv)
   cmd.add( make_option('g', b_Group_camera_model, "group_camera_model") );
   cmd.add( make_switch('P', "use_pose_prior") );
   cmd.add( make_option('W', sPriorWeights, "prior_weigths"));
+  cmd.add( make_option('m', i_GPS_XYZ_method, "gps_to_xyz_method") );
 #ifdef OPENMVG_USE_CXX11
   cmd.add( make_option('r', sCamsParamsRegex, "regex") );
 #endif
+
   try {
       if (argc == 1) throw std::string("Invalid command line parameter.");
       cmd.process(argc, argv);
@@ -286,6 +302,9 @@ int main(int argc, char **argv)
       << "\n"
       << "[-P|--use_pose_prior] Use pose prior if GPS EXIF pose is available"
       << "[-W|--prior_weigths] \"x;y;z;\" of weights for each dimension of the prior (default: 1.0)\n"
+      << "[-m|--gps_to_xyz_method] XZY Coordinate system:\n"
+      << "\t 0: ECEF (default)\n"
+      << "\t 1: UTM\n"
 #ifdef OPENMVG_USE_CXX11
       << "[-r|--regex] Regex: \"{regex;camera_model;f;ppx;ppy;{dist param 1;dist param 2;etc.};]{1,n}\"\n"
 #endif
@@ -580,7 +599,7 @@ int main(int argc, char **argv)
 #endif
 
     // Build the view corresponding to the image
-    const std::pair<bool, Vec3> gps_info = checkGPS(sImageFilename);
+    const std::pair<bool, Vec3> gps_info = checkGPS(sImageFilename, i_GPS_XYZ_method);
     if (gps_info.first && cmd.used('P'))
     {
       ViewPriors v(*iter_image, views.size(), views.size(), views.size(), width, height);
