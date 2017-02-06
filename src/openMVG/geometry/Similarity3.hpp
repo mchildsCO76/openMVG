@@ -70,7 +70,7 @@ struct Similarity3
   * @brief Get center of rotation
   * @return center of rotation
   */
-  const Vec3& center() const
+  const Vec3 center() const
   {
     return pose_.center();
   }
@@ -79,7 +79,7 @@ struct Similarity3
   * @brief Get center of rotation
   * @return Center of rotation
   */
-  Vec3& center()
+  Vec3 center()
   {
     return pose_.center();
   }
@@ -125,6 +125,16 @@ struct Similarity3
   }
 
   /**
+  * @brief Concatenation of pose
+  * @param pose Pose to be concatenated with the current one
+  * @return Concatenation of poses
+  */
+  Similarity3 operator () ( const Similarity3 & pose ) const
+  {
+    return Similarity3( Pose3(pose_.rotation()* pose.pose_.rotation(), pose.pose_.center() + (1/pose.scale_) * pose.pose_.rotation().transpose() * pose_.center()), scale_*pose.scale_ );
+  }
+
+  /**
   * @brief Get inverse of the similarity
   * @return Inverse of the similarity
   */
@@ -134,17 +144,15 @@ struct Similarity3
   }
 
 
-
-  Mat4 transformation() const
+  /**
+  * @brief Return the depth (distance) of a point respect to the camera center
+  * @param X Input point
+  * @return Distance to center
+  */
+  double depth( const Vec3 &X ) const
   {
-    Mat4 T;
-    T.block(0,0,3,3) << scale_*pose_.rotation();
-    T.block(0,3,3,1) << pose_.translation();
-    T(3,3) = 1;
-    return T;
+    return ( scale_ * pose_.rotation() * ( X - pose_.center() ) )[2];
   }
-
-
 
 };
 

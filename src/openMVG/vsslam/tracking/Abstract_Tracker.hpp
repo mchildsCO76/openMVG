@@ -12,6 +12,7 @@
 #include <openMVG/vsslam/Frame.hpp>
 #include <openMVG/types.hpp>
 #include <openMVG/vsslam/mapping/Cartographer.hpp>
+#include <openMVG/vsslam/tracking/MotionModel.hpp>
 
 using namespace openMVG;
 using namespace openMVG::cameras;
@@ -34,17 +35,12 @@ public:
   // ---------------
   // Parameters
   // ---------------
-  // Camera intrinsics
-  bool bCalibratedCamera = true;
-  IntrinsicBase * cam_intrinsic_;
 
   // Frames
   std::shared_ptr<Frame> mLastRefFrame;
   std::shared_ptr<Frame> mPrevFrame;
   std::shared_ptr<Frame> mCurrentFrame;
 
-  // Motion model
-  Mat motionModel;
 
   // Map
   Cartographer * cartographer_;
@@ -54,6 +50,7 @@ public:
 
   // Tracking stats
   TRACKING_STATUS trackingStatus = TRACKING_STATUS::NOT_INIT;
+  MotionModel motionModel;
 
   // ---------------
   // Methods

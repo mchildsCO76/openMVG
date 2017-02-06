@@ -114,11 +114,11 @@ struct ResidualErrorFunctor_Pinhole_Intrinsic_Rts
     pos_proj[0] += cam_t[0];
     pos_proj[1] += cam_t[1];
     pos_proj[2] += cam_t[2];
-
+/*
     pos_proj[0] *= *cam_s;
     pos_proj[1] *= *cam_s;
     pos_proj[2] *= *cam_s;
-
+*/
 
     // Transform the point from homogeneous to euclidean (undistorted point)
     const T x_u = pos_proj[0] / pos_proj[2];

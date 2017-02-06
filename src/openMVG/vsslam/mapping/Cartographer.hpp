@@ -7,7 +7,7 @@
 
 #pragma once
 
-
+#include <tuple>
 #include <openMVG/features/features.hpp>
 #include <openMVG/numeric/numeric.h>
 
@@ -19,6 +19,9 @@
 #include <openMVG/vsslam/VSSLAM_Data.hpp>
 #include <openMVG/vsslam/optimization/VSSLAM_data_BA.hpp>
 #include <openMVG/vsslam/optimization/VSSLAM_data_BA_ceres.hpp>
+#include <openMVG/vsslam/mapping/VSSLAM_data_io_ply.hpp>
+#include <openMVG/vsslam/tracking/PoseEstimation.hpp>
+#include <openMVG/vsslam/tracking/Abstract_FeatureExtractor.hpp>
 #include <deque>
 
 
@@ -33,23 +36,58 @@ namespace VSSLAM  {
 class Cartographer
 {
   private:
-    VSSLAM_Data slam_data;
     std::shared_ptr<VSSLAM_Bundle_Adjustment> BA_obj;
+
+
+
   public:
+    MAP_POINT_TYPE mapPointType = MAP_POINT_TYPE::EUCLIDEAN;
+    MAP_CAMERA_TYPE mapCameraType = MAP_CAMERA_TYPE::ABSOLUTE;
+
+    std::vector<Frame*> local_map_frames_;
+    std::vector<MapLandmark*> local_map_points_;
+    VSSLAM_Data slam_data;
+    Abstract_FeatureExtractor * feature_extractor_;
+
     Cartographer();
+
+    MAP_POINT_TYPE & getMapPointType()
+    {
+      return mapPointType;
+    }
 
     void addCameraIntrinsicData(const size_t & cam_id, IntrinsicBase * cam_intrinsic);
     void addObservationToLandmark(const size_t & landmark_id, const std::shared_ptr<Frame> & frame, const size_t featId);
     void addKeyFrameToMap(const std::shared_ptr<Frame> & frame);
-    void addLandmarkToMap(MapLandmark & landmark);
+    MapLandmark * addLandmarkToMap(MapLandmark & landmark);
+    void addObservations(Frame * frame);
 
-    bool initializeMap
+    Frame * getKeyframeAt(size_t i)
+    {
+      Hash_Map<size_t, std::shared_ptr<Frame> >::iterator it = slam_data.keyframes.begin();
+      std::advance(it,i);
+      return it->second.get();
+    };
+    void initializeMap
     (
       std::shared_ptr<Frame> & frame_1,
       std::shared_ptr<Frame> & frame_2,
-      Hash_Map<size_t,size_t> & matches_2_1_idx,
-      std::vector<size_t> & inliers
+      std::vector<std::pair<Vec3, std::deque<std::pair<Frame*,size_t> > > > & vec_new_pts_3D_obs
     );
+
+    size_t getNumberOfKeyFrames()
+    {
+      return slam_data.keyframes.size();
+    }
+
+    void updateLocalMap(Frame * currentFrame);
+    std::vector<MapLandmark*> getLocalMapPoints(Frame * currentFrame, std::vector<Frame*> &neighbor_frames);
+
+
+    std::vector<MapLandmark*> & getLocalPoints()
+    {
+      return local_map_points_;
+    }
 
     void clearMap();
   };

@@ -1,4 +1,10 @@
 
+// Copyright (c) 2016 Klemen ISTENIC.
+
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 #pragma once
 
 #include "openMVG/numeric/numeric.h"
@@ -6,6 +12,7 @@
 #include "openMVG/multiview/solver_resection_p3p.hpp"
 #include "openMVG/multiview/solver_essential_kernel.hpp"
 #include "openMVG/multiview/solver_homography_kernel.hpp"
+#include <openMVG/vsslam/Camera.hpp>
 
 #include "openMVG/multiview/projection.hpp"
 #include "openMVG/multiview/triangulation.hpp"
@@ -22,6 +29,14 @@ using namespace openMVG::robust;
 using namespace openMVG::geometry;
 
 static const size_t ACRANSAC_ITER = 64;
+
+struct ResectionSquaredResidualError {
+  // Compute the residual of the projection distance(pt2D, Project(P,pt3D))
+  // Return the squared error
+  static double Error(const Mat34 & P, const Vec2 & pt2D, const Vec3 & pt3D){
+    return (Project(P, pt3D) - pt2D).squaredNorm();
+  }
+};
 
   static double computeHomographyScore
   (
@@ -200,7 +215,7 @@ static const size_t ACRANSAC_ITER = 64;
     return false;
   }
 
-  bool estimate_Rt_fromE
+  static bool estimate_Rt_from_E
   (
     const Mat3 & K1,
     const Mat3 & K2,
@@ -209,6 +224,7 @@ static const size_t ACRANSAC_ITER = 64;
     const Mat3 & E,
     std::vector<size_t> & vec_inliers,
     const size_t min_points,
+    const double min_cos_angle_points,
     Mat3 & R,
     Vec3 & t
   )
@@ -256,6 +272,17 @@ static const size_t ACRANSAC_ITER = 64;
         {
           continue;
         }
+
+        // Compute ray angle between points
+        const Vec3 ray1 = Vec3(R1.transpose() * Vec3( K1.inverse() * Vec3( x1_( 0 ), x1_( 1 ), 1.0 ) ).normalized()).normalized();
+        const Vec3 ray2 = Vec3(R2.transpose() * Vec3( K2.inverse() * Vec3( x2_( 0 ), x2_( 1 ), 1.0 ) ).normalized()).normalized();
+        const double mag = ray1.norm() * ray2.norm();
+        const double dotAngle = ray1.dot( ray2 );
+        const double cosParallax = clamp( dotAngle / mag, -1.0 + 1.e-8, 1.0 - 1.e-8 );
+        // if too small we dont consider it
+        if (cosParallax > min_cos_angle_points)
+          continue;
+
         pt3Ds_indices[i].emplace_back(vec_inliers[k]);
         ++f[i];
       }
@@ -264,6 +291,7 @@ static const size_t ACRANSAC_ITER = 64;
     const std::vector<size_t>::iterator iter_max = std::max_element(f.begin(), f.end());
     if (*iter_max == 0 || *iter_max < min_points)
     {
+      std::cout<<"Max Motion inliers: "<<*iter_max <<"\n";
       // There is no right solution with points in front of the cameras
       return false;
     }
@@ -286,11 +314,13 @@ static const size_t ACRANSAC_ITER = 64;
     return true;
   }
 
-  bool estimateRobustRelativePoseHE
+  static bool estimateRobustRelativePoseHE
   (
     const std::shared_ptr<Frame> & frame_1,
     const std::shared_ptr<Frame> & frame_2,
-    Hash_Map<size_t,size_t>  & putative_matches_2_1_idx,
+    Hash_Map<size_t,size_t>  & putative_matches_1_2_idx,
+    const double min_cos_angle_init_points,
+    const size_t min_init_triangulated_pts,
     Mat3 & R,
     Vec3 & t,
     std::vector<size_t> & vec_inliers,
@@ -299,19 +329,27 @@ static const size_t ACRANSAC_ITER = 64;
   {
     // Max error in px for H/E to be considered an inlier
     float max_thresh_px_model = 4;
-    // Min points needed to be successfuly triangulated
-    size_t min_init_triangulated_pts = 50;
-
 
     std::cout<<"Try computing H and E\n";
     double startTimeA = omp_get_wtime();
 
+
+    // ----------------------------
+    // Get camera info
+    // ----------------------------
+    const Camera * cam_1 = frame_1->cam_;
+    const Camera * cam_2 = frame_2->cam_;
+    const Pinhole_Intrinsic * cam_intrinsic_1 = dynamic_cast<const Pinhole_Intrinsic*>(cam_1->cam_intrinsic_ptr);
+    const Pinhole_Intrinsic * cam_intrinsic_2 = dynamic_cast<const Pinhole_Intrinsic*>(cam_2->cam_intrinsic_ptr);
+    const Mat & cam_1_K = cam_intrinsic_1->K();
+    const std::pair<size_t,size_t> cam_1_img(cam_intrinsic_1->w(), cam_intrinsic_1->h());
+    const std::pair<size_t,size_t> cam_2_img(cam_intrinsic_2->w(), cam_intrinsic_2->h());
+    const Mat & cam_2_K = cam_intrinsic_2->K();
+
     // Try to estimate the H and F/E from mathces
-    const size_t n_putative_matches = putative_matches_2_1_idx.size();
+    const size_t n_putative_matches = putative_matches_1_2_idx.size();
     Mat2X pt2D_frame1(2, n_putative_matches);
     Mat2X pt2D_frame2(2, n_putative_matches);
-
-
 
     // ----------------------------
     // Copy data of matches
@@ -321,26 +359,15 @@ static const size_t ACRANSAC_ITER = 64;
     #endif
     for (int m_i = 0; m_i < n_putative_matches; ++m_i)
     {
-      Hash_Map<size_t,size_t>::iterator m_iter = putative_matches_2_1_idx.begin();
+      Hash_Map<size_t,size_t>::iterator m_iter = putative_matches_1_2_idx.begin();
       std::advance(m_iter,m_i);
-      pt2D_frame1.col(m_i) = frame_1->pts_undist_[m_iter->second].cast<double>();
-      pt2D_frame2.col(m_i) = frame_2->pts_undist_[m_iter->first].cast<double>();
+      pt2D_frame1.col(m_i) = (cam_1->bCalibrated ? frame_1->getFeaturePositionUndistorted(m_iter->first) : cam_intrinsic_1->remove_disto(frame_1->getFeaturePositionUndistorted(m_iter->first))).cast<double>();
+      pt2D_frame2.col(m_i) = (cam_2->bCalibrated ? frame_2->getFeaturePositionUndistorted(m_iter->second) : cam_intrinsic_2->remove_disto(frame_2->getFeaturePositionUndistorted(m_iter->second))).cast<double>();
     }
 
     double stopTimeA = omp_get_wtime();
     double secsElapsedA = stopTimeA - startTimeA; // that's all !
     std::cout<<"Copy data to matrix: "<<secsElapsedA<<"\n";
-
-    // ----------------------------
-    // Get camera info
-    // ----------------------------
-    const Pinhole_Intrinsic * cam_1 = dynamic_cast<const Pinhole_Intrinsic*>(frame_1->cam_intrinsic_);
-    const Pinhole_Intrinsic * cam_2 = dynamic_cast<const Pinhole_Intrinsic*>(frame_2->cam_intrinsic_);
-    const Mat & cam_1_K = cam_1->K();
-    const std::pair<size_t,size_t> cam_1_img(cam_1->w(), cam_1->h());
-    const std::pair<size_t,size_t> cam_2_img(cam_2->w(), cam_2->h());
-    const Mat & cam_2_K = cam_2->K();
-
 
     // ----------------------------
     // Estimate H
@@ -406,7 +433,7 @@ static const size_t ACRANSAC_ITER = 64;
     {
       std::cout<<"Use E!\n";
       // Try to get the pose from Essential matrix
-      if (estimate_Rt_fromE(cam_1_K, cam_1_K, pt2D_frame1, pt2D_frame2, E, vec_inliers_E, min_init_triangulated_pts, R, t))
+      if (VSSLAM::estimate_Rt_from_E(cam_1_K, cam_1_K, pt2D_frame1, pt2D_frame2, E, vec_inliers_E, min_init_triangulated_pts, min_cos_angle_init_points, R, t))
       {
         vec_inliers = vec_inliers_E;
         AC_threshold = infoACR_E.first;
@@ -421,9 +448,82 @@ static const size_t ACRANSAC_ITER = 64;
     }
   }
 
+  static bool estimateRobustPose
+  (
+    Frame * frame,
+    Hash_Map<MapLandmark* ,size_t> & putative_matches_3D_ptr_cur_idx,
+    const size_t min_points,
+    Mat3 & R,
+    Vec3 & t,
+    std::vector<size_t> & vec_inliers,
+    double & AC_threshold
+  )
+  {
+    // Max error in px for H/E to be considered an inlier
+    float max_thresh_px_model = 4;
+
+    double startTimeA = omp_get_wtime();
+
+    // Try to estimate the H and F/E from mathces
+    const size_t n_putative_matches = putative_matches_3D_ptr_cur_idx.size();
+
+    Mat2X pt2D_frame(2, n_putative_matches);
+    Mat3X pt3D_frame(3, n_putative_matches);
+
+    const Camera * cam = frame->cam_;
+    const Pinhole_Intrinsic * cam_intrinsic = dynamic_cast<const Pinhole_Intrinsic*>(cam->cam_intrinsic_ptr);
+
+    // ----------------------------
+    // Copy data of matches
+    // ----------------------------
+    //#ifdef OPENMVG_USE_OPENMP
+    //#pragma omp parallel for schedule(dynamic)
+    //#endif
+    for (int m_i = 0; m_i < n_putative_matches; ++m_i)
+    {
+      Hash_Map<MapLandmark*,size_t>::iterator m_iter = putative_matches_3D_ptr_cur_idx.begin();
+      std::advance(m_iter,m_i);
+      MapLandmark * map_point = m_iter->first;
+
+      pt2D_frame.col(m_i) = (cam->bCalibrated ? frame->getFeaturePositionUndistorted(m_iter->second) : cam_intrinsic->remove_disto(frame->getFeaturePositionUndistorted(m_iter->second))).cast<double>();
+      pt3D_frame.col(m_i) = (map_point->X_).cast<double>();
+    }
+
+      //--
+      // Since K calibration matrix is known, compute only [R|t]
+      using KernelType =
+        openMVG::robust::ACKernelAdaptorResection_K<
+        openMVG::euclidean_resection::P3PSolver,
+          ResectionSquaredResidualError,
+          Mat34>;
+
+      KernelType kernel(pt2D_frame, pt3D_frame, cam_intrinsic->K());
+      Mat34 P;
+
+      // Robust estimation of the Projection matrix and it's precision
+      const std::pair<double,double> ACRansacOut =
+        openMVG::robust::ACRANSAC(kernel, vec_inliers, ACRANSAC_ITER, &P, max_thresh_px_model*max_thresh_px_model, true);
+      // Update the upper bound precision of the model found by AC-RANSAC
+      AC_threshold = ACRansacOut.first;
+
+
+    // Test if the mode support some points (more than those required for estimation)
+    const bool bResection = (vec_inliers.size() > 2.5 * openMVG::euclidean_resection::P3PSolver::MINIMUM_SAMPLES);
+
+    if (bResection)
+    {
+      Mat3 K_t;
+      KRt_From_P(P, &K_t, &R, &t);
+      std::cout<<"Resection: K:"<<K_t<<" \n R:"<<R<<"\n t:"<<t<<"\n";
+      return true;
+    }
+    std::cout<<"Resection: failed!: "<<vec_inliers.size()<<"\n";
+    return false;
+}
+
   // Find transformation between cameras cam_k and cam_ref: (cam_k)_T_(cam_ref)
   // Look from both directions and find the first intersection
-  bool findPoseTransformation
+  static bool getRelativeCameraTransformation
   (
     Frame * cam_k,
     Frame * cam_ref,
@@ -433,6 +533,7 @@ static const size_t ACRANSAC_ITER = 64;
     // camera is the reference frame (e.g. transformation is identity)
     if (cam_k == cam_ref)
     {
+      std::cout<<"Return identity\n";
       T = Mat4::Identity();
       return true;
     }
@@ -440,7 +541,8 @@ static const size_t ACRANSAC_ITER = 64;
     // Camera K is already expressed in cam reference
     if (cam_k && cam_k->ref_frame_ == cam_ref)
     {
-      T = cam_k->pose_.transformation();
+      std::cout<<"Already reference cam\n";
+      T = cam_k->getTransformationMatrix();
       return true;
     }
 
@@ -464,8 +566,10 @@ static const size_t ACRANSAC_ITER = 64;
           // We have the reverse path from cam_fwrd in the other list
           // starting with bcwd_match_iter up to beginning of list
           if (cam_frwd == *(bcwd_match_iter))
+          {
+            bcwd_match_iter++;
             break;
-
+          }
           bcwd_match_iter++;
         }
 
@@ -479,6 +583,7 @@ static const size_t ACRANSAC_ITER = 64;
           break;
         }
         // Add forward cam to the list
+        std::cout<<"Put to TA: "<<(cam_frwd)->frameId_<<"\n";
         T_forwards_list.push_back(cam_frwd);
         cam_frwd = cam_frwd->ref_frame_;
       }
@@ -509,6 +614,7 @@ static const size_t ACRANSAC_ITER = 64;
         }
 
         // Add backwards cam to the list
+        std::cout<<"Put to TB: "<<(cam_bckw)->frameId_<<"\n";
         T_backwards_list.push_back(cam_bckw);
         cam_bckw = cam_bckw->ref_frame_;
       }
@@ -516,9 +622,11 @@ static const size_t ACRANSAC_ITER = 64;
       // Both cameras come to world origin we just need to traverse both
       if (!cam_frwd && !cam_bckw)
       {
+        std::cout<<"Both came to W\n";
         frwd_match_iter = T_forwards_list.end();
-        bcwd_match_iter = T_backwards_list.rend();
+        bcwd_match_iter = T_backwards_list.rbegin();
       }
+      std::cout<<"End iter\n";
     }
 
     T = Mat4::Identity();
@@ -526,33 +634,39 @@ static const size_t ACRANSAC_ITER = 64;
     std::deque<Frame *>::iterator cam_f_iter = T_forwards_list.begin();
     while (cam_f_iter != frwd_match_iter)
     {
-      T = T * (*cam_f_iter)->pose_.transformation();
+      std::cout<<"Added TA: "<<(*cam_f_iter)->frameId_<<"\n";
+      T = T * (*cam_f_iter)->getTransformationMatrix();
       cam_f_iter++;
     }
 
-    while ((bcwd_match_iter++) != T_backwards_list.rend())
+    while ((bcwd_match_iter) != T_backwards_list.rend())
     {
-      T = T * (*bcwd_match_iter)->pose_.transformation().inverse();
+      std::cout<<"Added TB: "<<(*bcwd_match_iter)->frameId_<<"\n";
+      T = T * (*bcwd_match_iter)->getInverseTransformationMatrix();
+      bcwd_match_iter++;
     }
 
     return true;
   }
 
   // Expresses point represented in ref_point_frame in new_point_frame
-  bool getRelativePointPosition(Vec3 &pt, Frame * ref_point_frame, Vec3 &pt_new, Frame * new_point_frame )
+  static bool getRelativePointPosition(Vec3 &pt, Frame * ref_point_frame, Vec3 &pt_new, Frame * new_point_frame )
   {
     if (ref_point_frame == new_point_frame)
     {
+      std::cout<<"PT Already in ref frame\n";
       pt_new = pt;
       return true;
     }
     Mat4 T;
-    if (findPoseTransformation(new_point_frame,ref_point_frame,T))
+    if (getRelativeCameraTransformation(new_point_frame,ref_point_frame,T))
     {
       pt_new = Vec4(T * pt.homogeneous()).hnormalized();
+      std::cout<<"PT put into new: "<<T<<"\n";
       return true;
     }
 
+    std::cout<<"Something went wrong\n";
     // Something went wrong
     return false;
 

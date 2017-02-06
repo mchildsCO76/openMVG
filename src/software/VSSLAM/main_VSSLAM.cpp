@@ -23,81 +23,14 @@
 #include <openMVG/vsslam/tracking/Feat_Extractor_FastDipole.hpp>
 
 #include <openMVG/vsslam/SLAM_Monocular.hpp>
+#include <openMVG/vsslam/Camera.hpp>
+#include "openMVG/types.hpp"
 
 
 using namespace openMVG;
 using namespace openMVG::cameras;
 using namespace openMVG::image;
 
-struct CameraParams
-{
-  EINTRINSIC camera_model;
-  double focal = -1;
-  double ppx = -1;
-  double ppy = -1;
-  size_t img_width = 0;
-  size_t img_height = 0;
-  std::vector<double> dist;
-
-  bool readImageSettings(const std::string & sImagePath)
-  {
-    ImageHeader imgHeader;
-
-    if (!openMVG::image::ReadImageHeader(sImagePath.c_str(), &imgHeader))
-    {
-      std::cerr << "\nError reading image header file" << std::endl;
-      return false;
-    }
-    img_width = imgHeader.width;
-    img_height = imgHeader.height;
-    // If principal point is not set we set the center of image
-    if (ppx == -1)
-      ppx = img_width/2;
-    if (ppy == -1)
-      ppy = img_height/2;
-
-    return true;
-  }
-
-  bool checkValidParams()
-  {
-    if (focal !=-1 && ppx != -1 && ppy != -1 && img_width != 0 && img_height != 0)
-    {
-      return true;
-    }
-    return false;
-  }
-
-  bool initCamera(std::shared_ptr<IntrinsicBase> & intrinsic)
-  {
-    switch(camera_model)
-    {
-      case PINHOLE_CAMERA:
-        intrinsic = std::make_shared<Pinhole_Intrinsic>
-          (img_width, img_height, focal, ppx, ppy);
-      break;
-      case PINHOLE_CAMERA_RADIAL1:
-        intrinsic = std::make_shared<Pinhole_Intrinsic_Radial_K1>
-          (img_width, img_height, focal, ppx, ppy, 0.0); // setup no distortion as initial guess
-      break;
-      case PINHOLE_CAMERA_RADIAL3:
-        intrinsic = std::make_shared<Pinhole_Intrinsic_Radial_K3>
-          (img_width, img_height, focal, ppx, ppy, 0.0, 0.0, 0.0);  // setup no distortion as initial guess
-      break;
-      case PINHOLE_CAMERA_BROWN:
-        intrinsic =std::make_shared<Pinhole_Intrinsic_Brown_T2>
-          (img_width, img_height, focal, ppx, ppy, 0.0, 0.0, 0.0, 0.0, 0.0); // setup no distortion as initial guess
-      break;
-      case PINHOLE_CAMERA_FISHEYE:
-        intrinsic =std::make_shared<Pinhole_Intrinsic_Fisheye>
-          (img_width, img_height, focal, ppx, ppy, 0.0, 0.0, 0.0, 0.0); // setup no distortion as initial guess
-      break;
-      default:
-        return false;
-    }
-    return true;
-  }
-};
 
 /// Check that Kmatrix is a string like "f;0;ppx;0;f;ppy;0;0;1"
 /// With f,ppx,ppy as valid numerical value
@@ -192,10 +125,7 @@ int main(int argc, char **argv)
   }
 
   // Camera parameters
-  CameraParams params_cam_0;
-  // Build intrinsic parameter related to the view
-  std::shared_ptr<IntrinsicBase> cam_0_intrinsic (NULL);
-
+  openMVG::VSSLAM::CameraParams params_cam_0;
   // cam type
   params_cam_0.camera_model = EINTRINSIC(i_User_camera_model);
   // Basic parameters
@@ -241,27 +171,6 @@ int main(int argc, char **argv)
   }
   std::sort(vec_image.begin(), vec_image.end());
 
-  // Load image settings
-  if (!params_cam_0.readImageSettings(stlplus::create_filespec( sImaDirectory, vec_image[0] )))
-  {
-    std::cerr << "\nError reading image header file" << std::endl;
-    return EXIT_FAILURE;
-  }
-
-  // Create camera model
-  if (params_cam_0.checkValidParams())
-  {
-    if (!params_cam_0.initCamera(cam_0_intrinsic))
-    {
-      std::cerr << "Error: unknown camera model: " << (int) params_cam_0.camera_model << std::endl;
-      return EXIT_FAILURE;
-    }
-  }
-  else
-  {
-    std::cerr << "Error: invalid camera parameters"<< std::endl;
-    return EXIT_FAILURE;
-  }
 
   // TODO: Load masks - per camera/image
 
@@ -292,9 +201,35 @@ int main(int argc, char **argv)
   }
 
   // Initialize the monocular tracking framework
-  SLAM_Monocular monocular_slam(tracker_ptr.get(),cam_0_intrinsic.get());
-  // Add information about the cameras
-  monocular_slam.addCameraIntrinsics(0,cam_0_intrinsic.get());
+  SLAM_Monocular monocular_slam(tracker_ptr.get());
+  monocular_slam.setFeatureExtractor(feat_extractor_ptr.get());
+
+
+
+  // Load image settings
+  if (!params_cam_0.readImageSettings(stlplus::create_filespec( sImaDirectory, vec_image[0] )))
+  {
+    std::cerr << "\nError reading image header file" << std::endl;
+    return EXIT_FAILURE;
+  }
+
+  // Create camera model
+  if (params_cam_0.checkValidParams())
+  {
+    params_cam_0.bCalibrated = true;
+
+    if (monocular_slam.createCamera(params_cam_0) < 0)
+    {
+      std::cerr << "Error: unknown camera model: " << (int) params_cam_0.camera_model << std::endl;
+      return EXIT_FAILURE;
+    }
+  }
+  else
+  {
+    std::cerr << "Error: invalid camera parameters"<< std::endl;
+    return EXIT_FAILURE;
+  }
+
 
   if(!monocular_slam.isReady())
   {
@@ -302,11 +237,13 @@ int main(int argc, char **argv)
     return EXIT_FAILURE;
   }
 
+  // FOR DISPLAY
   // -----------------
   // -- FRAME BY FRAME processing
   // -----------------
 
   size_t frameId = 0;
+  size_t camId = 0;
   for (std::vector<std::string>::const_iterator iterFile = vec_image.begin();
     iterFile != vec_image.end(); ++iterFile, ++frameId)
   {
@@ -353,49 +290,60 @@ int main(int argc, char **argv)
 
       double startTime = omp_get_wtime();
       // do stuff
-      monocular_slam.nextFrame(currentImage, frameId);
+      monocular_slam.nextFrame(currentImage, frameId, camId);
 
       double stopTime = omp_get_wtime();
       double secsElapsed = stopTime - startTime; // that's all !
       std::cout<<"MonocularSLAM time:"<<secsElapsed<<"\n";
+
+      Tracker_Features * tr = dynamic_cast<Tracker_Features*>(monocular_slam.tracker_);
+
+      Frame * current_frame = tr->mPrevFrame.get();
+      for (Vec2 pts : current_frame->pts_undist_)
+      {
+        glBegin(GL_POINTS);
+        glColor3f(1.f, 1.f, 0.f); // Yellow
+
+          glVertex2f(pts.x(), pts.y());
+        glEnd();
+
+      }
+
+
+
+
       //--
       // Draw feature trajectories
       //--
       glColor3f(0.f, 1.f, 0.f);
       glLineWidth(2.f);
 
-      if(monocular_slam.tracker_->init_ref_frame && monocular_slam.tracker_->mPrevFrame)
+      if( monocular_slam.tracker_->trackingStatus == Abstract_Tracker::TRACKING_STATUS::OK)
       {
-        Tracker_Features * tr = dynamic_cast<Tracker_Features*>(monocular_slam.tracker_);
+        std::cout<<"AA\n";
 
-        for (auto track : tr->tracking_feat_cur_ref_ids)
+        std::cout<<"BB\n";
+        Frame * current_frame = tr->mPrevFrame.get();
+        for (MapLandmark * map_point : current_frame->map_points_)
         {
-          // Draw the line from prev
+          if (!map_point)
+            continue;
+
+          LandmarkObservations & map_obs = map_point->obs_;
           glBegin(GL_LINE_STRIP);
           glColor3f(0.f, 1.f, 0.f);
-          const Vec2 & p0 = tr->init_ref_frame->regions_->GetRegionPosition(track.second);
-          const Vec2 & p1 = tr->mPrevFrame->regions_->GetRegionPosition(track.first);
-          glVertex2f(p0(0), p0(1));
-          glVertex2f(p1(0), p1(1));
+          for(auto obs : map_obs)
+          {
+            const Vec2 & p0 = *(obs.second.pt_ptr);
+            glVertex2f(p0.x(), p0.y());
+            //std::cout<<"AFA: "<<p0<<"\n";
+          }
           glEnd();
+
         }
 
-        for (auto p : tr->init_ref_frame->regions_->GetRegionsPositions())
-        {
-          // draw the current tracked point
-          {
-            glPointSize(4.0f);
-            glBegin(GL_POINTS);
-            glColor3f(1.f, 0.f, 1.f); // Yellow
-            //const Vec2f & p0 = iter->pos_;
-            glVertex2f(p.x(), p.y());
-            glEnd();
-          }
-        }
-      }
-      else
-      {
-        std::cout<<"AABAB\n";
+
+        std::cout<<"CC\n";
       }
 /*
       for (auto p : monocular_slam.tracker_->mPrevFrame->regions->GetRegionsPositions())
@@ -414,8 +362,10 @@ int main(int argc, char **argv)
 
       glFlush();
       window.Swap(); // Swap openGL buffer
+
+      std::cout<<"DD\n";
       //if (frameId>0)
-        sleep(2);
+      sleep(5);
     }
   }
 

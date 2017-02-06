@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include <tuple>
+#include <deque>
 #include <openMVG/sfm/sfm_data_BA.hpp>
 
 using namespace openMVG;
@@ -26,8 +28,18 @@ class VSSLAM_Bundle_Adjustment
       // the SfM scene to refine
       VSSLAM_Data & slam_data,
       // tell which parameter needs to be adjusted
-      const sfm::Optimize_Options options
+      const sfm::Optimize_Options options,
+      const bool first_pose_fixed
     ) =0;
+
+
+    virtual bool OptimizePose
+    (
+      std::vector<Frame*> & vec_frames,
+      Hash_Map<MapLandmark *,size_t> * matches_3D_ptr_cur_idx,
+      std::vector<std::pair<Vec3, std::deque<std::pair<Frame*,size_t> > > > * vec_triangulated_pts
+    ) =0;
+
 };
 
 }

@@ -17,12 +17,28 @@ using namespace openMVG::geometry;
 
   struct MotionModel
   {
-    Similarity3 origin_;
-    Similarity3 speed_;
+    Mat4 velocity_;
+    bool bValid_ = false;
 
-    void setSpeed(Similarity3 & pose_t1, Similarity3 & pose_t2)
+    bool isValid()
     {
+      return bValid_;
+    }
+    void updateMotionModel(Frame * prev_frame, Frame * cur_frame)
+    {
+      std::cout<<"Update MM: \n";
 
+      // TODO: Check how to calculate if we have relative cameras
+      // TODO: Compensate for time difference between frames
+      velocity_ = cur_frame->getTransformationMatrix()*prev_frame->getInverseTransformationMatrix();
+
+      bValid_ = true;
+    }
+
+    Mat4 predictLocation(Frame * prev_frame, Frame * cur_frame)
+    {
+      // TODO: Check how to predict if we have relative cameras model
+      return velocity_ * prev_frame->getTransformationMatrix();
     }
 
   };

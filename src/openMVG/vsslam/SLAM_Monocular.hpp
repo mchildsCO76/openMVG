@@ -8,9 +8,10 @@
 #pragma once
 
 
+#include <openMVG/types.hpp>
 #include "openMVG/features/features.hpp"
 #include <openMVG/numeric/numeric.h>
-
+#include <openMVG/vsslam/Camera.hpp>
 #include <openMVG/vsslam/Frame.hpp>
 #include <openMVG/vsslam/tracking/Abstract_Tracker.hpp>
 #include <openMVG/vsslam/tracking/Abstract_FeatureExtractor.hpp>
@@ -19,13 +20,14 @@
 #include <deque>
 #include <set>
 
+#include <iostream>
+#include <memory>
+
 using namespace openMVG;
 using namespace openMVG::cameras;
 
 namespace openMVG  {
 namespace VSSLAM  {
-
-
 
 /// Monocular test interface
 struct SLAM_Monocular
@@ -34,7 +36,8 @@ struct SLAM_Monocular
   std::shared_ptr<Frame> current_frame;
 
   // Camera
-  IntrinsicBase * cam_intrinsic_;
+  Hash_Map<size_t, std::shared_ptr<Camera> > cameras;
+  //IntrinsicBase * cam_intrinsic_;
 
   // Tracking
   Abstract_Tracker * tracker_;
@@ -44,17 +47,65 @@ struct SLAM_Monocular
 
   SLAM_Monocular
   (
-    Abstract_Tracker * tracker,
-    IntrinsicBase * mono_cam_intrinsic
+    Abstract_Tracker * tracker
   )
-  : tracker_(tracker), cam_intrinsic_(mono_cam_intrinsic)
+  : tracker_(tracker)
   {
     cartographer_ = std::make_shared<Cartographer>();
     if (tracker_)
     {
-      tracker_->cam_intrinsic_ = mono_cam_intrinsic;
       tracker_->cartographer_ = cartographer_.get();
     }
+  }
+
+  void setFeatureExtractor(Abstract_FeatureExtractor * f_extractor)
+  {
+    cartographer_->feature_extractor_ = f_extractor;
+  }
+
+  int createCamera(const CameraParams & cam_params)
+  {
+    std::shared_ptr<Camera> cam = std::make_shared<Camera>();
+    cam->bCalibrated = cam_params.bCalibrated;
+    switch(cam_params.camera_model)
+    {
+      case PINHOLE_CAMERA:
+        cam->cam_intrinsic_ = std::make_shared<Pinhole_Intrinsic>
+          (cam_params.img_width, cam_params.img_height, cam_params.focal, cam_params.ppx, cam_params.ppy);
+        cam->cam_intrinsic_ptr = cam->cam_intrinsic_.get();
+      break;
+      case PINHOLE_CAMERA_RADIAL1:
+        cam->cam_intrinsic_ = std::make_shared<Pinhole_Intrinsic_Radial_K1>
+          (cam_params.img_width, cam_params.img_height, cam_params.focal, cam_params.ppx, cam_params.ppy, 0.0); // setup no distortion as initial guess
+      break;
+      case PINHOLE_CAMERA_RADIAL3:
+        cam->cam_intrinsic_ = std::make_shared<Pinhole_Intrinsic_Radial_K3>
+          (cam_params.img_width, cam_params.img_height, cam_params.focal, cam_params.ppx, cam_params.ppy, 0.0, 0.0, 0.0);  // setup no distortion as initial guess
+      break;
+      case PINHOLE_CAMERA_BROWN:
+        cam->cam_intrinsic_ =std::make_shared<Pinhole_Intrinsic_Brown_T2>
+          (cam_params.img_width, cam_params.img_height, cam_params.focal, cam_params.ppx, cam_params.ppy, 0.0, 0.0, 0.0, 0.0, 0.0); // setup no distortion as initial guess
+      break;
+      case PINHOLE_CAMERA_FISHEYE:
+        cam->cam_intrinsic_ =std::make_shared<Pinhole_Intrinsic_Fisheye>
+          (cam_params.img_width, cam_params.img_height, cam_params.focal, cam_params.ppx, cam_params.ppy, 0.0, 0.0, 0.0, 0.0); // setup no distortion as initial guess
+      break;
+      default:
+        return -1;
+    }
+    if (cam_params.camera_model != PINHOLE_CAMERA && cam_params.bCalibrated)
+    {
+      cam->cam_intrinsic_undist = std::make_shared<Pinhole_Intrinsic>
+      (cam_params.img_width, cam_params.img_height, cam_params.focal, cam_params.ppx, cam_params.ppy);
+      cam->cam_intrinsic_ptr = cam->cam_intrinsic_undist.get();
+    }
+    else
+    {
+      cam->cam_intrinsic_ptr = cam->cam_intrinsic_.get();
+    }
+    // Insert camera into database
+    cameras[cameras.size()]=cam;
+    return cameras.size();
   }
 
   // -------------------
@@ -68,7 +119,7 @@ struct SLAM_Monocular
       std::cerr << "ERROR: MonoSLAM: Tracker not initialized!" << std::endl;
       return false;
     }
-    if (!cam_intrinsic_)
+    if (cameras.size()<1)
     {
       std::cerr << "ERROR: MonoSLAM: Camera intrinsics not initialized!" << std::endl;
       return false;
@@ -85,20 +136,29 @@ struct SLAM_Monocular
   bool nextFrame
   (
     const image::Image<unsigned char> & ima,
-    const size_t frameId
+    const size_t frameId,
+    const size_t camId
   )
   {
     std::cout<<"Frame "<<frameId<<"\n";
     // Create Frame
-    current_frame = std::make_shared<Frame>(frameId, 0, cam_intrinsic_);
+    current_frame = std::make_shared<Frame>(frameId, camId, cameras[camId].get());
 
     double startTime = omp_get_wtime();
     // Track frame
-    tracker_->track(ima,current_frame);
+    bool bTrack = tracker_->track(ima,current_frame);
 
     double stopTime = omp_get_wtime();
     double secsElapsed = stopTime - startTime; // that's all !
     std::cout<<"Track time:"<<secsElapsed<<"\n";
+
+    if (!bTrack)
+    {
+      std::cout<<"TRY RELOCALIZATION!\n";
+    }
+
+
+
 
     tracker_->printTrackingStatus();
 

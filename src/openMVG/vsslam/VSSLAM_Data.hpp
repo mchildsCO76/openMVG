@@ -11,7 +11,6 @@
 #include "openMVG/cameras/cameras.hpp"
 #include "openMVG/geometry/Similarity3.hpp"
 #include "openMVG/types.hpp"
-#include <openMVG/vsslam/Frame.hpp>
 
 using namespace openMVG;
 
@@ -38,26 +37,51 @@ enum MAP_CAMERA_TYPE
   RELATIVE = 1  // Relative reference camera reference frame
 };
 
-using LandmarkObservations = Hash_Map<Frame*, size_t>;
+struct MapObservation
+{
+  MapObservation()
+  : feat_id (std::numeric_limits<size_t>::max()),
+    frame_ptr(nullptr),
+    pt_ptr(nullptr),
+    desc_raw_ptr(nullptr)
+  {}
+  MapObservation(size_t f_id, Frame * frame, Vec2 * x_ptr = nullptr, void * d_ptr = nullptr)
+  : feat_id (f_id),
+    frame_ptr(frame),
+    pt_ptr(x_ptr),
+    desc_raw_ptr(d_ptr)
+  {}
+
+  size_t feat_id;
+  Frame * frame_ptr;
+  Vec2 * pt_ptr;
+  void * desc_raw_ptr;
+};
+
+using LandmarkObservations = Hash_Map<size_t, MapObservation>;
 
 /// A 3D point with it's associated image observations
 struct MapLandmark
 {
   MapLandmark()
   : id_(std::numeric_limits<size_t>::max()),
-    pt_(-1,-1,-1),
+    X_(-1,-1,-1),
     normal_(0,0,0),
     ref_frame_(nullptr),
-    bestDesc_(nullptr)
+    bestDesc_(nullptr),
+    localMapFrameId_(std::numeric_limits<size_t>::max())
    {}
 
   size_t id_;
-  Vec3 pt_;
+  Vec3 X_;
   Vec3 normal_; //mean unit vector of all viewing directions (ray that  join the point with optical center of keyframes that observe it)
   Frame * ref_frame_;
 
-  LandmarkObservations obs_;  // Vector of keyframes and the feature_id in that frame
+  LandmarkObservations obs_;  // map of keyframe_ids and map observation objects
   void * bestDesc_; // Pointer to the best descriptor of the point (most average of them all?)
+
+  //Local Map  data
+  size_t localMapFrameId_;  // Id of frame for which the point was last added to local map
 };
 
 using MapLandmarks = Hash_Map<size_t,MapLandmark>;
@@ -78,6 +102,11 @@ struct VSSLAM_Data
   MAP_CAMERA_TYPE mapCameraType = MAP_CAMERA_TYPE::ABSOLUTE;
 
   size_t next_free_landmark_id = 0;
+
+  size_t getNextFreeLandmarkId()
+  {
+    return next_free_landmark_id++;
+  }
 };
 
 

@@ -75,9 +75,9 @@ inline bool Save_PLY(
         for ( const auto & iterLandmarks : slam_data.structure )
         {
           stream
-            << iterLandmarks.second.pt_(0) << ' '
-            << iterLandmarks.second.pt_(1) << ' '
-            << iterLandmarks.second.pt_(2) << ' '
+            << iterLandmarks.second.X_(0) << ' '
+            << iterLandmarks.second.X_(1) << ' '
+            << iterLandmarks.second.X_(2) << ' '
             << "255 255 255\n";
         }
       }
