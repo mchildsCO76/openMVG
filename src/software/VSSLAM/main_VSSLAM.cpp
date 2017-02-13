@@ -21,6 +21,7 @@
 #include <openMVG/vsslam/tracking/Abstract_FeatureExtractor.hpp>
 #include <openMVG/vsslam/tracking/Tracker_Features.hpp>
 #include <openMVG/vsslam/tracking/Feat_Extractor_FastDipole.hpp>
+#include <openMVG/vsslam/tracking/Feat_Extractor_SIFT.hpp>
 
 #include <openMVG/vsslam/SLAM_Monocular.hpp>
 #include <openMVG/vsslam/Camera.hpp>
@@ -186,6 +187,7 @@ int main(int argc, char **argv)
     case 0:
       // Set Fast Dipole feature detector/descriptor
       feat_extractor_ptr.reset(new Feat_Extractor_FastDipole());
+      //feat_extractor_ptr.reset(new Feat_Extractor_SIFT());
       // Set new feature tracker
       tracker_ptr.reset(new Tracker_Features(feat_extractor_ptr.get(),maxTrackedFeatures));
     break;
@@ -202,8 +204,7 @@ int main(int argc, char **argv)
 
   // Initialize the monocular tracking framework
   SLAM_Monocular monocular_slam(tracker_ptr.get());
-  monocular_slam.setFeatureExtractor(feat_extractor_ptr.get());
-
+  monocular_slam.setMapFeatureExtractor(feat_extractor_ptr.get());
 
 
   // Load image settings
@@ -299,7 +300,7 @@ int main(int argc, char **argv)
       Tracker_Features * tr = dynamic_cast<Tracker_Features*>(monocular_slam.tracker_);
 
       Frame * current_frame = tr->mPrevFrame.get();
-      for (Vec2 pts : current_frame->pts_undist_)
+      for (features::PointFeature pts : current_frame->regions_->GetRegionsPositions())
       {
         glBegin(GL_POINTS);
         glColor3f(1.f, 1.f, 0.f); // Yellow
@@ -309,20 +310,23 @@ int main(int argc, char **argv)
 
       }
 
-
+std::cout<<"DISPLAY: "<<tr->mPrevFrame->getFrameId()<<"\n";
 
 
       //--
       // Draw feature trajectories
       //--
+
+      size_t frame_id = tr->mPrevFrame->getFrameId();
+      size_t min_frame_id = frame_id<5 ? 0 : frame_id-5;
+
       glColor3f(0.f, 1.f, 0.f);
       glLineWidth(2.f);
 
-      if( monocular_slam.tracker_->trackingStatus == Abstract_Tracker::TRACKING_STATUS::OK)
+      if( monocular_slam.tracker_->getTrackingStatus() == Abstract_Tracker::TRACKING_STATUS::OK)
       {
         std::cout<<"AA\n";
-
-        std::cout<<"BB\n";
+        size_t nn = 0;
         Frame * current_frame = tr->mPrevFrame.get();
         for (MapLandmark * map_point : current_frame->map_points_)
         {
@@ -330,20 +334,47 @@ int main(int argc, char **argv)
             continue;
 
           LandmarkObservations & map_obs = map_point->obs_;
+
+          if(map_obs.size()>2)
+          {
           glBegin(GL_LINE_STRIP);
-          glColor3f(0.f, 1.f, 0.f);
+          switch(map_obs.size())
+          {
+          case 2:
+            glColor3f(1.f, 0.f, 0.f);
+            break;
+          case 3:
+            glColor3f(1.f, 1.f, 0.f);
+            break;
+          case 4:
+            glColor3f(0.f, 1.f, 1.f);
+            break;
+          default:
+            glColor3f(0.f, 1.f, 0.f);
+            break;
+          }
+          /*
+          if (map_obs.size()==2 && map_obs.find(tr->mPrevFrame->getFrameId())!=map_obs.end())
+            glColor3f(0.f, 1.f, 1.f);
+          else
+            glColor3f(0.f, 1.f, 0.f);
+          */
           for(auto obs : map_obs)
           {
-            const Vec2 & p0 = *(obs.second.pt_ptr);
-            glVertex2f(p0.x(), p0.y());
-            //std::cout<<"AFA: "<<p0<<"\n";
+            if (obs.second.frame_ptr->getFrameId() > min_frame_id)
+            {
+              const Vec2 & p0 = *(obs.second.pt_ptr);
+              glVertex2f(p0.x(), p0.y());
+            }
           }
           glEnd();
+          }
+          nn++;
+
 
         }
+        std::cout<<"BB: "<<nn<<"\n";
 
-
-        std::cout<<"CC\n";
       }
 /*
       for (auto p : monocular_slam.tracker_->mPrevFrame->regions->GetRegionsPositions())
@@ -365,7 +396,7 @@ int main(int argc, char **argv)
 
       std::cout<<"DD\n";
       //if (frameId>0)
-      sleep(5);
+      sleep(2);
     }
   }
 

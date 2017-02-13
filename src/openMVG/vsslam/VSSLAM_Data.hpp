@@ -19,12 +19,6 @@ namespace VSSLAM  {
 
 class Frame;
 
-/// Define a collection of Pose (indexed by View::id_pose)
-using MapKeyFrames = Hash_Map<size_t, std::shared_ptr<Frame> >;
-
-/// Define a collection of IntrinsicParameter (indexed by id_intrinsic)
-using Intrinsics = Hash_Map<IndexT, cameras::IntrinsicBase *>;
-
 enum MAP_POINT_TYPE
 {
   EUCLIDEAN = 0,  // Absolute world reference frame
@@ -37,6 +31,13 @@ enum MAP_CAMERA_TYPE
   RELATIVE = 1  // Relative reference camera reference frame
 };
 
+/// Define a collection of Pose (indexed by frame::frameId_)
+using MapFrames = Hash_Map<size_t, std::shared_ptr<Frame> >;
+
+/// Define a collection of IntrinsicParameter (indexed by id_intrinsic)
+using Intrinsics = Hash_Map<IndexT, cameras::IntrinsicBase *>;
+
+/// Observation of a landmark in an image (feature)
 struct MapObservation
 {
   MapObservation()
@@ -54,10 +55,10 @@ struct MapObservation
 
   size_t feat_id;
   Frame * frame_ptr;
-  Vec2 * pt_ptr;
+  Vec2 const * pt_ptr;
   void * desc_raw_ptr;
 };
-
+/// Define a collection of observations of a landmark
 using LandmarkObservations = Hash_Map<size_t, MapObservation>;
 
 /// A 3D point with it's associated image observations
@@ -69,6 +70,7 @@ struct MapLandmark
     normal_(0,0,0),
     ref_frame_(nullptr),
     bestDesc_(nullptr),
+    valid_(false),
     localMapFrameId_(std::numeric_limits<size_t>::max())
    {}
 
@@ -80,34 +82,20 @@ struct MapLandmark
   LandmarkObservations obs_;  // map of keyframe_ids and map observation objects
   void * bestDesc_; // Pointer to the best descriptor of the point (most average of them all?)
 
+  bool valid_;
+
   //Local Map  data
   size_t localMapFrameId_;  // Id of frame for which the point was last added to local map
-};
 
-using MapLandmarks = Hash_Map<size_t,MapLandmark>;
-
-struct VSSLAM_Data
-{
-  // Keyframes (indexed by frame_id)
-  MapKeyFrames keyframes;
-
-  // Deque of all landmarks in the map
-  MapLandmarks structure;
-
-  // Camera intrinsics  (indexed by camera_id)
-  Intrinsics cam_intrinsics;
-
-  // Point and Camera settings
-  MAP_POINT_TYPE mapPointType = MAP_POINT_TYPE::EUCLIDEAN;
-  MAP_CAMERA_TYPE mapCameraType = MAP_CAMERA_TYPE::ABSOLUTE;
-
-  size_t next_free_landmark_id = 0;
-
-  size_t getNextFreeLandmarkId()
+  bool isValid()
   {
-    return next_free_landmark_id++;
+    return valid_;
   }
+
 };
+
+/// Define a collection of Landmarks of the map (3D reconstructed points)
+using MapLandmarks = Hash_Map<size_t,MapLandmark>;
 
 
 

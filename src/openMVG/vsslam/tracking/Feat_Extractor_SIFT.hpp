@@ -10,20 +10,34 @@
 #include <openMVG/types.hpp>
 #include <numeric>
 
+#include <memory>
+#include "openMVG/features/features.hpp"
+#include "openMVG/features/image_describer.hpp"
+#include "openMVG/image/image.hpp"
+
 #include <openMVG/vsslam/Frame.hpp>
 #include <openMVG/vsslam/tracking/Abstract_FeatureExtractor.hpp>
+#include "nonFree/sift/SIFT_describer.hpp"
+#include "openMVG/features/sift/SIFT_Anatomy_Image_Describer.hpp"
 
 namespace openMVG  {
 namespace VSSLAM  {
 
-class Feat_Extractor_FastDipole : public Abstract_FeatureExtractor
+class Feat_Extractor_SIFT : public Abstract_FeatureExtractor
 {
-  using RegionT = features::FAST_Dipole_Regions;
+  using RegionT = features::SIFT_Regions;
+  std::unique_ptr<features::Image_describer> image_describer;
 public:
-  Feat_Extractor_FastDipole() : Abstract_FeatureExtractor()
+  Feat_Extractor_SIFT(): Abstract_FeatureExtractor()
   {
-    max_dist_desc_d2 = 30;
-  };
+    //image_describer.reset(new features::SIFT_Image_describer
+    //  (features::SIFT_Image_describer::Params(), false));
+
+    image_describer.reset(
+      new features::SIFT_Anatomy_Image_describer(features::SIFT_Anatomy_Image_describer::Params()));
+
+    max_dist_desc_d2 = 200*200;
+  }
 
   // suggest new feature point for tracking (count point are kept)
   size_t detect
@@ -36,6 +50,11 @@ public:
   {
     // Cast region
     frame->regions_.reset(new RegionT);
+
+    image_describer->Describe(ima, frame->regions_, nullptr);
+
+//    RegionT * regionsCasted = dynamic_cast<RegionT*>(frame->regions_.get());
+    /*
     RegionT * regionsCasted = dynamic_cast<RegionT*>(frame->regions_.get());
 
     const std::vector<unsigned char> scores = {30, 20, 10, 5};
@@ -67,12 +86,12 @@ public:
       }
       feats.clear();
     }
-
+*/
     // Estimate the uncertainty of each feature detection
-    frame->pts_cov_.resize(regionsCasted->Features().size());
+    frame->pts_cov_.resize(frame->regions_->RegionCount());
     std::fill(frame->pts_cov_.begin(),frame->pts_cov_.end(), Eigen::Matrix2d::Identity());
     // Return number of detected features
-    return regionsCasted->Features().size();
+    return frame->regions_->RegionCount();
   }
 
   bool describe
@@ -81,7 +100,7 @@ public:
     Frame * frame
   ) override
   {
-    RegionT * regionsCasted = dynamic_cast<RegionT *>(frame->regions_.get());
+    /*RegionT * regionsCasted = dynamic_cast<RegionT *>(frame->regions_.get());
     RegionT::FeatsT & pts = regionsCasted->Features();
     RegionT::DescsT & descs = regionsCasted->Descriptors();
 
@@ -97,6 +116,7 @@ public:
       const Vec2f & pt_pos = pts[i].coords();
       features::PickASDipole(ima, pt_pos(0), pt_pos(1), 10.5f, 0.0f, descs[i].data());
     }
+    */
     return true;
   }
 

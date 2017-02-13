@@ -19,7 +19,6 @@
 #include <openMVG/vsslam/VSSLAM_Data.hpp>
 #include <openMVG/vsslam/optimization/VSSLAM_data_BA.hpp>
 #include <openMVG/vsslam/optimization/VSSLAM_data_BA_ceres.hpp>
-#include <openMVG/vsslam/mapping/VSSLAM_data_io_ply.hpp>
 #include <openMVG/vsslam/tracking/PoseEstimation.hpp>
 #include <openMVG/vsslam/tracking/Abstract_FeatureExtractor.hpp>
 #include <deque>
@@ -33,41 +32,77 @@ using namespace openMVG;
 namespace openMVG  {
 namespace VSSLAM  {
 
+
 class Cartographer
 {
   private:
     std::shared_ptr<VSSLAM_Bundle_Adjustment> BA_obj;
 
+    // ---------------------
+    // -- Global map
+    // ---------------------
+    // Keyframes (indexed by frame_id)
+    MapFrames keyframes;
+    // Landmarks (indexed by landmark_id)
+    MapLandmarks structure;
+    // Keep track of used landmarkIds
+    size_t next_free_landmark_id = 0;
 
+    MAP_POINT_TYPE map_point_type = MAP_POINT_TYPE::EUCLIDEAN;
+    MAP_CAMERA_TYPE map_camera_type = MAP_CAMERA_TYPE::ABSOLUTE;
+
+    bool map_initialized = false;
+
+    // ---------------------
+    // -- Local map
+    // ---------------------
+    // Keyframes (indexed by frame_id)
+    MapFrames tmp_keyframes;
+    std::deque<MapLandmark> tmp_structure;
+
+    // Camera intrinsics  (indexed by camera_id)
+    Intrinsics cam_intrinsics;
+
+    // Feature extractor used
+    Abstract_FeatureExtractor * feature_extractor_ = nullptr;;
 
   public:
-    MAP_POINT_TYPE mapPointType = MAP_POINT_TYPE::EUCLIDEAN;
-    MAP_CAMERA_TYPE mapCameraType = MAP_CAMERA_TYPE::ABSOLUTE;
-
-    std::vector<Frame*> local_map_frames_;
-    std::vector<MapLandmark*> local_map_points_;
-    VSSLAM_Data slam_data;
-    Abstract_FeatureExtractor * feature_extractor_;
+    //VSSLAM_Data slam_data;
 
     Cartographer();
 
+    void setFeatureExtractor(Abstract_FeatureExtractor * f_extractor)
+     {
+       feature_extractor_ = f_extractor;
+     }
+    // ------------------------------
+    // -- Get properties of map and frame representation
+    // ------------------------------
     MAP_POINT_TYPE & getMapPointType()
     {
-      return mapPointType;
+      return map_point_type;
+    }
+    MAP_CAMERA_TYPE & getCameraPointType()
+    {
+      return map_camera_type;
     }
 
-    void addCameraIntrinsicData(const size_t & cam_id, IntrinsicBase * cam_intrinsic);
-    void addObservationToLandmark(const size_t & landmark_id, const std::shared_ptr<Frame> & frame, const size_t featId);
-    void addKeyFrameToMap(const std::shared_ptr<Frame> & frame);
-    MapLandmark * addLandmarkToMap(MapLandmark & landmark);
-    void addObservations(Frame * frame);
-
-    Frame * getKeyframeAt(size_t i)
+    // ------------------------------
+    // -- Local Map manipulation
+    // ------------------------------
+    bool isMapInitialized(){
+      return map_initialized;
+    }
+    void addLocalKeyframe(const std::shared_ptr<Frame> & frame);
+    void addLocalMapPoints();
+    // ------------------------------
+    // -- Map manipulation
+    // ------------------------------
+    size_t getNextFreeLandmarkId()
     {
-      Hash_Map<size_t, std::shared_ptr<Frame> >::iterator it = slam_data.keyframes.begin();
-      std::advance(it,i);
-      return it->second.get();
-    };
+      return next_free_landmark_id++;
+    }
+
     void initializeMap
     (
       std::shared_ptr<Frame> & frame_1,
@@ -75,177 +110,50 @@ class Cartographer
       std::vector<std::pair<Vec3, std::deque<std::pair<Frame*,size_t> > > > & vec_new_pts_3D_obs
     );
 
-    size_t getNumberOfKeyFrames()
-    {
-      return slam_data.keyframes.size();
-    }
-
-    void updateLocalMap(Frame * currentFrame);
-    std::vector<MapLandmark*> getLocalMapPoints(Frame * currentFrame, std::vector<Frame*> &neighbor_frames);
-
-
-    std::vector<MapLandmark*> & getLocalPoints()
-    {
-      return local_map_points_;
-    }
-
     void clearMap();
-  };
 
-
-
-
-  /*
-
-
-    bool initialization
-    (
-        std::shared_ptr<Frame> & frame_1,
-        std::shared_ptr<Frame> & frame_2,
-        Hash_Map<size_t,size_t> & matches_2_1_idx,
-        std::vector<size_t> & inliers
-    )
+    Frame * getKeyframeAtPos(size_t i)
     {
-      std::cout<<"MAP: Initialization\n";
+      MapFrames::iterator it = keyframes.begin();
+      std::advance(it,i);
+      return it->second.get();
+    };
 
-      // Set owner of second cam if we have relative camera system
-      if (mapCameraType == MapLandmarks::MAP_CAMERA_TYPE::RELATIVE)
-      {
-          frame_2->setReferenceFrame(frame_1);
-      }
+    size_t getNumberOfKeyframes()
+    {
+      return keyframes.size();
+    };
 
-      // -------------------
-      // -- Do tiny BA to refine initial poses
-      // -------------------
+    // ------------------------------
+    // -- Add data to map
+    // ------------------------------
 
-      Mat34 & P1 = frame_1->getCameraMatrix();
-      Mat34 & P2 = frame_2->getCameraMatrix();
+    void addCameraData(const size_t & cam_id, IntrinsicBase * cam_intrinsic);
+    void addKeyframeToMap(const std::shared_ptr<Frame> & frame);
+    MapLandmark * newLandmarkToMap();
+    void addObservationsToLandmarks(Frame * frame);
 
-      std::vector<Vec3> system_points;
-      // Add points to the system
-      for (size_t k : inliers)
-      {
-        Hash_Map<size_t,size_t>::iterator m_iter = matches_2_1_idx.begin();
-        std::advance(m_iter,k);
+    void AddLandmarksToMap
+    (
+      std::vector<std::pair<Vec3, std::deque<std::pair<Frame*,size_t> > > > & vec_new_pts_3D_obs
+    );
 
-        // 3D point
-        Vec3 X;
-        // Position of detected features
-        const Vec2
-          & x1_ = frame_1->getFeaturePosition(m_iter->second),
-          & x2_ = frame_2->getFeaturePosition(m_iter->first);
-        // Triangulate results
-        TriangulateDLT(P1, x1_, P2, x2_, &X);
-        system_points.push_back(X);
-      }
+    // ------------------------------
+    // -- Local map
+    // ------------------------------
+    void getLocalMapPoints
+    (
+      Frame * currentFrame,
+      std::vector<Frame*> & local_frames,
+      std::vector<MapLandmark*> & local_points
+    );
 
-      //BA
-
-      // -------------------
-      // -- Go through results and add poses and cameras
-      // -------------------
-      // Reset map
-      resetMap();
-      // Update camera poses
-
-      // Create two keyframes
-      addKeyFrameToMap(frame_1);
-      addKeyFrameToMap(frame_2);
-
-
-
-      // Go through resulting points and see if they are inliers
-      size_t pt_i = 0;
-      for (size_t k : inliers)
-      {
-        Vec3 &X = system_points[pt_i];
-
-        if (frame_1->pose_.depth(X) > 0)
-
-
-      // Add all inliers to the map
-
-        // Normals from each camera center
-        Vec3 n_1;
-        Vec3 n_2;
-
-
-        // Get position of both features
-        const Vec2
-          & x1_ = frame_1->getFeaturePosition(m_iter->second),
-          & x2_ = frame_2->getFeaturePosition(m_iter->first);
-
-        TriangulateDLT(P1, x1_, P2, x2_, &X);
-
-
-          //Vec3 O2 = -R2.transpose() * t2; // Origin of Cam 2
-
-
-          //float cosParallax;
-
-          for (size_t k = 0; k < vec_inliers.size(); ++k)
-          {
-            const Vec2
-              & x1_ = x1.col(vec_inliers[k]),
-              & x2_ = x2.col(vec_inliers[k]);
-            // Test if point is front to the two cameras.
-            if (Depth(R1, t1, X) < 0 || Depth(R2, t2, X) < 0)
-            {
-              continue;
-            }
-
-            // Check if the parallax between points is sufficient
-            n_1 = (X - O1);
-            n_2 = (X - O2);
-            cosParallax = n_1.dot(n_2)/(n_1.norm() * n_2.norm());
-
-            if (cosParallax < 0.99998)
-            {
-              continue;
-            }
-
-            // Check reprojection error at frame_1
-            if ((x1_ - Vec3(P1*X.homogeneous()).hnormalized()).squaredNorm() > E_thresh )
-              continue;
-
-            // Check reprojection error at frame_2
-            if ((x2_ - Vec3(P2*X.homogeneous()).hnormalized()).squaredNorm() > E_thresh )
-              continue;
-
-            ++f[i];
-          }
+    // void updateLocalMap(Frame * currentFrame);
 
 
 
 
-        // Determine point position
-        switch (mapPointType)
-        {
-          case MAP_POINT_TYPE::EUCLIDEAN:
-            // Points in world coordinate system
-            l.pt_ = *pt3D_iter;
-            // Add observations to point
-            l.addObservationToLandmark(frame_1,match_2_1_idx.second);
-            l.addObservationToLandmark(frame_2,match_2_1_idx.first);
-          break;
-          case MAP_POINT_TYPE::INV_DIST:
-            // Transform point from frame_1 to frame_2
-            if (!getRelativePointPosition(*pt3D_iter, frame_1,l.pt_,frame_2))
-              continue;
-            // Add observations to point
-            l.addObservationToLandmark(frame_1,match_2_1_idx.second);
-            l.addObservationToLandmark(frame_2,match_2_1_idx.first);
-          break;
-        }
-        // Add landmark to the map
-        addLandmarkToMap(l);
-      }
-
-
-      //Create MapPoint.
-      //pMP->ComputeDistinctiveDescriptors();
-      //pMP->UpdateNormalAndDepth();
-*/
+};
 
 }
 }

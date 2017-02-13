@@ -26,19 +26,19 @@ using namespace openMVG::geometry;
     }
     void updateMotionModel(Frame * prev_frame, Frame * cur_frame)
     {
-      std::cout<<"Update MM: \n";
-
+      std::cout<<"MotionModel: Update\n";
       // TODO: Check how to calculate if we have relative cameras
       // TODO: Compensate for time difference between frames
-      velocity_ = cur_frame->getTransformationMatrix()*prev_frame->getInverseTransformationMatrix();
+      velocity_ = cur_frame->getTransformationMatrix_cr()*prev_frame->getTransformationMatrix_rc();
 
       bValid_ = true;
     }
 
     Mat4 predictLocation(Frame * prev_frame, Frame * cur_frame)
     {
+      std::cout<<"MotionModel: Predict\n";
       // TODO: Check how to predict if we have relative cameras model
-      return velocity_ * prev_frame->getTransformationMatrix();
+      return velocity_ * prev_frame->getTransformationMatrix_cr();
     }
 
   };

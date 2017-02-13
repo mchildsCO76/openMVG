@@ -21,7 +21,7 @@ class VSSLAM_Bundle_Adjustment
 {
   public:
     virtual ~VSSLAM_Bundle_Adjustment() = default;
-
+/*
     // Perform a Bundle Adjustment on the SLAM scene (refinement only asked parameters)
     virtual bool Adjust
     (
@@ -31,7 +31,7 @@ class VSSLAM_Bundle_Adjustment
       const sfm::Optimize_Options options,
       const bool first_pose_fixed
     ) =0;
-
+*/
 
     virtual bool OptimizePose
     (

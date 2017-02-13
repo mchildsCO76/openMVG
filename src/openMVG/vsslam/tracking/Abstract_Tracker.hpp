@@ -31,6 +31,21 @@ public:
     LOST = 3,
     IDLE = 4
   };
+protected:
+  // Map
+  Cartographer * cartographer_;
+
+  // Tracking stats
+  TRACKING_STATUS trackingStatus = TRACKING_STATUS::NOT_INIT;
+
+  // Motion model
+  MotionModel motionModel;
+
+  // Initialization
+  std::shared_ptr<Frame> init_ref_frame;
+
+
+public:
 
   // ---------------
   // Parameters
@@ -42,15 +57,6 @@ public:
   std::shared_ptr<Frame> mCurrentFrame;
 
 
-  // Map
-  Cartographer * cartographer_;
-
-  // Initialization
-  std::shared_ptr<Frame> init_ref_frame;
-
-  // Tracking stats
-  TRACKING_STATUS trackingStatus = TRACKING_STATUS::NOT_INIT;
-  MotionModel motionModel;
 
   // ---------------
   // Methods
@@ -64,6 +70,16 @@ public:
     const image::Image<unsigned char> & ima,
     std::shared_ptr<Frame> current_frame
   ) = 0;
+
+  void setCartographer(Cartographer * cart)
+  {
+    cartographer_ = cart;
+  }
+
+  TRACKING_STATUS getTrackingStatus()
+  {
+    return trackingStatus;
+  }
 
   void printTrackingStatus()
   {

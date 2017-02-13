@@ -15,35 +15,32 @@ namespace VSSLAM  {
 class Abstract_FeatureExtractor
 {
 public:
+  float max_dist_desc_d2;
+
   virtual ~Abstract_FeatureExtractor(){};
 
   virtual size_t detect
   (
     const image::Image<unsigned char> & ima,
-    std::unique_ptr<features::Regions> & regions_to_track,
+    Frame * frame,
     const size_t min_count,
     const size_t max_count
   ) const = 0;
-
-  virtual bool allocate
-  (
-    std::unique_ptr<features::Regions> & regions,
-    size_t max_elements
-  ) = 0;
+/*
   virtual bool resize
   (
     features::Regions * regions,
     size_t n_elements
-  )=0;
+  )=0;*/
   virtual bool describe
   (
     const image::Image<unsigned char> & ima,
-    features::Regions * regions
+    Frame * frame
   )=0;
 
   virtual void getDescriptorRaw
   (
-    features::Regions * regions,
+    features::Regions * const regions,
     const size_t i,
     void ** desc
   ) =0;

@@ -37,6 +37,7 @@ IF (OpenMVG_BUILD_OPENGL_EXAMPLES)
     glfw
     ${GLFW_LIBRARIES}
     ${OpenMVG_LIBRARIES}
+    vlsift
   )
 
   IF(OpenMVG_USE_OPENCV)

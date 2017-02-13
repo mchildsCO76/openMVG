@@ -73,6 +73,47 @@ public:
   std::shared_ptr<IntrinsicBase> cam_intrinsic_undist;
   IntrinsicBase * cam_intrinsic_ptr = nullptr; // Pointitng to the camera that should be used in processing (distorted/undistorted)
   bool bCalibrated = false;
+
+  double img_border[4]; // borders of image (min_x,min_y,max_x,max_y)
+
+  void computeImageBorders()
+  {
+    if (bCalibrated && cam_intrinsic_->have_disto())
+    {
+      // If camera is calibrated and original intrinsic have distortion we compute the new borders by undistorting control points
+
+      // Control points:
+      // 0 -- 4 -- 1
+      // |         |
+      // 7         5
+      // |         |
+      // 3 -- 6 -- 2
+      const size_t w = cam_intrinsic_->w();
+      const size_t h = cam_intrinsic_->h();
+      Mat2X pt2D_cp(2, 8);
+      pt2D_cp << 0,w,w,0,w/2,w,w/2,0,     0, 0, h, h, 0, h/2, h, h/2;
+      std::cout<<"CPP: "<<pt2D_cp<<"\n";
+      cam_intrinsic_undist->get_ud_pixel(pt2D_cp);
+      std::cout<<"CP: "<<pt2D_cp<<"\n";
+
+
+    }
+    else
+    {
+      // Use image corners as limits as we will always do all the processing on distorted coordinates
+      img_border[0] = 0;
+      img_border[1] = 0;
+      img_border[2] = cam_intrinsic_ptr->w();
+      img_border[3] = cam_intrinsic_ptr->h();
+    }
+  }
+
+  bool isPointInImageBorders(const Vec2 & pt) const
+  {
+    if (pt(0) < img_border[0] || pt(0) > img_border[2] || pt(1) < img_border[1] || pt(1) > img_border[3])
+      return false;
+    return true;
+  }
 };
 
 }

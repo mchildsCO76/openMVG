@@ -54,13 +54,13 @@ struct SLAM_Monocular
     cartographer_ = std::make_shared<Cartographer>();
     if (tracker_)
     {
-      tracker_->cartographer_ = cartographer_.get();
+      tracker_->setCartographer(cartographer_.get());
     }
   }
 
-  void setFeatureExtractor(Abstract_FeatureExtractor * f_extractor)
+  void setMapFeatureExtractor(Abstract_FeatureExtractor * f_extractor)
   {
-    cartographer_->feature_extractor_ = f_extractor;
+    cartographer_->setFeatureExtractor(f_extractor);
   }
 
   int createCamera(const CameraParams & cam_params)
@@ -103,6 +103,8 @@ struct SLAM_Monocular
     {
       cam->cam_intrinsic_ptr = cam->cam_intrinsic_.get();
     }
+    cam->cam_id = cameras.size();
+    cam->computeImageBorders();
     // Insert camera into database
     cameras[cameras.size()]=cam;
     return cameras.size();
@@ -125,11 +127,6 @@ struct SLAM_Monocular
       return false;
     }
     return true;
-  }
-
-  void addCameraIntrinsics(const size_t & cam_id, IntrinsicBase * cam_intrinsic_)
-  {
-    cartographer_->addCameraIntrinsicData(cam_id,cam_intrinsic_);
   }
 
 

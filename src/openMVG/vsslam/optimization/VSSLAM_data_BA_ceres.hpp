@@ -51,7 +51,7 @@ class VSSLAM_Bundle_Adjustment_Ceres : public VSSLAM_Bundle_Adjustment
     VSSLAM_Bundle_Adjustment_Ceres(VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options options = VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options());
 
     VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options & ceres_options();
-
+/*
     bool Adjust
     (
       // the SfM scene to refine
@@ -60,7 +60,7 @@ class VSSLAM_Bundle_Adjustment_Ceres : public VSSLAM_Bundle_Adjustment
       const sfm::Optimize_Options options,
       const bool first_pose_fixed
     ) override;
-
+*/
     bool OptimizePose
     (
       std::vector<Frame*> & vec_frames,
