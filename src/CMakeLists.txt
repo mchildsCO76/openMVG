@@ -161,11 +161,9 @@ endif()
 # ==============================================================================
 # IMAGE IO detection
 # ==============================================================================
-if (NOT APPLE)
-  find_package(JPEG QUIET)
-  find_package(PNG QUIET)
-  find_package(TIFF QUIET)
-endif (NOT APPLE)
+find_package(JPEG QUIET)
+find_package(PNG QUIET)
+find_package(TIFF QUIET)
 
 # Folders
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -363,7 +361,7 @@ endif()
 # - only external and enabled only if OpenMVG_USE_OPENCV is set to ON
 # ==============================================================================
 if (OpenMVG_USE_OPENCV)
-  FIND_PACKAGE( OpenCV )
+  FIND_PACKAGE( OpenCV 3.0 QUIET )
   if (NOT OpenCV_FOUND)
     message(STATUS "OpenCV was not found. Disabling OpenCV support.")
     UPDATE_CACHE_VARIABLE(OpenMVG_USE_OPENCV OFF)
