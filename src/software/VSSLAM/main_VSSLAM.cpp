@@ -310,7 +310,7 @@ int main(int argc, char **argv)
 
       }
 
-std::cout<<"DISPLAY: "<<tr->mPrevFrame->getFrameId()<<"\n";
+std::cout<<"DISPLAY: "<< std::dec<<tr->mPrevFrame->getFrameId()<<"\n";
 
 
       //--
@@ -332,11 +332,11 @@ std::cout<<"DISPLAY: "<<tr->mPrevFrame->getFrameId()<<"\n";
         {
           if (!map_point)
             continue;
+          if (!map_point->isActive())
+            continue;
 
           LandmarkObservations & map_obs = map_point->obs_;
 
-          if(map_obs.size()>2)
-          {
           glBegin(GL_LINE_STRIP);
           switch(map_obs.size())
           {
@@ -361,14 +361,11 @@ std::cout<<"DISPLAY: "<<tr->mPrevFrame->getFrameId()<<"\n";
           */
           for(auto obs : map_obs)
           {
-            if (obs.second.frame_ptr->getFrameId() > min_frame_id)
-            {
-              const Vec2 & p0 = *(obs.second.pt_ptr);
-              glVertex2f(p0.x(), p0.y());
-            }
+            const Vec2 & p0 = (obs.second.frame_ptr->getFeaturePositionDetected(obs.second.feat_id));
+            glVertex2f(p0.x(), p0.y());
+
           }
           glEnd();
-          }
           nn++;
 
 

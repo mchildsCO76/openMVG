@@ -313,7 +313,7 @@ namespace VSSLAM  {
   )
   {
     const size_t frame_1_3D_pts_size = frame_1_3D_pts.size();
-    features::Regions * const frame_2_regions = frame_2->regions_.get();
+    features::Regions * const & frame_2_regions = frame_2->regions_.get();
     const size_t frame_2_pts_size = frame_2->getNumberOfFeatures();
 
     // -------------------
@@ -580,7 +580,7 @@ namespace VSSLAM  {
         continue;
 
       // Get position of point in frame_1
-      const Vec2 pt_1 = (bCam1_Calibrated ? frame_1->getFeaturePositionUndistorted(p_i) : cam_intrinsic_1->remove_disto(frame_1->getFeaturePositionUndistorted(p_i))).cast<double>();
+      const Vec2 pt_1 = (bCam1_Calibrated ? frame_1->getFeaturePosition(p_i) : cam_intrinsic_1->remove_disto(frame_1->getFeaturePosition(p_i))).cast<double>();
       // Epipolar line on frame_2
       Vec3 x1_F = F_21 * pt_1.homogeneous() ; // Epipolar line on frame_2
 
@@ -603,7 +603,7 @@ namespace VSSLAM  {
         if (frame_2_3D_pts[c_i])
           continue;
 
-        const Vec2 pt_2 = (bCam2_Calibrated ? frame_2->getFeaturePositionUndistorted(c_i) : cam_intrinsic_2->remove_disto(frame_2->getFeaturePositionUndistorted(c_i))).cast<double>();
+        const Vec2 pt_2 = (bCam2_Calibrated ? frame_2->getFeaturePosition(c_i) : cam_intrinsic_2->remove_disto(frame_2->getFeaturePosition(c_i))).cast<double>();
 
         // Compute distance from epipolar line
         double dF_12 = x1_F.dot(pt_2.homogeneous());

@@ -22,6 +22,8 @@
 #include "openMVG/robust_estimation/robust_estimator_ACRansacKernelAdaptator.hpp"
 
 #include <openMVG/numeric/numeric.h>
+#include <openMVG/vsslam/Camera.hpp>
+
 
 namespace openMVG  {
 namespace VSSLAM  {
@@ -338,8 +340,8 @@ struct ResectionSquaredResidualError {
     // ----------------------------
     // Get camera info
     // ----------------------------
-    const Camera * cam_1 = frame_1->cam_;
-    const Camera * cam_2 = frame_2->cam_;
+    Camera * cam_1 = frame_1->cam_;
+    Camera * cam_2 = frame_2->cam_;
     const Pinhole_Intrinsic * cam_intrinsic_1 = dynamic_cast<const Pinhole_Intrinsic*>(cam_1->cam_intrinsic_ptr);
     const Pinhole_Intrinsic * cam_intrinsic_2 = dynamic_cast<const Pinhole_Intrinsic*>(cam_2->cam_intrinsic_ptr);
     const Mat & cam_1_K = cam_intrinsic_1->K();
@@ -362,8 +364,8 @@ struct ResectionSquaredResidualError {
     {
       Hash_Map<size_t,size_t>::iterator m_iter = putative_matches_1_2_idx.begin();
       std::advance(m_iter,m_i);
-      pt2D_frame1.col(m_i) = (cam_1->bCalibrated ? frame_1->getFeaturePositionUndistorted(m_iter->first) : cam_intrinsic_1->remove_disto(frame_1->getFeaturePositionUndistorted(m_iter->first))).cast<double>();
-      pt2D_frame2.col(m_i) = (cam_2->bCalibrated ? frame_2->getFeaturePositionUndistorted(m_iter->second) : cam_intrinsic_2->remove_disto(frame_2->getFeaturePositionUndistorted(m_iter->second))).cast<double>();
+      pt2D_frame1.col(m_i) = (cam_1->bCalibrated ? frame_1->getFeaturePosition(m_iter->first) : cam_intrinsic_1->remove_disto(frame_1->getFeaturePosition(m_iter->first))).cast<double>();
+      pt2D_frame2.col(m_i) = (cam_2->bCalibrated ? frame_2->getFeaturePosition(m_iter->second) : cam_intrinsic_2->remove_disto(frame_2->getFeaturePosition(m_iter->second))).cast<double>();
     }
 
     // ----------------------------
@@ -482,7 +484,7 @@ struct ResectionSquaredResidualError {
       std::advance(m_iter,m_i);
       MapLandmark * map_point = m_iter->first;
 
-      pt2D_frame.col(m_i) = (bCamCalibrated ? frame->getFeaturePositionUndistorted(m_iter->second) : cam_intrinsic->remove_disto(frame->getFeaturePositionUndistorted(m_iter->second))).cast<double>();
+      pt2D_frame.col(m_i) = (bCamCalibrated ? frame->getFeaturePosition(m_iter->second) : cam_intrinsic->remove_disto(frame->getFeaturePosition(m_iter->second))).cast<double>();
       pt3D_frame.col(m_i) = (map_point->X_).cast<double>();
     }
 
@@ -554,6 +556,7 @@ struct ResectionSquaredResidualError {
 }
 
   // Find transformation between cameras cam_k and cam_ref: (cam_k)_T_(cam_ref)
+
   // Look from both directions and find the first intersection
   static bool getRelativeCameraTransformation
   (
@@ -682,7 +685,8 @@ struct ResectionSquaredResidualError {
   }
 
 
-  // Expresses point represented in ref_point_frame in new_point_frame
+  // Expess point pt with ref_point_frame in new_point_frame (result in new_pt)
+  // For now only with global eculidean representation of points and global represenation of poitns
   static bool getRelativePointPosition(const Vec3 & pt, const Frame * ref_point_frame, Vec3 & pt_new, const Frame * new_point_frame )
   {
     if (ref_point_frame == new_point_frame)

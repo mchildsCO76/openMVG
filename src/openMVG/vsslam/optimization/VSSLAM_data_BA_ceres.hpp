@@ -48,7 +48,10 @@ class VSSLAM_Bundle_Adjustment_Ceres : public VSSLAM_Bundle_Adjustment
     VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options ceres_options_;
   public:
 
-    VSSLAM_Bundle_Adjustment_Ceres(VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options options = VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options());
+    VSSLAM_Bundle_Adjustment_Ceres
+    (
+      VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options options
+    );
 
     VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options & ceres_options();
 /*
@@ -63,9 +66,10 @@ class VSSLAM_Bundle_Adjustment_Ceres : public VSSLAM_Bundle_Adjustment
 */
     bool OptimizePose
     (
-      std::vector<Frame*> & vec_frames,
+      std::vector<Frame*> * vec_frames,
+      Frame * frame_i,
       Hash_Map<MapLandmark *,size_t> * matches_3D_ptr_cur_idx,
-      std::vector<std::pair<Vec3, std::deque<std::pair<Frame*,size_t> > > > * vec_triangulated_pts
+      std::vector<std::unique_ptr<MapLandmark> > * vec_triangulated_pts
     ) override;
 
 

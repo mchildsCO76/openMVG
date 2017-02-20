@@ -21,13 +21,12 @@ class Frame;
 
 enum MAP_POINT_TYPE
 {
-  EUCLIDEAN = 0,  // Absolute world reference frame
-  INV_DEPTH = 1,  // Relative reference camera reference frame
-  INV_DIST = 2  // Relative reference camera reference frame
+  GLOBAL_EUCLIDEAN = 0,  // Absolute world reference frame
+  LOCAL_INV_DEPTH = 1,  // Relative reference camera reference frame
 };
 enum MAP_CAMERA_TYPE
 {
-  ABSOLUTE = 0, // Absolute world reference frame
+  GLOBAL = 0, // Absolute world reference frame
   RELATIVE = 1  // Relative reference camera reference frame
 };
 
@@ -42,21 +41,15 @@ struct MapObservation
 {
   MapObservation()
   : feat_id (std::numeric_limits<size_t>::max()),
-    frame_ptr(nullptr),
-    pt_ptr(nullptr),
-    desc_raw_ptr(nullptr)
+    frame_ptr(nullptr)
   {}
-  MapObservation(size_t f_id, Frame * frame, Vec2 * x_ptr = nullptr, void * d_ptr = nullptr)
+  MapObservation(size_t f_id, Frame * frame, Vec2 const * pt = nullptr, void * d_ptr = nullptr)
   : feat_id (f_id),
-    frame_ptr(frame),
-    pt_ptr(x_ptr),
-    desc_raw_ptr(d_ptr)
+    frame_ptr(frame)
   {}
 
   size_t feat_id;
   Frame * frame_ptr;
-  Vec2 const * pt_ptr;
-  void * desc_raw_ptr;
 };
 /// Define a collection of observations of a landmark
 using LandmarkObservations = Hash_Map<size_t, MapObservation>;
@@ -70,7 +63,8 @@ struct MapLandmark
     normal_(0,0,0),
     ref_frame_(nullptr),
     bestDesc_(nullptr),
-    valid_(false),
+    active_(false),
+    last_obs_step_(0),
     localMapFrameId_(std::numeric_limits<size_t>::max())
    {}
 
@@ -82,21 +76,51 @@ struct MapLandmark
   LandmarkObservations obs_;  // map of keyframe_ids and map observation objects
   void * bestDesc_; // Pointer to the best descriptor of the point (most average of them all?)
 
-  bool valid_;
+  size_t last_obs_step_;
+  bool active_; // True if the point is in global map
 
   //Local Map  data
   size_t localMapFrameId_;  // Id of frame for which the point was last added to local map
 
-  bool isValid()
+  const bool & isActive() const
   {
-    return valid_;
+    return active_;
   }
+
+  void setActive()
+  {
+    active_ = true;
+  }
+
+  const size_t getLastObsStep() const
+  {
+    return last_obs_step_;
+  }
+  void setObsStep(const size_t & step)
+  {
+    last_obs_step_ = step;
+  }
+
+  // Method which defines what is enough quality for the points to be added to the system
+  bool isValidByConnectivityDegree(const size_t & min_degree_landmark) const
+  {
+    if (obs_.size() < min_degree_landmark)
+      return false;
+    return true;
+  }
+
+  bool hasFrameObservation(const size_t & frame_id)
+  {
+    if (obs_.find(frame_id) != obs_.end())
+      return true;
+    return false;
+  }
+
 
 };
 
 /// Define a collection of Landmarks of the map (3D reconstructed points)
-using MapLandmarks = Hash_Map<size_t,MapLandmark>;
-
+using MapLandmarks = Hash_Map<size_t,std::unique_ptr<MapLandmark> >;
 
 
 }

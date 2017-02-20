@@ -93,9 +93,9 @@ VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options::BA_Ceres_options
 
 VSSLAM_Bundle_Adjustment_Ceres::VSSLAM_Bundle_Adjustment_Ceres
 (
-  VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options options
+  VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options options = VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options()
 )
-: ceres_options_(options)
+:ceres_options_(options)
 {}
 
 VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options &
@@ -104,244 +104,33 @@ VSSLAM_Bundle_Adjustment_Ceres::ceres_options()
   return ceres_options_;
 }
 
-/*
-bool VSSLAM_Bundle_Adjustment_Ceres::Adjust
-(
-  VSSLAM_Data & slam_data,     // the SfM scene to refine
-  const sfm::Optimize_Options options,
-  const bool first_pose_fixed
-)
-{
-  //----------
-  // Add camera parameters
-  // - intrinsics
-  // - poses [R|t]
-
-  // Create residuals for each observation in the bundle adjustment problem. The
-  // parameters for cameras and points are added automatically.
-  //----------
-
-  ceres::Problem problem;
-
-  // Data wrapper for refinement:
-  Hash_Map<IndexT, std::vector<double> > map_intrinsics;
-  Hash_Map<IndexT, std::vector<double> > map_poses;
-  // Setup Poses data & subparametrization
-  for (const auto & kF_it : slam_data.keyframes)
-  {
-    const size_t kF_idx = kF_it.first;
-
-    const Similarity3 & pose = kF_it.second->pose_;
-    const Mat3 R = pose.rotation();
-    const Vec3 t = pose.translation();
-    const double s = pose.scale();
-
-    double angleAxis[3];
-    ceres::RotationMatrixToAngleAxis((const double*)R.data(), angleAxis);
-    // angleAxis + translation
-    map_poses[kF_idx] = {angleAxis[0], angleAxis[1], angleAxis[2], t(0), t(1), t(2),s};
-    double * parameter_block = &map_poses[kF_idx][0];
-    problem.AddParameterBlock(parameter_block, 7);
-
-    if (first_pose_fixed && kF_idx == map_poses.begin()->first)
-      problem.SetParameterBlockConstant(parameter_block);
-    if (options.extrinsics_opt == sfm::Extrinsic_Parameter_Type::NONE)
-    {
-      // set the whole parameter block as constant for best performance
-      problem.SetParameterBlockConstant(parameter_block);
-    }
-    else  // Subset parametrization
-    {
-      std::vector<int> vec_constant_extrinsic;
-      // If we adjust only the translation, we must set ROTATION as constant
-      if (options.extrinsics_opt == sfm::Extrinsic_Parameter_Type::ADJUST_TRANSLATION)
-      {
-        // Subset rotation parametrization
-        vec_constant_extrinsic.push_back(0);
-        vec_constant_extrinsic.push_back(1);
-        vec_constant_extrinsic.push_back(2);
-      }
-      // If we adjust only the rotation, we must set TRANSLATION as constant
-      if (options.extrinsics_opt == sfm::Extrinsic_Parameter_Type::ADJUST_ROTATION)
-      {
-        // Subset translation parametrization
-        vec_constant_extrinsic.push_back(3);
-        vec_constant_extrinsic.push_back(4);
-        vec_constant_extrinsic.push_back(5);
-        vec_constant_extrinsic.push_back(6);
-      }
-      if (!vec_constant_extrinsic.empty())
-      {
-        ceres::SubsetParameterization *subset_parameterization =
-          new ceres::SubsetParameterization(7, vec_constant_extrinsic);
-        problem.SetParameterization(parameter_block, subset_parameterization);
-      }
-    }
-  }
-  // Setup Intrinsics data & subparametrization
-  for (const auto & intrinsic_it : slam_data.cam_intrinsics)
-  {
-    const IndexT cam_idx = intrinsic_it.first;
-    if (isValid(intrinsic_it.second->getType()))
-    {
-      map_intrinsics[cam_idx] = intrinsic_it.second->getParams();
-
-      double * parameter_block = &map_intrinsics[cam_idx][0];
-      problem.AddParameterBlock(parameter_block, map_intrinsics[cam_idx].size());
-      if (options.intrinsics_opt == Intrinsic_Parameter_Type::NONE)
-      {
-        // set the whole parameter block as constant for best performance
-        problem.SetParameterBlockConstant(parameter_block);
-      }
-      else
-      {
-        const std::vector<int> vec_constant_intrinsic =
-          intrinsic_it.second->subsetParameterization(options.intrinsics_opt);
-        if (!vec_constant_intrinsic.empty())
-        {
-          ceres::SubsetParameterization *subset_parameterization =
-            new ceres::SubsetParameterization(
-              map_intrinsics[cam_idx].size(), vec_constant_intrinsic);
-          problem.SetParameterization(parameter_block, subset_parameterization);
-        }
-      }
-    }
-    else
-    {
-      std::cerr << "Unsupported camera type." << std::endl;
-    }
-  }
-
-  // Set a LossFunction to be less penalized by false measurements
-  //  - set it to NULL if you don't want use a lossFunction.
-  ceres::LossFunction * p_LossFunction =
-    ceres_options_.bUse_loss_function_ ?
-      new ceres::HuberLoss(Square(4.0))
-      : nullptr;
-
-  // For all visibility add reprojections errors:
-  for (auto & structure_landmark_it : slam_data.structure)
-  {
-    const LandmarkObservations & obs = structure_landmark_it.second.obs_;
-
-    for (const auto & obs_it : obs)
-    {
-      const size_t & frame_id = obs_it.first;
-      const MapObservation & m = obs_it.second;
-      const size_t cam_id = m.frame_ptr->camId_;
-
-      // Build the residual block corresponding to the track observation:
-
-      // Each Residual block takes a point and a camera as input and outputs a 2
-      // dimensional residual. Internally, the cost function stores the observed
-      // image location and compares the reprojection against the observation.
-      ceres::CostFunction* cost_function =
-        IntrinsicsToCostFunction(slam_data.cam_intrinsics[cam_id], *(m.pt_ptr));
-      if (cost_function)
-        problem.AddResidualBlock(cost_function,
-          p_LossFunction,
-          &map_intrinsics[cam_id][0],
-          &map_poses[frame_id][0],
-          structure_landmark_it.second.X_.data());
-    }
-    if (options.structure_opt == sfm::Structure_Parameter_Type::NONE)
-      problem.SetParameterBlockConstant(structure_landmark_it.second.X_.data());
-  }
-
-  // Configure a BA engine and run it
-  //  Make Ceres automatically detect the bundle structure.
-  ceres::Solver::Options ceres_config_options;
-  ceres_config_options.max_num_iterations = 500;
-  ceres_config_options.preconditioner_type = ceres_options_.preconditioner_type_;
-  ceres_config_options.linear_solver_type = ceres_options_.linear_solver_type_;
-  ceres_config_options.sparse_linear_algebra_library_type = ceres_options_.sparse_linear_algebra_library_type_;
-  ceres_config_options.minimizer_progress_to_stdout = ceres_options_.bVerbose_;
-  ceres_config_options.logging_type = ceres::SILENT;
-  ceres_config_options.num_threads = ceres_options_.nb_threads_;
-  ceres_config_options.num_linear_solver_threads = ceres_options_.nb_threads_;
-  ceres_config_options.parameter_tolerance = ceres_options_.parameter_tolerance_;
-
-  // Solve BA
-  ceres::Solver::Summary summary;
-  ceres::Solve(ceres_config_options, &problem, &summary);
-  if (ceres_options_.bCeres_summary_)
-    std::cout << summary.FullReport() << std::endl;
-
-  // If no error, get back refined parameters
-  if (!summary.IsSolutionUsable())
-  {
-    if (ceres_options_.bVerbose_)
-      std::cout << "Bundle Adjustment failed." << std::endl;
-    return false;
-  }
-  else // Solution is usable
-  {
-    if (ceres_options_.bVerbose_)
-    {
-      // Display statistics about the minimization
-      std::cout << std::endl
-        << "Bundle Adjustment statistics (approximated RMSE):\n"
-        << " #keyframes: " << slam_data.keyframes.size() << "\n"
-        << " #intrinsics: " << slam_data.cam_intrinsics.size() << "\n"
-        << " #points: " << slam_data.structure.size() << "\n"
-        << " #residuals: " << summary.num_residuals << "\n"
-        << " Initial RMSE: " << std::sqrt( summary.initial_cost / summary.num_residuals) << "\n"
-        << " Final RMSE: " << std::sqrt( summary.final_cost / summary.num_residuals) << "\n"
-        << " Time (s): " << summary.total_time_in_seconds << "\n"
-        << std::endl;
-    }
-
-    // Update camera poses with refined data
-    if (options.extrinsics_opt != sfm::Extrinsic_Parameter_Type::NONE)
-    {
-      for (const auto & kF_it : slam_data.keyframes)
-      {
-        const size_t kF_idx = kF_it.first;
-
-        // Update pose
-        Mat3 R_refined;
-        ceres::AngleAxisToRotationMatrix(&map_poses[kF_idx][0], R_refined.data());
-        Vec3 t_refined(map_poses[kF_idx][3], map_poses[kF_idx][4], map_poses[kF_idx][5]);
-        double s_refined(map_poses[kF_idx][6]);
-        // Update the pose
-        kF_it.second->setPose_Rts(R_refined,t_refined,s_refined);
-      }
-    }
-
-    // Update camera intrinsics with refined data
-    if (options.intrinsics_opt != Intrinsic_Parameter_Type::NONE)
-    {
-      for (auto & intrinsic_it : slam_data.cam_intrinsics)
-      {
-        const size_t cam_id = intrinsic_it.first;
-
-        const std::vector<double> & vec_params = map_intrinsics[cam_id];
-        intrinsic_it.second->updateFromParams(vec_params);
-      }
-    }
-    return true;
-  }
-}
-*/
-
-// Optimize the last pose in the vector
-// Points in matches_3D_ptr_cur_idx remain freezed
-// Points in vec_triangulated_pts are optimized with the last pose
+// Optimize free poses in the vector (not active -> not in global map)
+// frame_i is the pose which is used for 3D-2D matching
+// 3D Points in matches_3D_ptr_cur_idx remain freezed
+// 3D Points in vec_triangulated_pts are optimized with all free poses
 bool VSSLAM_Bundle_Adjustment_Ceres::OptimizePose
 (
-  std::vector<Frame*> & vec_frames,
+  std::vector<Frame*> * vec_frames,
+  Frame * frame_i,
   Hash_Map<MapLandmark *,size_t> * matches_3D_ptr_cur_idx,
-  std::vector<std::pair<Vec3, std::deque<std::pair<Frame*,size_t> > > > * vec_triangulated_pts
+  std::vector<std::unique_ptr<MapLandmark> > * vec_triangulated_pts
 )
 {
-  if ((!matches_3D_ptr_cur_idx || matches_3D_ptr_cur_idx->empty()) && (!vec_triangulated_pts || vec_triangulated_pts->empty()))
+  std::cout<<"Pose optimization: \n";
+  // if vector of frames is empty and no frame_i is given -> no pose to optimize
+  if ((!vec_frames || vec_frames->empty()) && !frame_i)
   {
     return false;
   }
 
+  // If none points are
+  /*if ((!matches_3D_ptr_cur_idx || matches_3D_ptr_cur_idx->empty()) && (!vec_triangulated_pts || vec_triangulated_pts->empty()))
+  {
+    return false;
+  }*/
+
   ceres::Problem problem;
 
-  const size_t free_frameId = (vec_frames[vec_frames.size()-1])->getFrameId();
   // Data wrapper for refinement:
   Hash_Map<size_t, std::vector<double> > map_intrinsics;
   Hash_Map<size_t, std::vector<double> > map_poses;
@@ -356,126 +145,161 @@ bool VSSLAM_Bundle_Adjustment_Ceres::OptimizePose
   Vec3 t;
   double s;
 
-  for (Frame* frame : vec_frames)
+
+  std::cout<<"Pose optimization: Frames\n";
+  // Add all poses in local scope
+  // (Not active ones are not yet in global map and are free to move)
+  if (vec_frames)
   {
-    const size_t & frameId = frame->getFrameId();
-    const size_t cam_idx = frame->getCamId();
-
-    frame->getPose_cr_Rts(R,t,s);
-
-    ceres::RotationMatrixToAngleAxis((const double*)R.data(), angleAxis);
-    // angleAxis + translation
-    map_poses[frameId] = {angleAxis[0], angleAxis[1], angleAxis[2], t(0), t(1), t(2),s};
-    double * parameter_block = &map_poses[frameId][0];
-    problem.AddParameterBlock(parameter_block, 7);
-
-    if (frameId != free_frameId)
-      problem.SetParameterBlockConstant(parameter_block);
-
-    if (map_intrinsics.find(cam_idx)==map_intrinsics.end())
+    for (Frame * & frame : *vec_frames)
     {
-      map_intrinsics[cam_idx] = frame->getCameraIntrinsics()->getParams();
-      double * parameter_block = &map_intrinsics[cam_idx][0];
-      problem.AddParameterBlock(parameter_block, map_intrinsics[cam_idx].size());
-      problem.SetParameterBlockConstant(parameter_block);
+      const size_t & frameId = frame->getFrameId();
+      const size_t & cam_idx = frame->getCamId();
+
+      // Get pose in the WORLD reference frame
+      frame->getPose_cr_Rts(R,t,s);
+
+      ceres::RotationMatrixToAngleAxis((const double*)R.data(), angleAxis);
+      // angleAxis + translation
+      map_poses[frameId] = {angleAxis[0], angleAxis[1], angleAxis[2], t(0), t(1), t(2),s};
+      double * parameter_block = &map_poses[frameId][0];
+      problem.AddParameterBlock(parameter_block, 7);
+
+      // Frame is active when its in the global map (cant be changed by localBA)
+      if (frame->isActive())
+        problem.SetParameterBlockConstant(parameter_block);
+
+      if (map_intrinsics.find(cam_idx)==map_intrinsics.end())
+      {
+        map_intrinsics[cam_idx] = frame->getCameraIntrinsics()->getParams();
+        double * parameter_block = &map_intrinsics[cam_idx][0];
+        problem.AddParameterBlock(parameter_block, map_intrinsics[cam_idx].size());
+        problem.SetParameterBlockConstant(parameter_block);
+      }
     }
   }
 
-  // Impose 3D-2D matches (as static!)
-  Frame* frame_cur = (vec_frames[vec_frames.size()-1]);
-  const size_t cam_cur_idx = frame_cur->getCamId();
-  IntrinsicBase* cam_cur_intrinsic = frame_cur->getCameraIntrinsics();
-
-  if(matches_3D_ptr_cur_idx && !matches_3D_ptr_cur_idx->empty())
+  // Add frame of interest (current frame)
+  // Matches 3D-2D are relating to this frame
+  std::cout<<"Pose optimization: Frame\n";
+  if (frame_i)
   {
-    // Add all 2D-3D relations of the free pose
-    for (auto match : *matches_3D_ptr_cur_idx)
+    const size_t & frame_i_id = frame_i->getFrameId();
+    const size_t & cam_i_idx = frame_i->getCamId();
+    IntrinsicBase * & cam_i_intrinsic = frame_i->getCameraIntrinsics();
+
+    // If pose is not already among the others added
+    if (map_poses.find(frame_i_id) == map_poses.end())
     {
+      // Get pose in the WORLD reference frame
+      frame_i->getPose_cr_Rts(R,t,s);
+
+      ceres::RotationMatrixToAngleAxis((const double*)R.data(), angleAxis);
+      // angleAxis + translation
+      map_poses[frame_i_id] = {angleAxis[0], angleAxis[1], angleAxis[2], t(0), t(1), t(2),s};
+      double * parameter_block = &map_poses[frame_i_id][0];
+      problem.AddParameterBlock(parameter_block, 7);
+
+      // Frame is active when its in the global map (cant be changed by localBA)
+      if (frame_i->isActive())
+        problem.SetParameterBlockConstant(parameter_block);
+
+      if (map_intrinsics.find(cam_i_idx)==map_intrinsics.end())
+      {
+        map_intrinsics[cam_i_idx] = frame_i->getCameraIntrinsics()->getParams();
+        double * parameter_block = &map_intrinsics[cam_i_idx][0];
+        problem.AddParameterBlock(parameter_block, map_intrinsics[cam_i_idx].size());
+        problem.SetParameterBlockConstant(parameter_block);
+      }
+    }
+
+    // Impose 3D-2D matches (valid points are static) for frame_i
+    if(matches_3D_ptr_cur_idx && !matches_3D_ptr_cur_idx->empty())
+    {
+      // Add all 2D-3D relations of the free pose
+      for (auto & match : *matches_3D_ptr_cur_idx)
+      {
+        // Gets the position of the point (undistorted if distortion is known and calibrated or distorted if not calibrated)
+        const Vec2 & obs_pt = frame_i->getFeaturePosition(match.second);
+
+        // Build the residual block corresponding to the track observation:
+
+        // Each Residual block takes a point and a camera as input and outputs a 2
+        // dimensional residual. Internally, the cost function stores the observed
+        // image location and compares the reprojection against the observation.
+        ceres::CostFunction* cost_function = IntrinsicsToCostFunction(cam_i_intrinsic, obs_pt);
+
+        if (cost_function)
+        {
+          problem.AddResidualBlock(cost_function,
+            p_LossFunction,
+            &map_intrinsics[cam_i_idx][0],
+            &map_poses[frame_i_id][0],
+            match.first->X_.data());
+          // Set structure fixed if in the global map
+          if (match.first->isActive())
+            problem.SetParameterBlockConstant(match.first->X_.data());
+        }
+      }
+    }
+
+    // Impose 3D-2D matches that are already associated with frame_i (valid points are static)
+    for (size_t mp_i = 0; mp_i < frame_i->map_points_.size(); ++mp_i)
+    {
+      MapLandmark* & map_point = frame_i->map_points_[mp_i];
+      if (!map_point)
+        continue;
+
       // Gets the position of the point (undistorted if distortion is known and calibrated or distorted if not calibrated)
-      const Vec2 & obs_pt = frame_cur->getFeaturePositionUndistorted(match.second);
+      const Vec2 & obs_pt = frame_i->getFeaturePosition(mp_i);
 
       // Build the residual block corresponding to the track observation:
 
       // Each Residual block takes a point and a camera as input and outputs a 2
       // dimensional residual. Internally, the cost function stores the observed
       // image location and compares the reprojection against the observation.
-      ceres::CostFunction* cost_function = IntrinsicsToCostFunction(cam_cur_intrinsic, obs_pt);
+      ceres::CostFunction * cost_function = IntrinsicsToCostFunction(cam_i_intrinsic, obs_pt);
+
 
       if (cost_function)
       {
         problem.AddResidualBlock(cost_function,
           p_LossFunction,
-          &map_intrinsics[cam_cur_idx][0],
-          &map_poses[free_frameId][0],
-          match.first->X_.data());
-        // Set structure fixed (we only optimiza the pose)
-        problem.SetParameterBlockConstant(match.first->X_.data());
+          &map_intrinsics[cam_i_idx][0],
+          &map_poses[frame_i_id][0],
+          map_point->X_.data());
+        // Set structure fixed if in the global map
+        if (map_point->isActive())
+          problem.SetParameterBlockConstant(map_point->X_.data());
       }
     }
   }
 
-
-  // Impose 3D-2D matches that are already associated with the current frame (as static!)
-  for (size_t mp_i = 0; mp_i < frame_cur->map_points_.size(); ++mp_i)
-  {
-    MapLandmark* map_point = frame_cur->map_points_[mp_i];
-    if (!map_point)
-      continue;
-
-    // Gets the position of the point (undistorted if distortion is known and calibrated or distorted if not calibrated)
-    const Vec2 & obs_pt = frame_cur->getFeaturePositionUndistorted(mp_i);
-
-    // Build the residual block corresponding to the track observation:
-
-    // Each Residual block takes a point and a camera as input and outputs a 2
-    // dimensional residual. Internally, the cost function stores the observed
-    // image location and compares the reprojection against the observation.
-    ceres::CostFunction* cost_function = IntrinsicsToCostFunction(cam_cur_intrinsic, obs_pt);
-
-
-    if (cost_function)
-    {
-      problem.AddResidualBlock(cost_function,
-        p_LossFunction,
-        &map_intrinsics[cam_cur_idx][0],
-        &map_poses[free_frameId][0],
-        map_point->X_.data());
-      // Set structure fixed (we only optimiza the pose)
-      problem.SetParameterBlockConstant(map_point->X_.data());
-    }
-
-  }
-
-
+  std::cout<<"Pose optimization: Triangulated Pts\n";
   // Add newly triangulated points (3d points are free)
   if(vec_triangulated_pts && !vec_triangulated_pts->empty())
   {
-
-    for (auto & point_it : *vec_triangulated_pts)
+    for (std::unique_ptr<MapLandmark> & point_it : *vec_triangulated_pts)
     {
-      std::deque<std::pair<Frame*,size_t> > & measurements = point_it.second;
-      for(auto measurement : measurements)
+      LandmarkObservations & obs = point_it->obs_;
+      for(auto & m_o : obs)
       {
-        Frame * frame_i = measurement.first;
+        Frame * frame_i = m_o.second.frame_ptr;
         // Each Residual block takes a point and a camera as input and outputs a 2
         // dimensional residual. Internally, the cost function stores the observed
         // image location and compares the reprojection against the observation.
         ceres::CostFunction* cost_function =
-          IntrinsicsToCostFunction(frame_i->getCameraIntrinsics(), frame_i->getFeaturePositionUndistorted(measurement.second));
-
+          IntrinsicsToCostFunction(frame_i->getCameraIntrinsics(), frame_i->getFeaturePosition(m_o.second.feat_id));
 
         if (cost_function)
           problem.AddResidualBlock(cost_function,
             p_LossFunction,
             &map_intrinsics[frame_i->getCamId()][0],
             &map_poses[frame_i->getFrameId()][0],
-            point_it.first.data());
-
-         //problem.SetParameterBlockConstant(point_it.first.data());
+            point_it->X_.data());
       }
     }
   }
-
 
   // Configure a BA engine and run it
   //  Make Ceres automatically detect the bundle structure.
@@ -490,6 +314,8 @@ bool VSSLAM_Bundle_Adjustment_Ceres::OptimizePose
   ceres_config_options.num_linear_solver_threads = ceres_options_.nb_threads_;
   ceres_config_options.parameter_tolerance = ceres_options_.parameter_tolerance_;
 
+
+  std::cout<<"Pose optimization: Solve\n";
   // Solve BA
   ceres::Solver::Summary summary;
   ceres::Solve(ceres_config_options, &problem, &summary);
@@ -521,16 +347,39 @@ bool VSSLAM_Bundle_Adjustment_Ceres::OptimizePose
     }
 
 
+    std::cout<<"Pose optimization: Updated poses\n";
     // Update camera poses with refined data
-    //TODO: From SIM3 to Pose
-    Frame* current_frame = vec_frames[vec_frames.size()-1];
     Mat3 R_refined;
-    ceres::AngleAxisToRotationMatrix(&(map_poses[free_frameId][0]), R_refined.data());
-    Vec3 t_refined(map_poses[free_frameId][3], map_poses[free_frameId][4], map_poses[free_frameId][5]);
-    double s_refined(map_poses[free_frameId][6]);
-    // Update the pose
-    current_frame->setPose_cr_Rts(R_refined,t_refined,s_refined);
+    Vec3 t_refined;
+    double s_refined;
+    if (vec_frames)
+    {
+      for (Frame * & frame : *vec_frames)
+      {
+        // Active frames are used in global map -> fixed
+        if (frame->isActive())
+          continue;
+        // Get frame and update values
+        size_t frame_id = frame->getFrameId();
+        ceres::AngleAxisToRotationMatrix(&(map_poses[frame_id][0]), R_refined.data());
+        t_refined = Vec3(map_poses[frame_id][3], map_poses[frame_id][4], map_poses[frame_id][5]);
+        s_refined = map_poses[frame_id][6];
 
+        // Update the pose
+        frame->setPose_cr_Rts(R_refined,t_refined,s_refined);
+      }
+    }
+    if (frame_i && !frame_i->isActive())
+    {
+      // Get frame and update values
+      size_t frame_id = frame_i->getFrameId();
+      ceres::AngleAxisToRotationMatrix(&(map_poses[frame_id][0]), R_refined.data());
+      t_refined = Vec3(map_poses[frame_id][3], map_poses[frame_id][4], map_poses[frame_id][5]);
+      s_refined = map_poses[frame_id][6];
+
+      // Update the pose
+      frame_i->setPose_cr_Rts(R_refined,t_refined,s_refined);
+    }
     return true;
   }
 }

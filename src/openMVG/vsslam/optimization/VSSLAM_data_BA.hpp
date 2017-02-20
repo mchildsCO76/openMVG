@@ -10,6 +10,7 @@
 #include <tuple>
 #include <deque>
 #include <openMVG/sfm/sfm_data_BA.hpp>
+#include <openMVG/vsslam/VSSLAM_Data.hpp>
 
 using namespace openMVG;
 
@@ -21,23 +22,13 @@ class VSSLAM_Bundle_Adjustment
 {
   public:
     virtual ~VSSLAM_Bundle_Adjustment() = default;
-/*
-    // Perform a Bundle Adjustment on the SLAM scene (refinement only asked parameters)
-    virtual bool Adjust
-    (
-      // the SfM scene to refine
-      VSSLAM_Data & slam_data,
-      // tell which parameter needs to be adjusted
-      const sfm::Optimize_Options options,
-      const bool first_pose_fixed
-    ) =0;
-*/
 
     virtual bool OptimizePose
     (
-      std::vector<Frame*> & vec_frames,
+      std::vector<Frame*> * vec_frames,
+      Frame * frame_i,
       Hash_Map<MapLandmark *,size_t> * matches_3D_ptr_cur_idx,
-      std::vector<std::pair<Vec3, std::deque<std::pair<Frame*,size_t> > > > * vec_triangulated_pts
+      std::vector<std::unique_ptr<MapLandmark> > * vec_triangulated_pts
     ) =0;
 
 };
