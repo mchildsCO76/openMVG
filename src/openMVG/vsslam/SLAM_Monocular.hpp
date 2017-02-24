@@ -9,14 +9,13 @@
 
 
 #include <openMVG/types.hpp>
+#include <openMVG/vsslam/Frame.hpp>
 #include "openMVG/features/features.hpp"
 #include <openMVG/numeric/numeric.h>
 #include <openMVG/vsslam/Camera.hpp>
-#include <openMVG/vsslam/Frame.hpp>
-
-#include <openMVG/vsslam/VSSLAM_Data.hpp>
 #include <openMVG/vsslam/tracking/Abstract_Tracker.hpp>
 #include <openMVG/vsslam/detection/Abstract_FeatureExtractor.hpp>
+#include <openMVG/vsslam/VSSLAM_Data.hpp>
 #include <openMVG/vsslam/mapping/Cartographer.hpp>
 
 #include <deque>

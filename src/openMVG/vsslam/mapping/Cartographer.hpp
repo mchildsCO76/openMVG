@@ -15,7 +15,6 @@
 #include "openMVG/multiview/triangulation.hpp"
 
 #include <openMVG/types.hpp>
-#include <openMVG/vsslam/Frame.hpp>
 #include <openMVG/vsslam/VSSLAM_Data.hpp>
 #include <openMVG/vsslam/optimization/VSSLAM_data_BA.hpp>
 #include <openMVG/vsslam/optimization/VSSLAM_data_BA_ceres.hpp>
@@ -27,6 +26,7 @@
 
 #include <ceres/types.h>
 #include <ceres/cost_function.h>
+#include <openMVG/vsslam/Frame.hpp>
 
 using namespace openMVG;
 

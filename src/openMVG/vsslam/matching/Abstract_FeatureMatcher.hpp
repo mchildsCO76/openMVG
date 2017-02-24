@@ -8,6 +8,7 @@
 
 #include <openMVG/types.hpp>
 #include <openMVG/vsslam/Frame.hpp>
+#include <openMVG/vsslam/VSSLAM_Data.hpp>
 
 namespace openMVG  {
 namespace VSSLAM  {

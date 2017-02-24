@@ -27,6 +27,8 @@
 
 #include <openMVG/vsslam/SLAM_Monocular.hpp>
 #include <openMVG/vsslam/Camera.hpp>
+#include <openMVG/vsslam/Frame.hpp>
+#include <openMVG/vsslam/VSSLAM_Data.hpp>
 #include "openMVG/types.hpp"
 
 

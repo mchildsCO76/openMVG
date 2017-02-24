@@ -960,8 +960,10 @@ namespace VSSLAM  {
 
       std::unique_ptr<MapLandmark> ml = std::unique_ptr<MapLandmark>(new MapLandmark());
       ml->X_ = pt_3D;
+      // Set all observations
       ml->obs_ = pt_cur_obs;
-      ml->obs_[mCurrentFrame->getFrameId()] = MapObservation(p_matches.first,mCurrentFrame.get());
+      ml->addObservation(mCurrentFrame.get(),p_matches.first);
+      // Mark this frame as the last frame that observed it
       ml->last_local_map_frame_id_ = mCurrentFrame->getFrameId();
       // Mark as new triangulated point
       ml->association_type_ = 4;

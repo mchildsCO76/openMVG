@@ -10,11 +10,10 @@
 #include <openMVG/sfm/sfm_data_BA.hpp>
 #include <openMVG/vsslam/VSSLAM_Data.hpp>
 #include <openMVG/vsslam/optimization/VSSLAM_data_BA.hpp>
-#include <openMVG/vsslam/Frame.hpp>
-
 #include <openMVG/numeric/numeric.h>
 #include <ceres/types.h>
 #include <ceres/cost_function.h>
+#include <openMVG/vsslam/Frame.hpp>
 
 using namespace openMVG;
 

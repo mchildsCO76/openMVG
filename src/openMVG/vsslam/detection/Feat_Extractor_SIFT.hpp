@@ -18,8 +18,8 @@
 #include "nonFree/sift/SIFT_describer.hpp"
 #include "openMVG/features/sift/SIFT_Anatomy_Image_Describer.hpp"
 
-#include <openMVG/vsslam/Frame.hpp>
 #include <openMVG/vsslam/detection/Abstract_FeatureExtractor.hpp>
+#include <openMVG/vsslam/Frame.hpp>
 
 namespace openMVG  {
 namespace VSSLAM  {

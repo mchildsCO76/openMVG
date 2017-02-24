@@ -10,7 +10,6 @@
 #include <memory>
 
 #include <openMVG/types.hpp>
-
 #include <openMVG/vsslam/Frame.hpp>
 #include <openMVG/vsslam/mapping/Cartographer.hpp>
 #include <openMVG/vsslam/tracking/MotionModel.hpp>

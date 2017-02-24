@@ -298,13 +298,12 @@ void Cartographer::addObservationsToLandmarks
     if (!map_point)
       continue;
 
-    MapObservation mo = MapObservation(feat_id, frame);
     // If landmark is already in global we add observation to the system
     // If landmark becomes valid with this observation we add it to global map
     if (map_point->isActive())
     {
       // Add observation to the landmark
-      map_point->obs_[frame_id] = mo;
+      map_point->addObservation(frame,feat_id);
       addObservationToIncSystem();
     }
     else if (map_point->isValidByConnectivityDegree(min_degree_connectivity))
@@ -313,7 +312,7 @@ void Cartographer::addObservationsToLandmarks
       map_point = addLandmarkFromLocalToGlobalMap(tmp_structure[map_point]);
 
       // Add observation to the landmark
-      map_point->obs_[frame_id] = mo;
+      map_point->addObservation(frame,feat_id);
       // Erase the point from local map
       tmp_structure.erase(map_point);
 
@@ -323,7 +322,7 @@ void Cartographer::addObservationsToLandmarks
     else
     {
       // Add observation to the landmark
-      map_point->obs_[frame_id] = mo;
+      map_point->addObservation(frame,feat_id);
       // Mark local landmark as seen
       map_point->setObsStep(step_id);
 

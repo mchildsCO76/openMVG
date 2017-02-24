@@ -10,8 +10,8 @@
 #include <openMVG/types.hpp>
 #include <numeric>
 
-#include <openMVG/vsslam/Frame.hpp>
 #include <openMVG/vsslam/detection/Abstract_FeatureExtractor.hpp>
+#include <openMVG/vsslam/Frame.hpp>
 
 namespace openMVG  {
 namespace VSSLAM  {

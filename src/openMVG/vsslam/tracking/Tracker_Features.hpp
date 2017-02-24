@@ -15,9 +15,9 @@
 
 #include <openMVG/sfm/sfm.hpp>
 
-#include <openMVG/vsslam/Frame.hpp>
 #include <openMVG/vsslam/tracking/Abstract_Tracker.hpp>
 #include <openMVG/vsslam/detection/Abstract_FeatureExtractor.hpp>
+#include <openMVG/vsslam/Frame.hpp>
 #include <openMVG/vsslam/matching/Abstract_FeatureMatcher.hpp>
 #include <openMVG/vsslam/tracking/PoseEstimation.hpp>
 

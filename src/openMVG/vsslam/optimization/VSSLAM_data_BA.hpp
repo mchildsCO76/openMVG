@@ -11,6 +11,7 @@
 #include <deque>
 #include <openMVG/sfm/sfm_data_BA.hpp>
 #include <openMVG/vsslam/VSSLAM_Data.hpp>
+#include <openMVG/vsslam/Frame.hpp>
 
 using namespace openMVG;
 
