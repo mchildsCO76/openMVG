@@ -1,5 +1,5 @@
 
-// Copyright (c) 2016 Klemen ISTENIC.
+// Copyright (c) 2017 Klemen ISTENIC.
 
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -7,9 +7,7 @@
 
 #pragma once
 
-
 #include "openMVG/cameras/cameras.hpp"
-#include "openMVG/geometry/Similarity3.hpp"
 #include "openMVG/types.hpp"
 
 using namespace openMVG;
@@ -31,7 +29,7 @@ enum MAP_CAMERA_TYPE
 };
 
 /// Define a collection of Pose (indexed by frame::frameId_)
-using MapFrames = Hash_Map<size_t, std::shared_ptr<Frame> >;
+using MapFrames = Hash_Map<IndexT, std::shared_ptr<Frame> >;
 
 /// Define a collection of IntrinsicParameter (indexed by id_intrinsic)
 using Intrinsics = Hash_Map<IndexT, cameras::IntrinsicBase *>;
@@ -40,15 +38,15 @@ using Intrinsics = Hash_Map<IndexT, cameras::IntrinsicBase *>;
 struct MapObservation
 {
   MapObservation()
-  : feat_id (std::numeric_limits<size_t>::max()),
+  : feat_id (UndefinedIndexT),
     frame_ptr(nullptr)
   {}
-  MapObservation(size_t f_id, Frame * frame, Vec2 const * pt = nullptr, void * d_ptr = nullptr)
+  MapObservation(IndexT f_id, Frame * frame)
   : feat_id (f_id),
     frame_ptr(frame)
   {}
 
-  size_t feat_id;
+  IndexT feat_id;
   Frame * frame_ptr;
 };
 /// Define a collection of observations of a landmark
@@ -58,17 +56,17 @@ using LandmarkObservations = Hash_Map<size_t, MapObservation>;
 struct MapLandmark
 {
   MapLandmark()
-  : id_(std::numeric_limits<size_t>::max()),
+  : id_(UndefinedIndexT),
     X_(-1,-1,-1),
     normal_(0,0,0),
     ref_frame_(nullptr),
     bestDesc_(nullptr),
     active_(false),
     last_obs_step_(0),
-    localMapFrameId_(std::numeric_limits<size_t>::max())
+    last_local_map_frame_id_(UndefinedIndexT)
    {}
 
-  size_t id_;
+  IndexT id_;
   Vec3 X_;
   Vec3 normal_; //mean unit vector of all viewing directions (ray that  join the point with optical center of keyframes that observe it)
   Frame * ref_frame_;
@@ -80,7 +78,10 @@ struct MapLandmark
   bool active_; // True if the point is in global map
 
   //Local Map  data
-  size_t localMapFrameId_;  // Id of frame for which the point was last added to local map
+  IndexT last_local_map_frame_id_;  // Id of frame for which the point was last added to local map
+
+  // 1 - initialization point; 2- motion model/reference kf; 3-map tracking point; 4- new triangulated point
+  size_t association_type_=0; // Through which tye of association the point was added
 
   const bool & isActive() const
   {
@@ -109,7 +110,7 @@ struct MapLandmark
     return true;
   }
 
-  bool hasFrameObservation(const size_t & frame_id)
+  bool hasFrameObservation(const IndexT & frame_id)
   {
     if (obs_.find(frame_id) != obs_.end())
       return true;
@@ -120,7 +121,7 @@ struct MapLandmark
 };
 
 /// Define a collection of Landmarks of the map (3D reconstructed points)
-using MapLandmarks = Hash_Map<size_t,std::unique_ptr<MapLandmark> >;
+using MapLandmarks = Hash_Map<IndexT,std::unique_ptr<MapLandmark> >;
 
 
 }

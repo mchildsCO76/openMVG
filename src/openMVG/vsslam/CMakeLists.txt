@@ -28,6 +28,8 @@ set_target_properties(openMVG_vsslam PROPERTIES SOVERSION ${OPENMVG_VERSION_MAJO
 install(TARGETS openMVG_vsslam DESTINATION lib EXPORT openMVG-targets)
 
 
+add_subdirectory(detection)
 add_subdirectory(mapping)
 add_subdirectory(optimization)
 add_subdirectory(tracking)
+add_subdirectory(matching)

@@ -14,12 +14,12 @@
 #include <openMVG/types.hpp>
 #include <openMVG/numeric/numeric.h>
 #include <openMVG/features/features.hpp>
-#include <openMVG/geometry/Similarity3.hpp>
 #include "openMVG/multiview/projection.hpp"
 #include <openMVG/cameras/cameras.hpp>
+#include "openMVG/matching/matcher_cascade_hashing.hpp"
+
 #include <openMVG/vsslam/VSSLAM_Data.hpp>
 #include <openMVG/vsslam/Camera.hpp>
-//#include <openMVG/vsslam/tracking/PoseEstimation.hpp>
 
 namespace openMVG  {
 namespace VSSLAM  {
@@ -35,23 +35,25 @@ class Frame : public std::enable_shared_from_this<Frame>
 {
 private:
   // Basic stats
-  size_t frame_id_;
+  IndexT frame_id_;
+
+  // Camera
+  Camera * cam_;
 
   // Is in the map -> Active
   bool active_;
 
-public:
-  // Camera
-  Camera * cam_;
-
-  /// Detected features
+  // Number of features detected
+  IndexT n_feats_ = 0;
+  // Detected features
   std::unique_ptr<features::Regions> regions_;
+
+public:
+
   // Covariance of each detection
   std::vector<Mat> pts_cov_;
   // Distorted/undistorted points - if camera is calibrated (for faster reading)
   std::vector<Vec2> pts_undist_;
-  // Number of features detected
-  size_t n_feats_ = 0;
 
   // Associated features with map points
   std::vector<MapLandmark *> map_points_; // NULL pointer means no association
@@ -72,16 +74,18 @@ public:
   Mat3 R_rc_;
   Mat3 R_cr_;
 
+  Vec3 O_w_; // Position of the camera in world coordinates
+
   double AC_reprojection_thresh_ = 0.0f;
   // Owner
-  size_t owner_frame_id_ = std::numeric_limits<size_t>::max(); // undefined
+  IndexT owner_frame_id_ = UndefinedIndexT; // undefined
   Frame * ref_frame_ = nullptr;
 
 
   Frame
   (
-    const size_t fId,
-    const size_t camId,
+    const IndexT fId,
+    const IndexT camId,
     Camera * cam
   ): frame_id_(fId), cam_(cam)
   {
@@ -111,11 +115,11 @@ public:
   {
     active_ = false;
   }
-  const size_t & getFrameId() const
+  const IndexT & getFrameId() const
   {
     return frame_id_;
   }
-  const size_t & getCamId() const
+  const IndexT & getCamId() const
   {
     return cam_->cam_id;
   }
@@ -130,17 +134,27 @@ public:
     return cam_->cam_intrinsic_ptr;
   }
 
-  const size_t & getNumberOfFeatures() const
+  const IndexT & getNumberOfFeatures() const
   {
     return n_feats_;
   }
 
-  Vec2 getFeaturePositionDetected(const size_t & i) const
+  features::Regions * getRegions() const
+  {
+    return regions_.get();
+  }
+
+  std::unique_ptr<features::Regions> & getRegionsRaw()
+  {
+    return regions_;
+  }
+
+  Vec2 getFeaturePositionDetected(const IndexT & i) const
   {
     return regions_->GetRegionPosition(i);
   }
 
-  const Vec2 & getFeaturePosition(const size_t & i) const
+  const Vec2 & getFeaturePosition(const IndexT & i) const
   {
     // If camera is calibrated we precalculate the undistorted points
     return pts_undist_[i];
@@ -168,7 +182,7 @@ public:
       #ifdef OPENMVG_USE_OPENMP
       #pragma omp parallel for
       #endif
-      for ( int i = 0; i < n_feats_; ++i )
+      for ( IndexT i = 0; i < n_feats_; ++i )
       {
         pts_undist_[i] = cam_->cam_intrinsic_->remove_disto(regions_->GetRegionPosition(i));
       }
@@ -178,36 +192,42 @@ public:
       #ifdef OPENMVG_USE_OPENMP
       #pragma omp parallel for
       #endif
-      for ( int i = 0; i < n_feats_; ++i )
+      for ( IndexT i = 0; i < n_feats_; ++i )
       {
         pts_undist_[i] = regions_->GetRegionPosition(i);
       }
     }
   }
 
+
   bool isPointInFrame(const Vec2 & pt) const
   {
     return cam_->isPointInImageBorders(pt);
   }
-
-
-
-
 
   void clearMapPoints()
   {
     map_points_ = std::vector<MapLandmark *>(n_feats_,static_cast<VSSLAM::MapLandmark *>(nullptr));
   }
 
-  void clearMapPoint(const size_t & m_i)
+  void clearMapPoint(const IndexT & p_i)
   {
-    map_points_[m_i] = static_cast<VSSLAM::MapLandmark *>(nullptr);
+    map_points_[p_i] = static_cast<VSSLAM::MapLandmark *>(nullptr);
   }
 
-  size_t getNumberMapPoints() const
+  void setMapPoint(const IndexT p_i, MapLandmark * ml)
   {
-    size_t n_matches = 0;
-    for (size_t i = 0; i<map_points_.size(); ++i)
+    if (ml && p_i < n_feats_)
+    {
+      map_points_[p_i] = ml;
+      ml->last_local_map_frame_id_ = frame_id_;
+    }
+  }
+
+  IndexT getNumberMapPoints() const
+  {
+    IndexT n_matches = 0;
+    for (IndexT i = 0; i<map_points_.size(); ++i)
     {
       if (map_points_[i])
         n_matches++;
@@ -215,7 +235,7 @@ public:
     return n_matches;
   }
 
-  double getSquaredReprojectionError(const Vec3 & pt_frame, const size_t feat_id) const
+  double getSquaredReprojectionError(const Vec3 & pt_frame, const IndexT feat_id) const
   {
     const Vec2 & obs_cur = pts_undist_[feat_id];
 
@@ -227,26 +247,6 @@ public:
     return (obs_cur - pt_cur).squaredNorm();
   }
 
-
-
-  // ----------------------
-  // -- Set pose: Transformation from r:reference {W} to c:current
-  // ----------------------
-  /*void setPose_cr(const geometry::Similarity3 & pose_sim)
-  {
-    // T = [ sR st ; 0 1]
-    T_cr_.block(0,0,3,3) = pose_sim.scale_ * pose_sim.pose_.rotation();
-    T_cr_.block(0,3,3,1) = pose_sim.scale_ * pose_sim.pose_.translation();
-    updateMatrices();
-  }
-  void setPose_cr(const geometry::Pose3 & pose)
-  {
-    // T = [ sR st ; 0 1]
-    T_cr_.block(0,0,3,3) = pose.rotation();
-    T_cr_.block(0,3,3,1) = pose.translation();
-    updateMatrices();
-  }
-*/
 
   void setPose_cr_T(const Mat4 & this_T_tmp_ref, Frame * tmp_ref = nullptr)
   {
@@ -316,6 +316,10 @@ public:
     }*/
   }
 
+  Vec3 getCameraCenter()
+  {
+    return O_w_;
+  }
 
   // ----------------------
   // -- Set reference frame:
@@ -325,19 +329,11 @@ public:
   {
     ref_frame_ = new_ref_frame;
   }
-/*
-  void setReferenceFrame_cr (Frame * new_ref_frame, const geometry::Similarity3 &pose_sim)
+  void setReferenceFrame_cr_T (Frame * new_ref_frame, const Mat4 &T)
   {
     ref_frame_ = new_ref_frame;
-    //
-    setPose_cr(pose_sim);
+    setPose_cr_T(T,new_ref_frame);
   }
-
-  void setReferenceFrame_cr (Frame * new_ref_frame, const geometry::Pose3 &pose)
-  {
-    ref_frame_ = new_ref_frame;
-    setPose_cr(pose);
-  }*/
 
   void setReferenceFrame_cr_Rts
   (
@@ -356,11 +352,17 @@ public:
   {
     // Transformation
     T_rc_ = T_cr_.inverse();
+    // Scale
+    double scale_cr = T_cr_.block(0,0,3,1).norm();
+    Vec3 t_cr = T_cr_.block(0,3,3,1)/scale_cr;
     // Rotation
-    double s = T_rc_.block(0,0,3,1).norm();
-    R_rc_ = T_rc_.block(0,0,3,3)/s;
-    s = T_cr_.block(0,0,3,1).norm();
-    R_cr_ = T_cr_.block(0,0,3,3)/s;
+    R_cr_ = T_cr_.block(0,0,3,3)/scale_cr;
+    R_rc_ = R_cr_.transpose();
+    // Camera center
+    if (ref_frame_ == nullptr)
+    {
+      O_w_ = - 1/scale_cr * R_rc_ * t_cr;
+    }
 
     // Projection (only useful if its calibrated camera otherwise it changes)
     if (getCamCalibrated())
@@ -410,6 +412,8 @@ public:
     return R_rc_;
   }
 
+
+
   // ----------------------
   // -- Covisibility stuff
   // ----------------------
@@ -424,6 +428,7 @@ public:
     {
       if (!map_point)
         continue;
+
       LandmarkObservations & map_obs = map_point->obs_;
 
       for (auto & obs: map_obs)
@@ -442,7 +447,7 @@ public:
     Frame * bestFrame = nullptr;
     size_t max_common_pts = 0;
 
-    std::vector<std::pair<size_t,Frame*> > vec_frames_pts;
+    std::vector<std::pair<IndexT,Frame*> > vec_frames_pts;
     vec_frames_pts.reserve(connected_frames_weight.size());
 
     for (auto m_iter : connected_frames_weight)
@@ -482,7 +487,6 @@ public:
     {
       ordered_connected_frames[i] = vec_frames_pts[n_frames-i-1].second;
       ordered_connected_frames_weights[i] = vec_frames_pts[n_frames-i-1].first;
-      //std::cout<<"FrameA "<<frame_id_<<" :: "<<ordered_connected_frames[i]->frame_id_<<" :: "<<ordered_connected_frames_weights[i]<<"\n";
     }
   }
 

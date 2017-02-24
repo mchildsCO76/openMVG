@@ -12,16 +12,12 @@
 #include "openMVG/multiview/solver_resection_p3p.hpp"
 #include "openMVG/multiview/solver_essential_kernel.hpp"
 #include "openMVG/multiview/solver_homography_kernel.hpp"
-#include <openMVG/vsslam/Camera.hpp>
-
 #include "openMVG/multiview/projection.hpp"
 #include "openMVG/multiview/triangulation.hpp"
-#include "openMVG/multiview/solver_resection_kernel.hpp"
-
 #include "openMVG/robust_estimation/robust_estimator_ACRansac.hpp"
 #include "openMVG/robust_estimation/robust_estimator_ACRansacKernelAdaptator.hpp"
-
 #include <openMVG/numeric/numeric.h>
+
 #include <openMVG/vsslam/Camera.hpp>
 
 
@@ -228,7 +224,6 @@ struct ResectionSquaredResidualError {
     const Mat & x2,
     const Mat3 & E,
     std::vector<size_t> & vec_inliers,
-    const size_t min_points,
     const double min_cos_angle_points,
     Mat3 & R,
     Vec3 & t
@@ -294,11 +289,6 @@ struct ResectionSquaredResidualError {
     }
     // Check the solution:
     const std::vector<size_t>::iterator iter_max = std::max_element(f.begin(), f.end());
-    if (*iter_max == 0 || *iter_max < min_points)
-    {
-      // There is no right solution with points in front of the cameras
-      return false;
-    }
 
     // Check that other solutions are not close to the best -> best has to be clear
     const size_t limit_similar = *iter_max * 0.7;
@@ -318,17 +308,16 @@ struct ResectionSquaredResidualError {
     return true;
   }
 
-  static bool estimateRobustRelativePoseHE
+  static bool estimateRobustRelativePosePinholeHE
   (
-    Frame * frame_1,
-    Frame * frame_2,
-    Hash_Map<size_t,size_t>  & putative_matches_1_2_idx,
+    const Frame * frame_1,
+    const Frame * frame_2,
+    const matching::IndMatches & vec_putative_matches_1_2_idx,
     const double min_cos_angle_init_points,
     const size_t min_init_triangulated_pts,
-    Mat3 & R,
-    Vec3 & t,
+    Mat4 & T,
     std::vector<size_t> & vec_inliers,
-    double & AC_threshold
+    double & AC_threshold_2
   )
   {
     // Max error in px for H/E to be considered an inlier
@@ -340,17 +329,15 @@ struct ResectionSquaredResidualError {
     // ----------------------------
     // Get camera info
     // ----------------------------
-    Camera * cam_1 = frame_1->cam_;
-    Camera * cam_2 = frame_2->cam_;
-    const Pinhole_Intrinsic * cam_intrinsic_1 = dynamic_cast<const Pinhole_Intrinsic*>(cam_1->cam_intrinsic_ptr);
-    const Pinhole_Intrinsic * cam_intrinsic_2 = dynamic_cast<const Pinhole_Intrinsic*>(cam_2->cam_intrinsic_ptr);
+    const Pinhole_Intrinsic * cam_intrinsic_1 = dynamic_cast<const Pinhole_Intrinsic*>(frame_1->getCameraIntrinsics());
+    const Pinhole_Intrinsic * cam_intrinsic_2 = dynamic_cast<const Pinhole_Intrinsic*>(frame_2->getCameraIntrinsics());
     const Mat & cam_1_K = cam_intrinsic_1->K();
     const std::pair<size_t,size_t> cam_1_img(cam_intrinsic_1->w(), cam_intrinsic_1->h());
     const std::pair<size_t,size_t> cam_2_img(cam_intrinsic_2->w(), cam_intrinsic_2->h());
     const Mat & cam_2_K = cam_intrinsic_2->K();
 
     // Try to estimate the H and F/E from mathces
-    const size_t n_putative_matches = putative_matches_1_2_idx.size();
+    const size_t n_putative_matches = vec_putative_matches_1_2_idx.size();
     Mat2X pt2D_frame1(2, n_putative_matches);
     Mat2X pt2D_frame2(2, n_putative_matches);
 
@@ -362,10 +349,10 @@ struct ResectionSquaredResidualError {
     #endif
     for (int m_i = 0; m_i < n_putative_matches; ++m_i)
     {
-      Hash_Map<size_t,size_t>::iterator m_iter = putative_matches_1_2_idx.begin();
+      matching::IndMatches::const_iterator m_iter = vec_putative_matches_1_2_idx.begin();
       std::advance(m_iter,m_i);
-      pt2D_frame1.col(m_i) = (cam_1->bCalibrated ? frame_1->getFeaturePosition(m_iter->first) : cam_intrinsic_1->remove_disto(frame_1->getFeaturePosition(m_iter->first))).cast<double>();
-      pt2D_frame2.col(m_i) = (cam_2->bCalibrated ? frame_2->getFeaturePosition(m_iter->second) : cam_intrinsic_2->remove_disto(frame_2->getFeaturePosition(m_iter->second))).cast<double>();
+      pt2D_frame1.col(m_i) = (frame_1->getCamCalibrated() ? frame_1->getFeaturePosition(m_iter->i_) : cam_intrinsic_1->remove_disto(frame_1->getFeaturePosition(m_iter->i_))).cast<double>();
+      pt2D_frame2.col(m_i) = (frame_2->getCamCalibrated() ? frame_2->getFeaturePosition(m_iter->j_) : cam_intrinsic_2->remove_disto(frame_2->getFeaturePosition(m_iter->j_))).cast<double>();
     }
 
     // ----------------------------
@@ -382,11 +369,9 @@ struct ResectionSquaredResidualError {
     if (bValid_H && vec_inliers_H.size() < min_init_triangulated_pts)
       bValid_H = false;
 
-    double stopTimeB = omp_get_wtime();
-    double secsElapsedB = stopTimeB - startTimeB; // that's all !
-    std::cout<<"Pose: Computing H ("<<secsElapsedB<<")\n";
+    std::cout<<"Pose: Computing H ("<<omp_get_wtime() - startTimeB<<"s)\n";
 
-    std::cout<<"Pose: H: "<<bValid_H<<" thresh:"<<infoACR_H.first<<" NFA: "<<infoACR_H.second<<" inliers: "<<vec_inliers_H.size()<<"\n";
+    std::cout<<"Pose: H: "<<bValid_H<<" thresh_2:"<<infoACR_H.first<<" NFA: "<<infoACR_H.second<<" inliers: "<<vec_inliers_H.size()<<"\n";
 
     // ----------------------------
     // Estimate  E
@@ -402,11 +387,9 @@ struct ResectionSquaredResidualError {
     if (bValid_E && vec_inliers_E.size() < min_init_triangulated_pts)
       bValid_E = false;
 
-    stopTimeB = omp_get_wtime();
-    secsElapsedB = stopTimeB - startTimeB; // that's all !
-    std::cout<<"Pose: Computing E ("<<secsElapsedB<<")\n";
+    std::cout<<"Pose: Computing E ("<<omp_get_wtime() - startTimeB<<"s)\n";
 
-    std::cout<<"Pose: E: "<<bValid_E<<" thresh:"<<infoACR_E.first<<" NFA: "<<infoACR_E.second<<" inliers: "<<vec_inliers_E.size()<<"\n";
+    std::cout<<"Pose: E: "<<bValid_E<<" thresh_2:"<<infoACR_E.first<<" NFA: "<<infoACR_E.second<<" inliers: "<<vec_inliers_E.size()<<"\n";
 
     // Check if either of models is ok
     if (!bValid_H && !bValid_E)
@@ -415,7 +398,6 @@ struct ResectionSquaredResidualError {
       std::cout<<"Pose: No models available - ABORT initialization and try with next frame\n";
       return false;
     }
-
 
     // ----------------------------
     // Estimate Rts
@@ -432,11 +414,22 @@ struct ResectionSquaredResidualError {
     {
       std::cout<<"Pose: Use E!\n";
       // Try to get the pose from Essential matrix
-      if (VSSLAM::estimate_Rt_from_E(cam_1_K, cam_1_K, pt2D_frame1, pt2D_frame2, E, vec_inliers_E, min_init_triangulated_pts, min_cos_angle_init_points, R, t))
+      Mat3 R;
+      Vec3 t;
+      double s;
+      if (VSSLAM::estimate_Rt_from_E(cam_1_K, cam_1_K, pt2D_frame1, pt2D_frame2, E, vec_inliers_E, min_cos_angle_init_points, R, t))
       {
+        if (vec_inliers_E.size() < min_init_triangulated_pts)
+        {
+          std::cout<<"Pose: Motion estimation failed (not enough inlier points) - ABORT initialization and try with next frame\n";
+          return false;
+        }
         vec_inliers = vec_inliers_E;
-        AC_threshold = infoACR_E.first;
-        std::cout<<"Pose: Motion estimated OK!\nR:"<<R<<"\nt:"<<t<<"\n";
+        AC_threshold_2 = infoACR_E.first;
+        s = 1.0;
+        T.block(0,0,3,3) = s * R;
+        T.block(0,3,3,1) = s * t;
+        T(3,3) = 1;
         return true;
       }
       else
@@ -445,11 +438,11 @@ struct ResectionSquaredResidualError {
       }
     }
   }
-
+/*
   static bool estimateRobustPose
   (
     Frame * frame,
-    Hash_Map<MapLandmark* ,size_t> & putative_matches_3D_ptr_cur_idx,
+    Hash_Map<MapLandmark* ,IndexT> & putative_matches_3D_ptr_cur_idx,
     const size_t min_points,
     Mat3 & R,
     Vec3 & t,
@@ -480,7 +473,7 @@ struct ResectionSquaredResidualError {
     #endif
     for (int m_i = 0; m_i < n_putative_matches; ++m_i)
     {
-      Hash_Map<MapLandmark*,size_t>::iterator m_iter = putative_matches_3D_ptr_cur_idx.begin();
+      Hash_Map<MapLandmark*,IndexT>::iterator m_iter = putative_matches_3D_ptr_cur_idx.begin();
       std::advance(m_iter,m_i);
       MapLandmark * map_point = m_iter->first;
 
@@ -518,42 +511,42 @@ struct ResectionSquaredResidualError {
      std::cout<<"Resection: failed!: "<<vec_inliers.size()<<"\n";
      return false;
 
-    /*//P3P
+    //P3P
     //--
     // Since K calibration matrix is known, compute only [R|t]
-    using KernelType =
-      openMVG::robust::ACKernelAdaptorResection_K<
-      openMVG::euclidean_resection::P3PSolver,
-        ResectionSquaredResidualError,
-        Mat34>;
+//    using KernelType =
+//      openMVG::robust::ACKernelAdaptorResection_K<
+//      openMVG::euclidean_resection::P3PSolver,
+//        ResectionSquaredResidualError,
+//        Mat34>;
+//
+//    KernelType kernel(pt2D_frame, pt3D_frame, cam_intrinsic->K());
+//    Mat34 P;
+//
+//    // Robust estimation of the Projection matrix and it's precision
+//    // Precision is squared distance to epipolar line
+//    const std::pair<double,double> ACRansacOut =
+//      openMVG::robust::ACRANSAC(kernel, vec_inliers,1024, &P, max_thresh_px_model*max_thresh_px_model, true);
+//    // Update the upper bound precision of the model found by AC-RANSAC
+//    AC_threshold = ACRansacOut.first*ACRansacOut.first;
+//
+//    std::cout<<"P3P inliers: "<<vec_inliers.size()<<"\n";
+//
+//    // Test if the mode support some points (more than those required for estimation)
+//    const bool bResection = (vec_inliers.size() > 2.5 * openMVG::euclidean_resection::P3PSolver::MINIMUM_SAMPLES);
+//
+//    if (bResection)
+//    {
+//      Mat3 K_t;
+//      KRt_From_P(P, &K_t, &R, &t);
+//      std::cout<<"Resection: K:"<<K_t<<" \n R:"<<R<<"\n t:"<<t<<"\n";
+//      return true;
+//    }
+//    std::cout<<"Resection: failed!: "<<vec_inliers.size()<<"\n";
+//    return false;
 
-    KernelType kernel(pt2D_frame, pt3D_frame, cam_intrinsic->K());
-    Mat34 P;
 
-    // Robust estimation of the Projection matrix and it's precision
-    // Precision is squared distance to epipolar line
-    const std::pair<double,double> ACRansacOut =
-      openMVG::robust::ACRANSAC(kernel, vec_inliers,1024, &P, max_thresh_px_model*max_thresh_px_model, true);
-    // Update the upper bound precision of the model found by AC-RANSAC
-    AC_threshold = ACRansacOut.first*ACRansacOut.first;
-
-    std::cout<<"P3P inliers: "<<vec_inliers.size()<<"\n";
-
-    // Test if the mode support some points (more than those required for estimation)
-    const bool bResection = (vec_inliers.size() > 2.5 * openMVG::euclidean_resection::P3PSolver::MINIMUM_SAMPLES);
-
-    if (bResection)
-    {
-      Mat3 K_t;
-      KRt_From_P(P, &K_t, &R, &t);
-      std::cout<<"Resection: K:"<<K_t<<" \n R:"<<R<<"\n t:"<<t<<"\n";
-      return true;
-    }
-    std::cout<<"Resection: failed!: "<<vec_inliers.size()<<"\n";
-    return false;
-    */
-
-}
+}*/
 
   // Find transformation between cameras cam_k and cam_ref: (cam_k)_T_(cam_ref)
 

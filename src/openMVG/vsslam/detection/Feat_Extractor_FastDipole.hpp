@@ -10,33 +10,25 @@
 #include <openMVG/types.hpp>
 #include <numeric>
 
-#include <memory>
-#include "openMVG/features/features.hpp"
-#include "openMVG/features/image_describer.hpp"
-#include "openMVG/image/image.hpp"
-
 #include <openMVG/vsslam/Frame.hpp>
-#include <openMVG/vsslam/tracking/Abstract_FeatureExtractor.hpp>
-#include "nonFree/sift/SIFT_describer.hpp"
-#include "openMVG/features/sift/SIFT_Anatomy_Image_Describer.hpp"
+#include <openMVG/vsslam/detection/Abstract_FeatureExtractor.hpp>
 
 namespace openMVG  {
 namespace VSSLAM  {
 
-class Feat_Extractor_SIFT : public Abstract_FeatureExtractor
+class Feat_Extractor_FastDipole : public Abstract_FeatureExtractor
 {
-  using RegionT = features::SIFT_Regions;
-  std::unique_ptr<features::Image_describer> image_describer;
+  using RegionT = features::FAST_Dipole_Regions;
+
 public:
-  Feat_Extractor_SIFT(): Abstract_FeatureExtractor()
+  Feat_Extractor_FastDipole() : Abstract_FeatureExtractor()
   {
-    //image_describer.reset(new features::SIFT_Image_describer
-    //  (features::SIFT_Image_describer::Params(), false));
+    max_dist_desc_ = 30;
+  };
 
-    image_describer.reset(
-      new features::SIFT_Anatomy_Image_describer(features::SIFT_Anatomy_Image_describer::Params()));
-
-    max_dist_desc_d2 = 200*200;
+  size_t getDescriptorLength() const override
+  {
+    return RegionT::DescriptorT::static_size;
   }
 
   // suggest new feature point for tracking (count point are kept)
@@ -49,13 +41,9 @@ public:
   ) const override
   {
     // Cast region
-    frame->regions_.reset(new RegionT);
-
-    image_describer->Describe(ima, frame->regions_, nullptr);
-
-//    RegionT * regionsCasted = dynamic_cast<RegionT*>(frame->regions_.get());
-    /*
-    RegionT * regionsCasted = dynamic_cast<RegionT*>(frame->regions_.get());
+    std::unique_ptr<features::Regions> & frame_regions = frame->getRegionsRaw();
+    frame_regions.reset(new RegionT);
+    RegionT * regionsCasted = dynamic_cast<RegionT*>(frame_regions.get());
 
     const std::vector<unsigned char> scores = {30, 20, 10, 5};
 
@@ -86,21 +74,21 @@ public:
       }
       feats.clear();
     }
-*/
+
     // Estimate the uncertainty of each feature detection
-    frame->pts_cov_.resize(frame->regions_->RegionCount());
+    frame->pts_cov_.resize(regionsCasted->Features().size());
     std::fill(frame->pts_cov_.begin(),frame->pts_cov_.end(), Eigen::Matrix2d::Identity());
     // Return number of detected features
-    return frame->regions_->RegionCount();
+    return regionsCasted->Features().size();
   }
 
   bool describe
   (
     const image::Image<unsigned char> & ima,
-    Frame * frame
-  ) override
+    const Frame * frame
+  ) const override
   {
-    /*RegionT * regionsCasted = dynamic_cast<RegionT *>(frame->regions_.get());
+    RegionT * regionsCasted = dynamic_cast<RegionT *>(frame->getRegions());
     RegionT::FeatsT & pts = regionsCasted->Features();
     RegionT::DescsT & descs = regionsCasted->Descriptors();
 
@@ -116,16 +104,15 @@ public:
       const Vec2f & pt_pos = pts[i].coords();
       features::PickASDipole(ima, pt_pos(0), pt_pos(1), 10.5f, 0.0f, descs[i].data());
     }
-    */
     return true;
   }
 
   void getDescriptorRaw
   (
     features::Regions * const regions,
-    const size_t i,
+    const IndexT i,
     void ** desc
-  ) override
+  ) const override
   {
     //RegionT * regionsCasted = dynamic_cast<RegionT*>(regions);
     *desc = (dynamic_cast<RegionT *>(regions)->Descriptors()[i].data());
@@ -135,7 +122,7 @@ public:
   (
       void * desc_A,
       void * desc_B
-  ) override
+  ) const override
   {
 
     openMVG::matching::L2_Vectorized<RegionT::DescriptorT::bin_type> metric;

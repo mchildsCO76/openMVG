@@ -22,13 +22,26 @@ class VSSLAM_Bundle_Adjustment
 {
   public:
     virtual ~VSSLAM_Bundle_Adjustment() = default;
-
+/*
     virtual bool OptimizePose
     (
       std::vector<Frame*> * vec_frames,
       Frame * frame_i,
-      Hash_Map<MapLandmark *,size_t> * matches_3D_ptr_cur_idx,
+      Hash_Map<MapLandmark *,IndexT> * matches_3D_pts_frame_i_idx,
       std::vector<std::unique_ptr<MapLandmark> > * vec_triangulated_pts
+    ) =0;*/
+    virtual bool OptimizePose
+    (
+      Frame * frame_i,
+      Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_i_idx
+    ) =0;
+
+    virtual bool OptimizeLocal
+    (
+      Hash_Map<Frame*, size_t> & tmp_frames,
+      Hash_Map<MapLandmark*, std::unique_ptr<MapLandmark> > & tmp_structure,
+      Frame * frame_i,
+      std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts
     ) =0;
 
 };

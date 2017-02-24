@@ -54,24 +54,29 @@ class VSSLAM_Bundle_Adjustment_Ceres : public VSSLAM_Bundle_Adjustment
     );
 
     VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options & ceres_options();
-/*
-    bool Adjust
-    (
-      // the SfM scene to refine
-      VSSLAM_Data & slam_data,
-      // tell which parameter needs to be adjusted
-      const sfm::Optimize_Options options,
-      const bool first_pose_fixed
-    ) override;
-*/
+
+    /*
     bool OptimizePose
     (
       std::vector<Frame*> * vec_frames,
       Frame * frame_i,
-      Hash_Map<MapLandmark *,size_t> * matches_3D_ptr_cur_idx,
+      Hash_Map<MapLandmark *,IndexT> * matches_3D_pts_frame_i_idx,
       std::vector<std::unique_ptr<MapLandmark> > * vec_triangulated_pts
     ) override;
+*/
+    bool OptimizePose
+    (
+      Frame * frame_i,
+      Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_i_idx
+    )override;
 
+    bool OptimizeLocal
+    (
+      Hash_Map<Frame*, size_t> & tmp_frames,
+      Hash_Map<MapLandmark*, std::unique_ptr<MapLandmark> > & tmp_structure,
+      Frame * frame_i,
+      std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts
+    )override;
 
 };
 

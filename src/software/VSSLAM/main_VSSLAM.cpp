@@ -17,11 +17,13 @@
 #include "openMVG/stl/split.hpp"
 
 // Tracker
-#include <openMVG/vsslam/tracking/Abstract_Tracker.hpp>
-#include <openMVG/vsslam/tracking/Abstract_FeatureExtractor.hpp>
 #include <openMVG/vsslam/tracking/Tracker_Features.hpp>
-#include <openMVG/vsslam/tracking/Feat_Extractor_FastDipole.hpp>
-#include <openMVG/vsslam/tracking/Feat_Extractor_SIFT.hpp>
+
+#include <openMVG/vsslam/detection/Feat_Extractor_FastDipole.hpp>
+#include <openMVG/vsslam/detection/Feat_Extractor_SIFT.hpp>
+
+#include <openMVG/vsslam/matching/Feat_Matcher_Basic.hpp>
+#include <openMVG/vsslam/matching/Feat_Matcher_CascadeHashing.hpp>
 
 #include <openMVG/vsslam/SLAM_Monocular.hpp>
 #include <openMVG/vsslam/Camera.hpp>
@@ -181,15 +183,26 @@ int main(int argc, char **argv)
   // Tracker and Feature detector/matcher interface
   std::unique_ptr<Abstract_Tracker> tracker_ptr;
   std::unique_ptr<Abstract_FeatureExtractor> feat_extractor_ptr;
+  std::unique_ptr<Abstract_FeatureMatcher> feat_matcher_ptr;
+  //feat_matcher_ptr.reset(new Feat_Matcher_Basic());
 
   switch (uTracker)
   {
     case 0:
       // Set Fast Dipole feature detector/descriptor
-      feat_extractor_ptr.reset(new Feat_Extractor_FastDipole());
-      //feat_extractor_ptr.reset(new Feat_Extractor_SIFT());
-      // Set new feature tracker
-      tracker_ptr.reset(new Tracker_Features(feat_extractor_ptr.get(),maxTrackedFeatures));
+      //feat_extractor_ptr.reset(new Feat_Extractor_FastDipole());
+      feat_extractor_ptr.reset(new Feat_Extractor_SIFT());
+      feat_matcher_ptr.reset(new Feat_Matcher_Basic());
+      //feat_matcher_ptr.reset(new Feat_Matcher_CascadeHashing(feat_extractor_ptr.get()));
+
+      tracker_ptr.reset(new Tracker_Features(feat_extractor_ptr.get(),feat_matcher_ptr.get(),maxTrackedFeatures));
+      break;
+    case 1:
+      feat_extractor_ptr.reset(new Feat_Extractor_SIFT());
+      feat_matcher_ptr.reset(new Feat_Matcher_CascadeHashing(feat_extractor_ptr.get()));
+      //feat_matcher_ptr.reset(new Feat_Matcher_Basic());
+      tracker_ptr.reset(new Tracker_Features(feat_extractor_ptr.get(),feat_matcher_ptr.get(),maxTrackedFeatures));
+      break;
     break;
     default:
     std::cerr << "Unknow tracking method" << std::endl;
@@ -243,8 +256,8 @@ int main(int argc, char **argv)
   // -- FRAME BY FRAME processing
   // -----------------
 
-  size_t frameId = 0;
-  size_t camId = 0;
+  IndexT frameId = 0;
+  IndexT camId = 0;
   for (std::vector<std::string>::const_iterator iterFile = vec_image.begin();
     iterFile != vec_image.end(); ++iterFile, ++frameId)
   {
@@ -293,77 +306,103 @@ int main(int argc, char **argv)
       // do stuff
       monocular_slam.nextFrame(currentImage, frameId, camId);
 
-      double stopTime = omp_get_wtime();
-      double secsElapsed = stopTime - startTime; // that's all !
-      std::cout<<"MonocularSLAM time:"<<secsElapsed<<"\n";
+      std::cout<<"MonocularSLAM time:"<<omp_get_wtime() - startTime<<"\n";
 
       Tracker_Features * tr = dynamic_cast<Tracker_Features*>(monocular_slam.tracker_);
 
       Frame * current_frame = tr->mPrevFrame.get();
-      for (features::PointFeature pts : current_frame->regions_->GetRegionsPositions())
-      {
-        glBegin(GL_POINTS);
-        glColor3f(1.f, 1.f, 0.f); // Yellow
-
-          glVertex2f(pts.x(), pts.y());
-        glEnd();
-
-      }
-
-std::cout<<"DISPLAY: "<< std::dec<<tr->mPrevFrame->getFrameId()<<"\n";
-
 
       //--
       // Draw feature trajectories
       //--
 
-      size_t frame_id = tr->mPrevFrame->getFrameId();
-      size_t min_frame_id = frame_id<5 ? 0 : frame_id-5;
+      IndexT frame_id = tr->mPrevFrame->getFrameId();
+      IndexT min_frame_id = frame_id<5 ? 0 : frame_id-5;
 
       glColor3f(0.f, 1.f, 0.f);
       glLineWidth(2.f);
 
       if( monocular_slam.tracker_->getTrackingStatus() == Abstract_Tracker::TRACKING_STATUS::OK)
       {
-        std::cout<<"AA\n";
+        //std::cout<<"AA\n";
         size_t nn = 0;
         Frame * current_frame = tr->mPrevFrame.get();
+
+
+        //std::cout<<"AA2\n";
         for (MapLandmark * map_point : current_frame->map_points_)
         {
           if (!map_point)
             continue;
-          if (!map_point->isActive())
-            continue;
 
+          //std::cout<<"AA3\n";
           LandmarkObservations & map_obs = map_point->obs_;
 
+          //std::cout<<"AA31\n";
+
           glBegin(GL_LINE_STRIP);
-          switch(map_obs.size())
-          {
-          case 2:
+
+
+          // Show points with color as degree of connection
+/*
+          //std::cout<<"AA4\n";
+          if (!map_point->isActive()){
+
             glColor3f(1.f, 0.f, 0.f);
-            break;
-          case 3:
-            glColor3f(1.f, 1.f, 0.f);
-            break;
-          case 4:
-            glColor3f(0.f, 1.f, 1.f);
-            break;
-          default:
-            glColor3f(0.f, 1.f, 0.f);
-            break;
           }
-          /*
-          if (map_obs.size()==2 && map_obs.find(tr->mPrevFrame->getFrameId())!=map_obs.end())
-            glColor3f(0.f, 1.f, 1.f);
-          else
-            glColor3f(0.f, 1.f, 0.f);
-          */
+          else{
+            switch(map_obs.size())
+            {
+              case 2:
+                glColor3f(1.f, 0.f, 0.f);
+                break;
+              case 3:
+                glColor3f(1.f, 1.f, 0.f);
+                break;
+              case 4:
+                glColor3f(0.f, 1.f, 1.f);
+                break;
+              default:
+                glColor3f(0.f, 1.f, 0.f);
+                break;
+            }
+          }
+*/
+          // How points are associated with current frame
+
+
+          switch(map_point->association_type_)
+          {
+            case 1:
+              // Initialization point - red
+              glColor3f(1.f, 0.f, 0.f);
+              break;
+            case 2:
+              // Motion tracking / reference kf - green
+              glColor3f(0.f, 1.f, 0.f);
+              break;
+            case 3:
+              // Map tracking - light blue
+              glColor3f(0.f, 1.f, 1.f);
+              break;
+            case 4:
+              // New triangulation - blue
+              glColor3f(0.f, 0.f, 1.f);
+              break;
+            default:
+              glColor3f(0.f, 0.f, 0.f);
+              break;
+          }
+
+
+
+
+          //std::cout<<"AA3\n";
+
           for(auto obs : map_obs)
           {
             const Vec2 & p0 = (obs.second.frame_ptr->getFeaturePositionDetected(obs.second.feat_id));
             glVertex2f(p0.x(), p0.y());
-
           }
           glEnd();
           nn++;
@@ -371,6 +410,16 @@ std::cout<<"DISPLAY: "<< std::dec<<tr->mPrevFrame->getFrameId()<<"\n";
 
         }
         std::cout<<"BB: "<<nn<<"\n";
+
+      }
+      for (features::PointFeature pts : current_frame->getRegions()->GetRegionsPositions())
+      {
+        glPointSize(4.0f);
+        glBegin(GL_POINTS);
+        glColor3f(1.f, 1.f, 1.f); // Yellow
+
+          glVertex2f(pts.x(), pts.y());
+        glEnd();
 
       }
 /*

@@ -9,8 +9,9 @@
 #include <iostream>
 #include <memory>
 
-#include <openMVG/vsslam/Frame.hpp>
 #include <openMVG/types.hpp>
+
+#include <openMVG/vsslam/Frame.hpp>
 #include <openMVG/vsslam/mapping/Cartographer.hpp>
 #include <openMVG/vsslam/tracking/MotionModel.hpp>
 
@@ -55,8 +56,6 @@ public:
   std::shared_ptr<Frame> mLastRefFrame;
   std::shared_ptr<Frame> mPrevFrame;
   std::shared_ptr<Frame> mCurrentFrame;
-
-
 
   // ---------------
   // Methods

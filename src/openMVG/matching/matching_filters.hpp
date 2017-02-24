@@ -45,6 +45,7 @@ inline void NNdistanceRatio
   std::vector<int> & vec_ratioOkIndex, // output (index that respect NN dist Ratio)
   float fratio = 0.6f) // ratio value
 {
+  std::cout<<"FRATIO: "<<fratio<<"\n";
   assert( NN >= 2);
 
   const size_t n = std::distance(first,last);

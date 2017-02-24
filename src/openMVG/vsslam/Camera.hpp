@@ -7,10 +7,10 @@
 
 #pragma once
 
-#include <openMVG/cameras/cameras.hpp>
 #include <iostream>
 #include <memory>
 #include "openMVG/image/image.hpp"
+#include <openMVG/cameras/cameras.hpp>
 
 
 namespace openMVG  {
@@ -68,7 +68,7 @@ struct CameraParams
 class Camera : public std::enable_shared_from_this<Camera>
 {
 public:
-  size_t cam_id;
+  IndexT cam_id;
   std::shared_ptr<IntrinsicBase> cam_intrinsic_;
   std::shared_ptr<IntrinsicBase> cam_intrinsic_undist;
   IntrinsicBase * cam_intrinsic_ptr = nullptr; // Pointitng to the camera that should be used in processing (distorted/undistorted)

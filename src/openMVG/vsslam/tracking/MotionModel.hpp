@@ -7,8 +7,6 @@
 
 #pragma once
 
-#include <openMVG/geometry/Similarity3.hpp>
-
 namespace openMVG  {
 namespace VSSLAM  {
 
@@ -26,7 +24,6 @@ using namespace openMVG::geometry;
     }
     void updateMotionModel(Frame * prev_frame, Frame * cur_frame)
     {
-      std::cout<<"MotionModel: Update\n";
       // TODO: Check how to calculate if we have relative cameras
       // TODO: Compensate for time difference between frames
       velocity_ = cur_frame->getTransformationMatrix_cr()*prev_frame->getTransformationMatrix_rc();
@@ -36,7 +33,6 @@ using namespace openMVG::geometry;
 
     Mat4 predictLocation(Frame * prev_frame, Frame * cur_frame)
     {
-      std::cout<<"MotionModel: Predict\n";
       // TODO: Check how to predict if we have relative cameras model
       return velocity_ * prev_frame->getTransformationMatrix_cr();
     }

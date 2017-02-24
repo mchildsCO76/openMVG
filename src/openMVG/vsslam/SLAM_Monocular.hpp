@@ -13,10 +13,12 @@
 #include <openMVG/numeric/numeric.h>
 #include <openMVG/vsslam/Camera.hpp>
 #include <openMVG/vsslam/Frame.hpp>
-#include <openMVG/vsslam/tracking/Abstract_Tracker.hpp>
-#include <openMVG/vsslam/tracking/Abstract_FeatureExtractor.hpp>
+
 #include <openMVG/vsslam/VSSLAM_Data.hpp>
+#include <openMVG/vsslam/tracking/Abstract_Tracker.hpp>
+#include <openMVG/vsslam/detection/Abstract_FeatureExtractor.hpp>
 #include <openMVG/vsslam/mapping/Cartographer.hpp>
+
 #include <deque>
 #include <set>
 
@@ -36,7 +38,7 @@ struct SLAM_Monocular
   std::shared_ptr<Frame> current_frame;
 
   // Camera
-  Hash_Map<size_t, std::shared_ptr<Camera> > cameras;
+  Hash_Map<IndexT, std::shared_ptr<Camera> > cameras;
   //IntrinsicBase * cam_intrinsic_;
 
   // Tracking
@@ -52,6 +54,7 @@ struct SLAM_Monocular
   : tracker_(tracker)
   {
     cartographer_ = std::make_shared<Cartographer>();
+    cartographer_->setCeresLocalBA();
     if (tracker_)
     {
       tracker_->setCartographer(cartographer_.get());
@@ -133,8 +136,8 @@ struct SLAM_Monocular
   bool nextFrame
   (
     const image::Image<unsigned char> & ima,
-    const size_t frameId,
-    const size_t camId
+    const IndexT frameId,
+    const IndexT camId
   )
   {
     std::cout<<"Frame "<<frameId<<"\n";

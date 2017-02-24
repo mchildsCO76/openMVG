@@ -20,9 +20,10 @@
 #include <openMVG/vsslam/optimization/VSSLAM_data_BA.hpp>
 #include <openMVG/vsslam/optimization/VSSLAM_data_BA_ceres.hpp>
 #include <openMVG/vsslam/tracking/PoseEstimation.hpp>
-#include <openMVG/vsslam/tracking/Abstract_FeatureExtractor.hpp>
+#include <openMVG/vsslam/detection/Abstract_FeatureExtractor.hpp>
 #include <deque>
 
+#include <openMVG/sfm/sfm.hpp>
 
 #include <ceres/types.h>
 #include <ceres/cost_function.h>
@@ -36,15 +37,14 @@ namespace VSSLAM  {
 class Cartographer
 {
   private:
-    // Counter of insertions
-    size_t step_id=0;
 
     // Optimization object
-    std::shared_ptr<VSSLAM_Bundle_Adjustment> BA_obj;
+    std::unique_ptr<VSSLAM_Bundle_Adjustment> BA_obj;
+    std::unique_ptr<VSSLAM_Bundle_Adjustment> local_BA_obj;
 
     // Map parameters
     size_t min_obs_per_landmark = 3;
-    size_t min_landmark_per_frame = 3;
+    size_t min_landmark_per_frame = 20;
     size_t init_min_map_pts = 30;
     size_t max_frames_inactive_local_landmark = 5;
 
@@ -69,18 +69,22 @@ class Cartographer
     Intrinsics cam_intrinsics;
 
     // Keep track of used landmarkIds
-    size_t next_free_landmark_id = 0;
+    IndexT next_free_landmark_id = 0;
 
     // ---------------------
     // -- Local map
     // ---------------------
     Hash_Map<MapLandmark*, std::unique_ptr<MapLandmark> > tmp_structure;
-
+    Hash_Map<Frame*, size_t> tmp_frames;
+IndexT local_p_id = 0;
     // Feature extractor used
     Abstract_FeatureExtractor * feature_extractor_ = nullptr;;
 
   public:
+    // Counter of insertions
+    size_t step_id=0;
     Cartographer();
+
 
     void setFeatureExtractor(Abstract_FeatureExtractor * f_extractor)
      {
@@ -97,6 +101,44 @@ class Cartographer
     {
       return map_camera_type;
     }
+
+    void setCeresLocalBA()
+    {
+      VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options options(true, true);
+      options.linear_solver_type_ = ceres::DENSE_SCHUR;
+      local_BA_obj = std::unique_ptr<VSSLAM_Bundle_Adjustment>(new VSSLAM_Bundle_Adjustment_Ceres(options));
+    }
+
+    bool optimizePose
+    (
+      Frame * frame_i,
+      Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_i_idx
+    )
+    {
+      return local_BA_obj->OptimizePose(frame_i, matches_3D_pts_frame_i_idx);
+    }
+
+    bool optimizeLocal
+    (
+      Frame * frame_i,
+      std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts
+    )
+    {
+      return local_BA_obj->OptimizeLocal(tmp_frames, tmp_structure, frame_i, vec_triangulated_pts);
+    }
+
+    /*
+    bool optimizeLocal
+    (
+      std::vector<Frame*> * vec_frames,
+      Frame * frame_i,
+      Hash_Map<MapLandmark *,IndexT> * matches_3D_ptr_cur_idx,
+      std::vector<std::unique_ptr<MapLandmark> > * vec_triangulated_pts
+    )
+    {
+      tmp_frames, tmp_structure, frame_i,
+      return local_BA_obj->OptimizePose(vec_frames,frame_i, matches_3D_ptr_cur_idx, vec_triangulated_pts);
+    }*/
 
     // ------------------------------
     // -- Set basic map parameters
@@ -190,7 +232,7 @@ class Cartographer
     // ------------------------------
     // -- Landmark manipulation
     // ------------------------------
-    size_t getNextFreeLandmarkId()
+    IndexT getNextFreeLandmarkId()
     {
       return next_free_landmark_id++;
     }
@@ -224,10 +266,16 @@ class Cartographer
 
     Mat34 getCameraProjectionMatrix(Frame * frame, Frame * frame_ref);
 
+    void verifyLocalLandmarks(Frame *);
+    void decreaseLocalFrameCount(Frame * frame);
+    void increaseLocalFrameCount(Frame * frame);
 
 
-
-
+    bool exportSceneToPly
+    (
+      const std::string & filename,
+      sfm::ESfM_Data flags_part
+    );
 
 
 

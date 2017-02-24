@@ -15,7 +15,8 @@ namespace VSSLAM  {
 class Abstract_FeatureExtractor
 {
 public:
-  float max_dist_desc_d2;
+  float max_dist_desc_;
+  using RegionT = features::SIFT_Regions;
 
   virtual ~Abstract_FeatureExtractor(){};
 
@@ -26,29 +27,25 @@ public:
     const size_t min_count,
     const size_t max_count
   ) const = 0;
-/*
-  virtual bool resize
-  (
-    features::Regions * regions,
-    size_t n_elements
-  )=0;*/
+
   virtual bool describe
   (
     const image::Image<unsigned char> & ima,
-    Frame * frame
-  )=0;
+    const Frame * frame
+  ) const =0;
 
+  virtual size_t getDescriptorLength() const =0;
   virtual void getDescriptorRaw
   (
     features::Regions * const regions,
-    const size_t i,
+    const IndexT i,
     void ** desc
-  ) =0;
+  ) const =0;
   virtual double SquaredDescriptorDistance
   (
     void * desc_A,
     void * desc_B
-  ) =0;
+  ) const =0;
 
 };
 
