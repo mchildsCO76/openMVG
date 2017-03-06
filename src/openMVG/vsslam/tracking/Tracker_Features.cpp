@@ -503,7 +503,7 @@ namespace VSSLAM  {
     // -- Match by projecting triangulated points from prev frame to current frame
     // -------------------
     double start_time = omp_get_wtime();
-    featureMatcher_->matching_Projection_3D_2D(featureExtractor_, mPrevFrame->map_points_, mCurrentFrame.get(), map_putative_matches_3D_ptr_cur_idx, track_mm_win_size, track_match_desc_ratio, featureExtractor_->max_dist_desc_);
+    featureMatcher_->matching_Projection_3D_2D(featureExtractor_, mCurrentFrame.get(), mPrevFrame->map_points_, map_putative_matches_3D_ptr_cur_idx, track_mm_win_size, track_match_desc_ratio, featureExtractor_->max_dist_desc_);
     std::cout<<"Tracker: [Match Projection 3D-2D - Test 1] ("<<omp_get_wtime() - start_time<<" s)\n";
 
     // If not enough matches we try again with wider search window
@@ -513,7 +513,7 @@ namespace VSSLAM  {
 
       // Double search window for searching by projection
       start_time = omp_get_wtime();
-      featureMatcher_->matching_Projection_3D_2D(featureExtractor_, mPrevFrame->map_points_, mCurrentFrame.get(), map_putative_matches_3D_ptr_cur_idx, track_mm_win_size*4, track_match_desc_ratio, featureExtractor_->max_dist_desc_);
+      featureMatcher_->matching_Projection_3D_2D(featureExtractor_, mCurrentFrame.get(), mPrevFrame->map_points_, map_putative_matches_3D_ptr_cur_idx, track_mm_win_size*4, track_match_desc_ratio, featureExtractor_->max_dist_desc_);
 
       std::cout<<"Tracker: [Match Projection 3D-2D - Test 2] ("<<omp_get_wtime() - start_time<<" s)\n";
 
@@ -762,7 +762,7 @@ namespace VSSLAM  {
     Hash_Map<MapLandmark *,IndexT> map_putative_matches_3D_pts_frame_idx;
 
     start_time = omp_get_wtime();
-    featureMatcher_->matching_Projection_3D_2D(featureExtractor_, local_map_points, mCurrentFrame.get(), map_putative_matches_3D_pts_frame_idx, track_local_map_win_size, track_match_desc_ratio, featureExtractor_->max_dist_desc_);
+    featureMatcher_->matching_Projection_3D_2D(featureExtractor_, mCurrentFrame.get(), local_map_points, map_putative_matches_3D_pts_frame_idx, track_local_map_win_size, track_match_desc_ratio, featureExtractor_->max_dist_desc_);
     std::cout<<"Tracker: [Match Projection 3D-2D] ("<<omp_get_wtime() - start_time<<" s)\n";
 
     std::cout<<"Tracker: Matches with local map: "<<map_putative_matches_3D_pts_frame_idx.size()<<"\n";
@@ -807,7 +807,7 @@ namespace VSSLAM  {
       // Compute fundamental matrix between F_current and F_neigh
       Mat3 F_l_c; // p_local' F_cn p_cur
       computeFundamentalMatrix(mCurrentFrame.get(),local_frame_i,F_l_c);
-      featureMatcher_->matching_EpipolarLine_2D_2D(featureExtractor_, mCurrentFrame.get(), local_frame_i, F_l_c, vec_neighbor_matches_cur_local[f_i],track_epipolar_d2, track_epipolar_desc_ratio);
+      featureMatcher_->matching_EpipolarLine_2D_2D(featureExtractor_, mCurrentFrame.get(), local_frame_i, F_l_c, vec_neighbor_matches_cur_local[f_i],track_epipolar_dist, track_epipolar_desc_ratio);
       std::cout<<"Tracker: EPI match: "<<mCurrentFrame->getFrameId()<<" :: "<<local_frame_i->getFrameId()<<" :: "<<vec_neighbor_matches_cur_local[f_i].size()<<"\n";
     }
 
@@ -975,61 +975,7 @@ namespace VSSLAM  {
 
     std::cout<<"Tracker: [New Pts triangulated] ("<<omp_get_wtime() - start_time<<" s)\n";
   }
-/*
-  void Tracker_Features::removeOutliersInLocalFrames()
-  {
-    // Go through local frames and check the ones which are not fixed
-    for (auto & it_landmark : tmp_structure)
-    {
-      Frame * frame_i = it_frame.first;
 
-      // -------------------
-      // -- Determine which of the points are outliers and remove them
-      // -------------------
-      const IndexT & frame_i_id = frame_i->getFrameId();
-      IntrinsicBase * cam_i_intrinsic = frame_i->getCameraIntrinsics();
-      const double & frame_i_reproj_error = frame_i->AC_reprojection_thresh_;
-
-      std::vector<MapLandmark*> & frame_i_3D_pts = frame_i->map_points_;
-
-      #ifdef OPENMVG_USE_OPENMP
-      #pragma omp parallel for schedule(dynamic)
-      #endif
-      for (size_t pm_i = 0; pm_i < frame_i_3D_pts.size(); ++pm_i)
-      {
-        // Get Landmark data
-        MapLandmark * & map_point = frame_i_3D_pts[pm_i];
-        if (!map_point)
-          continue;
-
-        Vec3 pt_3D_frame_i;
-        getRelativePointPosition(map_point->X_,map_point->ref_frame_,pt_3D_frame_i,frame_i);
-
-        // Check that the point is infront of the camera
-        if (pt_3D_frame_i(2) <= 0)
-        {
-          // Mark as not matched
-          frame_i_3D_pts[pm_i] = nullptr;
-          continue;
-        }
-
-        // Get the observation
-        const Vec2 & pt_frame_i = frame_i->getFeaturePosition(pm_i);
-
-        // Compute residual error in current frame
-        // We add distortion to 3D points if we have it
-        const Vec2 pt_3D_frame_i_projected = cam_i_intrinsic->cam2ima(cam_i_intrinsic->have_disto()?cam_i_intrinsic->add_disto(pt_3D_frame_i.hnormalized()):pt_3D_frame_i.hnormalized());
-
-        // Keep if in reprojection threshold
-        if ((pt_frame_i - pt_3D_frame_i_projected).squaredNorm() > frame_i_reproj_error)
-        {
-          // Mark as not matched
-          frame_i_3D_pts[pm_i] = nullptr;
-        }
-      }
-    }
-  }
-*/
   void Tracker_Features::removeOutliersInNewTriangulatedPoints(std::vector<std::unique_ptr<MapLandmark> > & vec_putative_new_pts_3D)
   {
     // Check newly triangulated points if they have at least two inliers

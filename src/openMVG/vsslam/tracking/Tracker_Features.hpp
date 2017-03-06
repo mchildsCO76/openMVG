@@ -51,10 +51,10 @@ private:
   float track_match_desc_ratio = 0.8;
   float track_epipolar_desc_ratio = 0.6;
 
-  float track_mm_win_size = 10*10;
-  float track_rf_win_size = 15*15;
-  float track_local_map_win_size = 10*10;
-  float track_epipolar_d2 = 16;
+  float track_mm_win_size = 15;
+  float track_rf_win_size = 15;
+  float track_local_map_win_size = 10;
+  float track_epipolar_dist = 4;
 
   // ---------------
   // Tracking settings

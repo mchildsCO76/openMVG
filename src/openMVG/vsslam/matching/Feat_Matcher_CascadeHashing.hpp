@@ -206,79 +206,6 @@ public:
   }
 
 
-  void computeZeroMeanDescriptior
-  (
-    Frame * frame_1,
-    Frame * frame_2,
-    Eigen::VectorXf & zero_mean_descriptor
-  )
-  {
-    // Compute the zero mean descriptor that will be used for hashing (one for all the image regions)
-
-    features::Regions * frame_1_regions = frame_1->getRegions();
-    features::Regions * frame_2_regions = frame_2->getRegions();
-
-    const size_t dimension = frame_1_regions->DescriptorLength();
-    Eigen::MatrixXf matForZeroMean(2,dimension);
-
-    if (frame_1_regions->Type_id() == typeid(float).name())
-    {
-      if (frame_1->getNumberOfFeatures()>0)
-      {
-        const float * tab_1 = reinterpret_cast<const float *>(frame_1->getRegionsRaw()->DescriptorRawData());
-        Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> > mat_1( (float*)tab_1, frame_1->getNumberOfFeatures(), frame_1_regions->DescriptorLength());
-        matForZeroMean.row(0) = matching::CascadeHasher::GetZeroMeanDescriptor(mat_1);
-      }
-
-      if (frame_2->getNumberOfFeatures()>0)
-      {
-        const float * tab_2 = reinterpret_cast<const float *>(frame_2->getRegionsRaw()->DescriptorRawData());
-        Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> > mat_2( (float*)tab_2, frame_2->getNumberOfFeatures(), frame_2_regions->DescriptorLength());
-        matForZeroMean.row(1) = matching::CascadeHasher::GetZeroMeanDescriptor(mat_2);
-      }
-    }
-    else if (frame_1_regions->Type_id() == typeid(double).name())
-    {
-      if (frame_1->getNumberOfFeatures()>0)
-      {
-        const double * tab_1 = reinterpret_cast<const double *>(frame_1->getRegionsRaw()->DescriptorRawData());
-        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> > mat_1( (double*)tab_1, frame_1->getNumberOfFeatures(), frame_1_regions->DescriptorLength());
-        matForZeroMean.row(0) = matching::CascadeHasher::GetZeroMeanDescriptor(mat_1);
-      }
-
-      if (frame_2->getNumberOfFeatures()>0)
-      {
-        const double * tab_2 = reinterpret_cast<const double *>(frame_2->getRegionsRaw()->DescriptorRawData());
-        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> > mat_2( (double*)tab_2, frame_2->getNumberOfFeatures(), frame_2_regions->DescriptorLength());
-        matForZeroMean.row(1) = matching::CascadeHasher::GetZeroMeanDescriptor(mat_2);
-      }
-    }
-
-    zero_mean_descriptor = matching::CascadeHasher::GetZeroMeanDescriptor(matForZeroMean);
-  }
-
-  void computeHashedDescriptors
-  (
-    Frame * frame,
-    Eigen::VectorXf & zero_mean_descriptor,
-    matching::HashedDescriptions & hashed_descriptors
-  )
-  {
-    features::Regions *  frame_regions = frame->getRegions();
-    if (frame_regions->Type_id() == typeid(float).name())
-    {
-      const float * tabI = reinterpret_cast<const float *>(frame->getRegionsRaw()->DescriptorRawData());
-      Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> > mat_I( (float*)tabI, frame->getNumberOfFeatures(), frame_regions->DescriptorLength());
-      hashed_descriptors = cascade_hasher_.CreateHashedDescriptions(mat_I,zero_mean_descriptor);
-    }
-    else if (frame_regions->Type_id() == typeid(double).name())
-    {
-      const double * tabI = reinterpret_cast<const double *>(frame->getRegionsRaw()->DescriptorRawData());
-      Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> > mat_I( (double*)tabI, frame->getNumberOfFeatures(), frame_regions->DescriptorLength());
-      hashed_descriptors = cascade_hasher_.CreateHashedDescriptions(mat_I,zero_mean_descriptor);
-    }
-  }
-
   // Match two sets of features by:
   //   for each feature in F_1:
   //     compare descriptors only of features in F_2
@@ -361,7 +288,7 @@ public:
       // Check for the best and second best match
       IndexT best_idx = UndefinedIndexT;
       IndexT second_best_idx = UndefinedIndexT;
-      double best_distance_2 = std::numeric_limits<double>::infinity();
+      double best_distance_2 = max_desc_d_2;
       double second_best_distance_2 = std::numeric_limits<double>::infinity();
       double distance_2;
 
@@ -393,7 +320,7 @@ public:
       }
 
       // Detect best match
-      if (best_idx != UndefinedIndexT && best_distance_2 < max_desc_d_2)
+      if (best_idx != UndefinedIndexT)
       {
         if (second_best_idx != UndefinedIndexT  && (best_distance_2 / second_best_distance_2) < desc_ratio_2)
         {
@@ -418,16 +345,17 @@ public:
   void matching_Projection_3D_2D
   (
     const Abstract_FeatureExtractor * featureExtractor_,
-    const std::vector<MapLandmark *> & vec_3D_pts,
     const Frame * frame,
+    const std::vector<MapLandmark *> & vec_3D_pts,
     Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_idx,
-    const size_t max_d_2 = 400, //20*20
+    const size_t max_dist = 15, //20*20
     const float desc_ratio = 0.8,
     const float max_desc_d = std::numeric_limits<float>::infinity()
   ) override
   {
     const float desc_ratio_2 = desc_ratio*desc_ratio;
     const float max_desc_d_2 = max_desc_d * max_desc_d;
+    const float max_dist_2 = max_dist * max_dist;
 
     // TODO: adjust max_d_2 from the viewing angle
 
@@ -471,6 +399,16 @@ public:
       if (!frame->isPointInFrame(pt_3D_frame_projected))
         continue;
 
+
+      // Compute viewing angle between the average angle of the point and
+      Vec3 P0 = pt_3D->getWorldPosition() - frame->O_w_;
+      Vec3 Pn = pt_3D->getNormal();
+
+      const float cos_view_angle = P0.dot(Pn) / P0.norm();
+      // enlarge the area if the viewing angle is bigger
+      float factor = radiusByViewingAngle(cos_view_angle);
+      float max_dist_2 = (max_dist * factor) * (max_dist * factor);
+
       // Raw descriptors
       void * pt_3D_raw_desc = pt_3D->bestDesc_;
       void * candidate_pt_desc_raw;
@@ -480,7 +418,7 @@ public:
       // Loop through all the candidates and find the best and second best
       IndexT best_idx = UndefinedIndexT;
       IndexT second_best_idx = UndefinedIndexT;
-      double best_distance_2 = std::numeric_limits<double>::infinity();
+      double best_distance_2 = max_desc_d_2;
       double second_best_distance_2 = std::numeric_limits<double>::infinity();
       double distance_2;
 
@@ -490,8 +428,9 @@ public:
         if (frame->map_points_[c_i])
           continue;
 
+
         // Check if points are close enough
-        if ((frame_pts[c_i] - pt_3D_frame_projected).squaredNorm() > max_d_2)
+        if ((frame_pts[c_i] - pt_3D_frame_projected).squaredNorm() > max_dist_2)
           continue;
 
         // Get candidate descriptor
@@ -516,7 +455,7 @@ public:
       }
 
       // Detect best match
-      if (best_idx != UndefinedIndexT && best_distance_2 < max_desc_d_2)
+      if (best_idx != UndefinedIndexT)
       {
         if (second_best_idx != UndefinedIndexT && (best_distance_2 / second_best_distance_2) < desc_ratio_2)
         {
@@ -545,11 +484,13 @@ public:
     const Frame * frame_2,
     const Mat3 & F_21,
     Hash_Map<IndexT,IndexT> & map_matches_1_2_idx,
-    const size_t max_epipolar_d2 = 16,
+    const size_t max_epipolar_dist = 16,
     const float desc_ratio = 0.8,
     const float max_desc_d = std::numeric_limits<float>::infinity()
   ) override
   {
+
+    const float max_epipolar_d_2 = max_epipolar_dist*max_epipolar_dist;
 
     const std::vector<MapLandmark *> & frame_1_3D_pts = frame_1->map_points_;
     const std::vector<MapLandmark *> & frame_2_3D_pts = frame_2->map_points_;
@@ -585,7 +526,7 @@ public:
       double dF_12 = x1_F.dot(pt_2.homogeneous());
       double d_pt_2_ep_line = (dF_12 * dF_12) /  (x1_F.head<2>().squaredNorm()); // square distance of pt_2 from epipolar line in frame_2
 
-      if (d_pt_2_ep_line > max_epipolar_d2)
+      if (d_pt_2_ep_line > max_epipolar_d_2)
       {
         continue;
       }

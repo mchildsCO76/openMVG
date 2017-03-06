@@ -11,7 +11,7 @@
 #include "openMVG/types.hpp"
 
 #include <openMVG/vsslam/Frame.hpp>
-#include <openMVG/vsslam/MapLandmark.hpp>
+#include <openMVG/vsslam/mapping/MapLandmark.hpp>
 
 
 using namespace openMVG;

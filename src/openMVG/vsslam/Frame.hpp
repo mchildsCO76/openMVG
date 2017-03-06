@@ -18,7 +18,7 @@
 #include "openMVG/matching/matcher_cascade_hashing.hpp"
 
 #include <openMVG/vsslam/Camera.hpp>
-#include <openMVG/vsslam/MapLandmark.hpp>
+#include <openMVG/vsslam/mapping/MapLandmark.hpp>
 
 namespace openMVG  {
 namespace VSSLAM  {
