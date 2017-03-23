@@ -7,7 +7,19 @@
 
 #pragma once
 
-#include <tuple>
+//#include <tuple>
+/*
+#include <string.h>
+#include <stdio.h>
+
+#include "slam/LinearSolver_UberBlock.h"
+#include "slam/ConfigSolvers.h" // nonlinear graph solvers
+#include "slam/3DSolverBase.h" // want C3DJacobians::Quat_to_AxisAngle() and C3DJacobians::AxisAngle_to_Quat()
+#include "slam/Sim3_Types.h"
+#include "slam/NonlinearSolver_Lambda_DL.h"
+#include "slam/Eigenvalues.h"
+#include "slam/Sim3SolverBase.h" // C3DJacobians, CBAJacobians, generally useful functions for BA and SE(3), does not need to be included
+*/
 #include <openMVG/features/features.hpp>
 #include <openMVG/numeric/numeric.h>
 
@@ -17,7 +29,9 @@
 #include <openMVG/types.hpp>
 #include <openMVG/vsslam/VSSLAM_Data.hpp>
 #include <openMVG/vsslam/optimization/VSSLAM_data_BA.hpp>
+#include <openMVG/vsslam/optimization/VSSLAM_data_BA_slampp.hpp>
 #include <openMVG/vsslam/optimization/VSSLAM_data_BA_ceres.hpp>
+
 #include <openMVG/vsslam/tracking/PoseEstimation.hpp>
 #include <openMVG/vsslam/detection/Abstract_FeatureExtractor.hpp>
 #include <deque>
@@ -27,6 +41,7 @@
 #include <ceres/types.h>
 #include <ceres/cost_function.h>
 #include <openMVG/vsslam/Frame.hpp>
+
 
 using namespace openMVG;
 
@@ -104,11 +119,17 @@ IndexT local_p_id = 0;
 
     void setCeresLocalBA()
     {
-      VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options options(true, true);
+
+      VSSLAM_Bundle_Adjustment_Ceres::BA_options_Ceres options;
       options.linear_solver_type_ = ceres::DENSE_SCHUR;
       local_BA_obj = std::unique_ptr<VSSLAM_Bundle_Adjustment>(new VSSLAM_Bundle_Adjustment_Ceres(options));
     }
 
+    void setSlamPPLocalBA()
+    {
+      VSSLAM_Bundle_Adjustment_SlamPP::BA_options_SlamPP options;
+      local_BA_obj = std::unique_ptr<VSSLAM_Bundle_Adjustment>(new VSSLAM_Bundle_Adjustment_SlamPP(options));
+    }
     bool optimizePose
     (
       Frame * frame_i,
@@ -124,6 +145,8 @@ IndexT local_p_id = 0;
       std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts
     )
     {
+
+      std::cout<<"Optimize Local A\n";
       return local_BA_obj->OptimizeLocal(tmp_frames, tmp_structure, frame_i, vec_triangulated_pts);
     }
 

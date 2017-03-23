@@ -37,6 +37,8 @@ using namespace openMVG::cameras;
 using namespace openMVG::image;
 
 
+int n_dummy_param = 0;
+
 /// Check that Kmatrix is a string like "f;0;ppx;0;f;ppy;0;0;1"
 /// With f,ppx,ppy as valid numerical value
 bool checkIntrinsicStringValidity(const std::string & Kmatrix, double & focal, double & ppx, double & ppy)
@@ -182,6 +184,7 @@ int main(int argc, char **argv)
   // VSSLAM
   using namespace openMVG::VSSLAM;
 
+  std::cout << "VSSLAM START" << std::endl;
   // Tracker and Feature detector/matcher interface
   std::unique_ptr<Abstract_Tracker> tracker_ptr;
   std::unique_ptr<Abstract_FeatureExtractor> feat_extractor_ptr;
@@ -216,11 +219,9 @@ int main(int argc, char **argv)
     std::cerr << "Cannot instantiate the tracking interface" << std::endl;
     return EXIT_FAILURE;
   }
-
   // Initialize the monocular tracking framework
   SLAM_Monocular monocular_slam(tracker_ptr.get());
   monocular_slam.setMapFeatureExtractor(feat_extractor_ptr.get());
-
 
   // Load image settings
   if (!params_cam_0.readImageSettings(stlplus::create_filespec( sImaDirectory, vec_image[0] )))
@@ -257,7 +258,6 @@ int main(int argc, char **argv)
   // -----------------
   // -- FRAME BY FRAME processing
   // -----------------
-
   IndexT frameId = 0;
   IndexT camId = 0;
   for (std::vector<std::string>::const_iterator iterFile = vec_image.begin();
@@ -346,14 +346,13 @@ int main(int argc, char **argv)
 
 
           // Show points with color as degree of connection
-/*
+
           //std::cout<<"AA4\n";
           if (!map_point->isActive()){
-
             glColor3f(1.f, 0.f, 0.f);
           }
           else{
-            switch(map_obs.size())
+            switch(map_point->n_all_obs_)
             {
               case 2:
                 glColor3f(1.f, 0.f, 0.f);
@@ -369,9 +368,10 @@ int main(int argc, char **argv)
                 break;
             }
           }
-*/
+/*
           // How points are associated with current frame
-
+          if (!map_point->isActive())
+            continue;
 
           switch(map_point->association_type_)
           {
@@ -397,7 +397,7 @@ int main(int argc, char **argv)
           }
 
 
-
+*/
 
           //std::cout<<"AA3\n";
 
@@ -444,7 +444,7 @@ int main(int argc, char **argv)
 
       std::cout<<"DD\n";
       //if (frameId>0)
-      sleep(2);
+      //sleep(2);
     }
   }
 

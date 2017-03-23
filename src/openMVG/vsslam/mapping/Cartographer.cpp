@@ -107,7 +107,7 @@ size_t Cartographer::findMinLandmarkDegreeForGlobalMapInitialization()
   // Loop through points already in local/global map
   for (auto & ml : tmp_structure)
   {
-    map_landmarkDegree_nPts[ml.second->obs_.size()]++;
+    map_landmarkDegree_nPts[ml.second->n_all_obs_]++;
   }
 
   // Go through find the first degree of landmark connectivity that has sufficient number of points
@@ -143,7 +143,7 @@ size_t Cartographer::findMinLandmarkDegreeForDefinedInGlobalMap
     if(!ml)
       continue;
 
-    map_landmarkDegree_nPts[ml->obs_.size()]++;
+    map_landmarkDegree_nPts[ml->n_all_obs_]++;
   }
 
   // Loop through new triangulated points
@@ -154,7 +154,7 @@ size_t Cartographer::findMinLandmarkDegreeForDefinedInGlobalMap
     for (std::unique_ptr<MapLandmark> & ml : *vec_new_pts_3D)
     {
       if (ml->hasFrameObservation(frame_id))
-        map_landmarkDegree_nPts[ml->obs_.size()]++;
+        map_landmarkDegree_nPts[ml->n_all_obs_]++;
     }
   }
 
@@ -337,9 +337,9 @@ void Cartographer::addObservationsToLandmarks
 
 }
 
+// Check if local landmark has sufficient inlier observations
 void Cartographer::verifyLocalLandmarks(Frame * frame)
 {
-  // Go through local frames and check the ones which are not fixed
   std::vector<size_t> vec_tmp_structure_outliers;
   #ifdef OPENMVG_USE_OPENMP
   #pragma omp parallel for schedule(dynamic)
@@ -355,18 +355,22 @@ void Cartographer::verifyLocalLandmarks(Frame * frame)
     Vec3 pt_3D_frame_i;
     for(LandmarkObservations::iterator iter_mo = obs.begin(); iter_mo != obs.end();)
     {
+      // Get observation data
       MapObservation & m_o =  iter_mo->second;
       Frame * & frame_i = m_o.frame_ptr;
       // Put 3D point into coordinate system of frame
       getRelativePointPosition(ml->X_,ml->ref_frame_,pt_3D_frame_i,frame_i);
 
+      // Check reprojection error
       if (frame_i->getSquaredReprojectionError(pt_3D_frame_i,m_o.feat_id) > frame_i->AC_reprojection_thresh_)
       {
-        std::cout<<" Remove local point - measurement: "<<frame_i->getFrameId()<<":: "<<t_i<<" :: "<<ml->id_<<"\n";
-        // Remove 3D point from frame
-       frame_i->clearMapPoint(m_o.feat_id);
+        std::cout<<" Remove local point - measurement: "<<ml->n_all_obs_<<" :-: "<<frame_i->getFrameId()<<":: "<<t_i<<" :: "<<ml->id_<<"\n";
+        // Remove landmark from frame
+        frame_i->clearMapPoint(m_o.feat_id);
+        ml->n_all_obs_--;
         // Update local frame count
         decreaseLocalFrameCount(frame_i);
+        // Remove measurement from landmark
         iter_mo = obs.erase(iter_mo);
       }
       else
@@ -375,17 +379,22 @@ void Cartographer::verifyLocalLandmarks(Frame * frame)
       }
     }
 
+    // Remove landmark from local structure if it doesnt have at least two keyframe support
     if (obs.size()<2)
     {
+      // If it has only one we remove the association from the frame and subsequently remove the landmark
       if (obs.size() == 1)
       {
         // Delete the 3D point from remaining frame
         MapObservation & m_o =  obs.begin()->second;
         std::cout<<" Remove local point - remaining measurement: "<<m_o.frame_ptr->getFrameId()<<" :: "<<ml->id_<<"\n";
+        // Remove landmark association from frame
         m_o.frame_ptr->clearMapPoint(m_o.feat_id);
+        ml->n_all_obs_--;
         decreaseLocalFrameCount(m_o.frame_ptr);
       }
-      // Delete point from the vector of new points
+
+      // Add local landmark to the queue for removal (so we can do the rest of checking in parallel)
       #pragma omp critical
       {
         vec_tmp_structure_outliers.push_back(t_i);
@@ -397,6 +406,8 @@ void Cartographer::verifyLocalLandmarks(Frame * frame)
   // sort indexes of outliers
   std::sort(vec_tmp_structure_outliers.begin(),vec_tmp_structure_outliers.end());
 
+  std::cout<<"Local structure before verification: "<<tmp_structure.size()<<"\n";
+
   // Remove any triangulated landmarks that dont have enough measurements
   for (size_t o_i = 0; o_i < vec_tmp_structure_outliers.size(); ++o_i)
   {
@@ -404,7 +415,7 @@ void Cartographer::verifyLocalLandmarks(Frame * frame)
     // Reduce the number by the number of elements already deleted
     std::advance(it_outlier,vec_tmp_structure_outliers[o_i]-o_i);
 
-    std::cout<<" Remove local point - outlier :: "<<it_outlier->first->obs_.size()<<": "<<o_i<<" :: "<<vec_tmp_structure_outliers[o_i]-o_i<<" :: "<<it_outlier->first->id_<<"\n";
+    std::cout<<" Remove local point - outlier :: "<<it_outlier->first->n_all_obs_<<": "<<o_i<<" :: "<<vec_tmp_structure_outliers[o_i]-o_i<<" :: "<<it_outlier->first->id_<<"\n";
 
     // Remove possible connection with current local frame
     for (IndexT feat_id = 0; feat_id < frame->map_points_.size(); ++feat_id)
@@ -412,17 +423,16 @@ void Cartographer::verifyLocalLandmarks(Frame * frame)
       MapLandmark * & ml = frame->map_points_[feat_id];
       if (ml && ml == it_outlier->first)
       {
-        std::cout<<"FF: "<<feat_id<<"\n";
         frame->clearMapPoint(feat_id);
         break;
       }
     }
 
     // Delete 3D point (all other references have been deleted before)
-    std::cout<<"TTB: "<<tmp_structure.size()<<"\n";
     tmp_structure.erase(it_outlier);
-    std::cout<<"TTA: "<<tmp_structure.size()<<"\n";
   }
+
+  std::cout<<"Local structure after verification: "<<tmp_structure.size()<<"\n";
 }
 
 void Cartographer::decreaseLocalFrameCount(Frame * frame)

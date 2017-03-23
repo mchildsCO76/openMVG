@@ -26,11 +26,12 @@ using namespace openMVG::geometry;
     active_ = false;
     T_cr_ = T_rc_ = Mat4::Identity();
 
+    R_rc_ = R_cr_ = Mat3::Identity();
+
     P_cr_ = dynamic_cast<const Pinhole_Intrinsic*>(getCameraIntrinsics())->K() * T_cr_.block(0,0,3,4);
     P_rc_ = dynamic_cast<const Pinhole_Intrinsic*>(getCameraIntrinsics())->Kinv() * T_rc_.block(0,0,3,4);
 
-    R_rc_ = Mat3::Identity();
-    R_cr_ = Mat3::Identity();
+
   }
 
   void Frame::updateFeaturesData()
@@ -121,20 +122,32 @@ using namespace openMVG::geometry;
   }
 
 
-  void Frame::updateMatrices()
+  // Update all pose related matrices
+  // Everything is updated from T_cr_
+  void Frame::updatePoseMatrices()
   {
-    // Transformation
+    // Transformation [sR t]
     T_rc_ = T_cr_.inverse();
+
     // Scale
-    double scale_cr = T_cr_.block(0,0,3,1).norm();
-    Vec3 t_cr = T_cr_.block(0,3,3,1)/scale_cr;
+    double s_cr = T_cr_.block(0,0,3,1).norm();
     // Rotation
-    R_cr_ = T_cr_.block(0,0,3,3)/scale_cr;
+    R_cr_ = T_cr_.block(0,0,3,3)/s_cr;
     R_rc_ = R_cr_.transpose();
-    // Camera center
+
+    // Compute camera center in world coordinates
     if (ref_frame_ == nullptr)
     {
-      O_w_ = - 1/scale_cr * R_rc_ * t_cr;
+      // O_w_ = -1/s_cr * R_cr_.transpose() * t_cr
+      Vec3 t_cr = T_cr_.block(0,3,3,1);
+      O_w_ = - 1/s_cr * R_rc_ * t_cr;
+    }
+    else
+    {
+      // Get poseInverse with world reference frame (nullptr)
+      // Translation is actually center of camera in world coordinates
+      double s; Mat3 R;
+      getPoseInverse_Rts(R,O_w_,s,nullptr);
     }
 
     // Projection (only useful if its calibrated camera otherwise it changes)
@@ -145,75 +158,28 @@ using namespace openMVG::geometry;
     }
   }
 
-
-  void Frame::setPose_cr_T
-  (
-    const Mat4 & this_T_tmp_ref,
-    Frame * tmp_ref /* = nullptr */
-  )
-  {
-    // we already have the transformation in the reference frame
-    if (tmp_ref == ref_frame_)
-    {
-      T_cr_ = this_T_tmp_ref;
-    }
-    /*else
-    {
-      // We have the transformation from tmp_ref to this_frame (this_T_tmp_ref)
-      // What we want is the transformation from ref_frame to this_frame (this_T_ref_frame)
-      // this_T_ref_frame = this_T_tmp_ref * tmp_ref_T_ref_frame
-      Mat4 tmp_ref_T_ref_frame;
-      getRelativeCameraTransformation(tmp_ref,ref_frame_,tmp_ref_T_ref_frame);
-
-      T_cr_ = this_T_tmp_ref * tmp_ref_T_ref_frame;
-    }*/
-    updateMatrices();
-  }
-  void Frame::setPose_cr_Rts
-  (
-    const Mat3 & R,
-    const Vec3 & t,
-    const double & s,
-    Frame * tmp_ref /* = nullptr*/
-  )
-  {
-    // we already have the transformation in the reference frame
-    if (tmp_ref == ref_frame_)
-    {
-      T_cr_.block(0,0,3,3) = s * R;
-      T_cr_.block(0,3,3,1) = s * t;
-    }
-    /*else
-    {
-      // We have the transformation from tmp_ref to this_frame (this_T_tmp_ref)
-      // What we want is the transformation from ref_frame to this_frame (this_T_ref_frame)
-      // this_T_ref_frame = this_T_tmp_ref * tmp_ref_T_ref_frame
-      Mat4 tmp_ref_T_ref_frame;
-      getRelativeCameraTransformation(tmp_ref,ref_frame_,tmp_ref_T_ref_frame);
-
-      T_cr_.block(0,0,3,3) = s * R;
-      T_cr_.block(0,3,3,1) = s * t;
-      T_cr_ = T_cr_ * tmp_ref_T_ref_frame;
-
-    }*/
-    updateMatrices();
-  }
-
-  void Frame::getPose_cr_Rts
+  // Get pose of camera in desired (tmp_ref) reference frame
+  // aka get transformation from desired reference (tmp_ref) frame to this frame
+  // (e.g. from world to camera reference frame)
+  void Frame::getPose_Rts
   (
     Mat3 & R,
     Vec3 & t,
     double & s,
-    Frame * tmp_ref /* = nullptr*/
+    Frame * tmp_ref
   ) const
   {
     // we already have the pose in the reference frame
     if (tmp_ref == ref_frame_)
     {
+      std::cout<<"Get pose:\n T: "<<T_cr_;
+      // T = [sR t]
       s = T_cr_.block(0,0,3,1).norm();
-      R = T_cr_.block(0,0,3,3)/s;
-      t = T_cr_.block(0,3,3,1)/s;
+      R = R_cr_;
+      t = T_cr_.block(0,3,3,1);
+      std::cout<<"\n s: "<<s<<"\n R: "<<R<<"\n t: "<<t<<"\n";
     }
+    // TODO: relative poses
     /*else
     {
       // We have the transformation from ref_frame to this_frame (this_T_ref_frame)
@@ -226,25 +192,184 @@ using namespace openMVG::geometry;
       getRelativeCameraTransformation(this,tmp_ref,this_T_tmp_ref);
       s = this_T_tmp_ref.block(0,0,3,1).norm();
       R = this_T_tmp_ref.block(0,0,3,3)/s;
-      t = this_T_tmp_ref.block(0,3,3,1)/s;
+      t = this_T_tmp_ref.block(0,3,3,1);
     }*/
   }
+
+  // Get transformation from this frame to desired reference (tmp_ref) frame
+  // (e.g. from camera to world reference frame)
+  void Frame::getPoseInverse_Rts
+  (
+    Mat3 & R,
+    Vec3 & t,
+    double & s,
+    Frame * tmp_ref
+  ) const
+  {
+    // we already have the pose in the reference frame
+    if (tmp_ref == ref_frame_)
+    {
+      // T = [sR t]
+      s = T_rc_.block(0,0,3,1).norm();
+      R = R_rc_;
+      t = T_rc_.block(0,3,3,1);
+    }
+    // TODO: relative poses
+  }
+
+  // Get transformation from this frame to desired reference (tmp_ref) frame expressed in sim3
+  // (e.g. from camera to world reference frame)
+  void Frame::getPoseInverse_sim3
+  (
+    Eigen::Matrix<double, 7, 1> & v_state,
+    Frame * tmp_ref // Pose [sR t] expressed in tmp_ref reference frame
+  ) const
+  {
+    double s; Mat3 R; Vec3 t;
+    // Get [sR t]
+    getPoseInverse_Rts(R,t,s,tmp_ref);
+    // Express in sim3
+    Sim3_log(R,t,s,v_state);
+  }
+
+  // Get transformation from this frame to desired reference (tmp_ref) frame expressed with state vector
+  // (e.g. from camera to world reference frame)
+  void Frame::getPoseInverse_StateVector
+  (
+    Eigen::Matrix<double, 12, 1> & v_state,
+    Frame * tmp_ref // Pose [sR t] expressed in tmp_ref reference frame
+  ) const
+  {
+    Eigen::Matrix<double,7,1> log_state;
+    // Get sim3 representation of poseInverse
+    getPoseInverse_sim3(log_state,tmp_ref);
+    // Add it to state vector
+    v_state.template head<7>() = log_state;
+    // Augment state vector with camera parameters
+    const Mat3 K = dynamic_cast<const Pinhole_Intrinsic*>(getCameraIntrinsics())->K();
+    // fx,fy,ppx,ppy,d
+    // TODO: Check how is with distortion parameters
+    v_state.template tail<5>() << K(0,0), K(0,0), K(0,2) , K(1,2), 0.0;
+  }
+
+  // Get camera center expressed in world coordinates (regardless of representation of camera)
+  const Vec3 & Frame::getCameraCenter() const
+  {
+    return O_w_;
+  }
+
+  // Set pose of the frame with transformation T expressed
+  // as transformation from tmp_reference to this frame (camera) : c_T_tmp_ref
+  // If reference frame of the given transformation (tmp_ref) is not equal to reference frame of the frame (ref_frame)
+  // we need transformation from reference of the frame to reference of given transformation: tmp_ref_T_ref
+  // Then we can compute pose: c_T_ref = c_T_tmp_ref * tmp_ref_T_ref
+  void Frame::setPose_T
+  (
+    const Mat4 & c_T_tmp_ref,
+    Frame * tmp_ref /* = nullptr */
+  )
+  {
+    // we already have the transformation in the reference frame
+    if (tmp_ref == ref_frame_)
+    {
+      T_cr_ = c_T_tmp_ref;
+    }
+    /*else
+    {
+      // If reference frame of the given transformation (tmp_ref) is not equal to reference frame of the frame (ref_frame)
+      // we need transformation from reference of the frame to reference of given transformation: tmp_ref_T_ref
+      // Then we can compute pose: c_T_ref = c_T_tmp_ref * tmp_ref_T_ref
+      Mat4 tmp_ref_T_ref_frame;
+      getRelativeCameraTransformation(tmp_ref,ref_frame_,tmp_ref_T_ref_frame);
+
+      T_cr_ = this_T_tmp_ref * tmp_ref_T_ref_frame;
+    }*/
+    updatePoseMatrices();
+  }
+
+  void Frame::setPose_Rts
+  (
+    const Mat3 & R,
+    const Vec3 & t,
+    const double & s,
+    Frame * tmp_ref /* = nullptr*/
+  )
+  {
+    // we already have the transformation in the reference frame
+    if (tmp_ref == ref_frame_)
+    {
+      T_cr_.block(0,0,3,3) = s * R;
+      T_cr_.block(0,3,3,1) = t;
+    }
+    /*else
+    {
+      // If reference frame of the given transformation (tmp_ref) is not equal to reference frame of the frame (ref_frame)
+      // we need transformation from reference of the frame to reference of given transformation: tmp_ref_T_ref
+      // Then we can compute pose: c_T_ref = c_T_tmp_ref * tmp_ref_T_ref
+
+      Mat4 tmp_ref_T_ref_frame;
+      getRelativeCameraTransformation(tmp_ref,ref_frame_,tmp_ref_T_ref_frame);
+
+      T_cr_.block(0,0,3,3) = s * R;
+      T_cr_.block(0,3,3,1) = t;
+      T_cr_ = T_cr_ * tmp_ref_T_ref_frame;
+
+    }*/
+    updatePoseMatrices();
+  }
+
+
+
+  // Set pose of the frame with [sR t] transformation expressed
+  // as sim3 vector [upsilon, omega, sigma] from this frame (camera) to reference frame : tmp_ref_T_c
+  // TODO: If reference frame of the given transformation (tmp_ref) is not equal to reference frame of the frame (ref_frame)
+  void Frame::setPose_rc_sim3
+  (
+    const Eigen::Matrix<double, 7, 1> & v_state,
+    Frame * tmp_ref
+  )
+  {
+    double s_rc; Mat3 R_rc; Vec3 t_rc;
+    // From sim3 to Sim3
+    Sim3_exp(v_state,R_rc,t_rc,s_rc);
+
+    // we already have the transformation in the reference frame
+    if (tmp_ref == ref_frame_)
+    {
+      // Update transformation matrix
+      T_cr_.block(0,0,3,3) = 1.0/s_rc * R_rc.transpose();
+      T_cr_.block(0,3,3,1) = - 1.0/s_rc * R_rc.transpose() * t_rc;
+    }
+    /*
+    else
+    {
+
+    }
+    */
+    // Update the rest of the data
+    updatePoseMatrices();
+  }
+
+
+
 
   // ----------------------
   // -- Set reference frame:
   // -- Pose: Transformation from reference (r) to current (c) frame (c_T_r)
   // ----------------------
+  // Set frame as the reference frame
   void Frame::setReferenceFrame (Frame * new_ref_frame)
   {
     ref_frame_ = new_ref_frame;
   }
-  void Frame::setReferenceFrame_cr_T (Frame * new_ref_frame, const Mat4 &T)
+
+  void Frame::setReferenceFrameAndPose_T (Frame * new_ref_frame, const Mat4 &T)
   {
     ref_frame_ = new_ref_frame;
-    setPose_cr_T(T,new_ref_frame);
+    setPose_T(T,new_ref_frame);
   }
 
-  void Frame::setReferenceFrame_cr_Rts
+  void Frame::setReferenceFrameAndPose_Rts
   (
     Frame * new_ref_frame,
     const Mat3 & R,
@@ -253,15 +378,10 @@ using namespace openMVG::geometry;
   )
   {
     ref_frame_ = new_ref_frame;
-    setPose_cr_Rts(R,t,s, ref_frame_);
+    setPose_Rts(R,t,s, ref_frame_);
   }
 
 
-
-  const Vec3 & Frame::getCameraCenter() const
-  {
-    return O_w_;
-  }
 
 
   Mat34 Frame::getProjectionMatrix() const

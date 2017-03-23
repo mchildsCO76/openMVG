@@ -19,13 +19,14 @@
 #include <openMVG/numeric/numeric.h>
 
 #include <openMVG/vsslam/Camera.hpp>
+#include <openMVG/vsslam/Frame.hpp>
 
+using namespace openMVG;
+using namespace openMVG::robust;
+using namespace openMVG::geometry;
 
 namespace openMVG  {
 namespace VSSLAM  {
-
-using namespace openMVG::robust;
-using namespace openMVG::geometry;
 
 static const size_t ACRANSAC_ITER = 64;
 
@@ -428,7 +429,7 @@ struct ResectionSquaredResidualError {
         AC_threshold_2 = infoACR_E.first;
         s = 1.0;
         T.block(0,0,3,3) = s * R;
-        T.block(0,3,3,1) = s * t;
+        T.block(0,3,3,1) = t;
         T(3,3) = 1;
         return true;
       }
@@ -570,7 +571,7 @@ struct ResectionSquaredResidualError {
     if (cam_k && cam_k->ref_frame_ == cam_ref)
     {
       //std::cout<<"Already reference cam\n";
-      T = cam_k->getTransformationMatrix_cr();
+      T = cam_k->getTransformationMatrix();
       return true;
     }
 
@@ -663,14 +664,14 @@ struct ResectionSquaredResidualError {
     while (cam_f_iter != frwd_match_iter)
     {
       //std::cout<<"Added TA: "<<(*cam_f_iter)->getFrameId()<<"\n";
-      T = T * (*cam_f_iter)->getTransformationMatrix_cr();
+      T = T * (*cam_f_iter)->getTransformationMatrix();
       cam_f_iter++;
     }
 
     while ((bcwd_match_iter) != T_backwards_list.rend())
     {
       //std::cout<<"Added TB: "<<(*bcwd_match_iter)->getFrameId()<<"\n";
-      T = T * (*bcwd_match_iter)->getTransformationMatrix_rc();
+      T = T * (*bcwd_match_iter)->getTransformationMatrixInverse();
       bcwd_match_iter++;
     }
 
@@ -693,7 +694,7 @@ struct ResectionSquaredResidualError {
       // Cam is in {W}
       if (new_point_frame->ref_frame_ == nullptr)
       {
-        pt_new = Vec4(new_point_frame->getTransformationMatrix_cr() * pt.homogeneous()).hnormalized();
+        pt_new = Vec4(new_point_frame->getTransformationMatrix() * pt.homogeneous()).hnormalized();
         return true;
       }
     }
@@ -721,10 +722,10 @@ struct ResectionSquaredResidualError {
       return false;
     }
 
-    // Get Rt from T
-    const double scale = T_2_1.block(0,0,3,1).norm();
-    const Mat3 R = T_2_1.block(0,0,3,3)/scale;
-    const Vec3 t = T_2_1.block(0,3,3,1)/scale;
+    // Get Rt from T = [sR t]
+    const double s = T_2_1.block(0,0,3,1).norm();
+    const Mat3 R = T_2_1.block(0,0,3,3);
+    const Vec3 t = T_2_1.block(0,3,3,1);
     Mat3 tx;
     tx<<0,-t(2),t(1), t(2),0,-t(0), -t(1),t(0),0;
 

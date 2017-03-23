@@ -11,6 +11,7 @@
 #include <openMVG/vsslam/VSSLAM_Data.hpp>
 #include <openMVG/vsslam/optimization/VSSLAM_data_BA.hpp>
 #include <openMVG/numeric/numeric.h>
+#include <ceres/ceres.h>
 #include <ceres/types.h>
 #include <ceres/cost_function.h>
 #include <openMVG/vsslam/Frame.hpp>
@@ -22,60 +23,98 @@ namespace VSSLAM {
 
 ceres::CostFunction * IntrinsicsToCostFunction
 (
-  cameras::IntrinsicBase * intrinsic,
+  IntrinsicBase * intrinsic,
   const Vec2 & observation,
+  const Eigen::Matrix<double, 2, 2> & inf_matrix,
   const double weight = 0.0
 );
 
+
+
+
 class VSSLAM_Bundle_Adjustment_Ceres : public VSSLAM_Bundle_Adjustment
 {
-  public:
-    struct BA_Ceres_options
+public:
+  struct BA_options_Ceres : public BA_options
+  {
+    unsigned int nb_threads_;
+    bool b_ceres_summary_;
+    ceres::LinearSolverType linear_solver_type_;
+    ceres::PreconditionerType preconditioner_type_;
+    ceres::SparseLinearAlgebraLibraryType sparse_linear_algebra_library_type_;
+    double parameter_tolerance_;
+    bool b_use_loss_function_;
+
+    BA_options_Ceres
+    (
+      const MAP_CAMERA_TYPE map_camera_type = MAP_CAMERA_TYPE::GLOBAL,
+      const MAP_POINT_TYPE map_landmark_type = MAP_POINT_TYPE::GLOBAL_EUCLIDEAN,
+      const bool b_verbose = true, bool bmultithreaded = true
+    ) : BA_options(map_camera_type, map_landmark_type, b_verbose),
+    nb_threads_(1),
+    parameter_tolerance_(1e-8), //~= numeric_limits<float>::epsilon()
+    b_use_loss_function_(true)
     {
-      bool bVerbose_;
-      unsigned int nb_threads_;
-      bool bCeres_summary_;
-      ceres::LinearSolverType linear_solver_type_;
-      ceres::PreconditionerType preconditioner_type_;
-      ceres::SparseLinearAlgebraLibraryType sparse_linear_algebra_library_type_;
-      double parameter_tolerance_;
-      bool bUse_loss_function_;
+      #ifdef OPENMVG_USE_OPENMP
+        nb_threads_ = omp_get_max_threads();
+      #endif // OPENMVG_USE_OPENMP
+      if (!bmultithreaded)
+        nb_threads_ = 1;
 
-      BA_Ceres_options(const bool bVerbose = true, bool bmultithreaded = true);
-    };
-  private:
-    VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options ceres_options_;
-  public:
+      b_ceres_summary_ = false;
 
-    VSSLAM_Bundle_Adjustment_Ceres
-    (
-      VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options options
-    );
+      // Default configuration use a DENSE representation
+      linear_solver_type_ = ceres::DENSE_SCHUR;
+      preconditioner_type_ = ceres::JACOBI;
+      // If Sparse linear solver are available
+      // Descending priority order by efficiency (SUITE_SPARSE > CX_SPARSE > EIGEN_SPARSE)
+      if (ceres::IsSparseLinearAlgebraLibraryTypeAvailable(ceres::SUITE_SPARSE))
+      {
+        sparse_linear_algebra_library_type_ = ceres::SUITE_SPARSE;
+        linear_solver_type_ = ceres::SPARSE_SCHUR;
+      }
+      else
+      {
+        if (ceres::IsSparseLinearAlgebraLibraryTypeAvailable(ceres::CX_SPARSE))
+        {
+          sparse_linear_algebra_library_type_ = ceres::CX_SPARSE;
+          linear_solver_type_ = ceres::SPARSE_SCHUR;
+        }
+        else
+        if (ceres::IsSparseLinearAlgebraLibraryTypeAvailable(ceres::EIGEN_SPARSE))
+        {
+          sparse_linear_algebra_library_type_ = ceres::EIGEN_SPARSE;
+          linear_solver_type_ = ceres::SPARSE_SCHUR;
+        }
+      }
+    }
+  };
+private:
+  BA_options_Ceres options_;
+  ceres::Problem problem_;
 
-    VSSLAM_Bundle_Adjustment_Ceres::BA_Ceres_options & ceres_options();
+public:
+  VSSLAM_Bundle_Adjustment_Ceres
+  (
+    BA_options_Ceres options = BA_options_Ceres()
+  );
 
-    /*
-    bool OptimizePose
-    (
-      std::vector<Frame*> * vec_frames,
-      Frame * frame_i,
-      Hash_Map<MapLandmark *,IndexT> * matches_3D_pts_frame_i_idx,
-      std::vector<std::unique_ptr<MapLandmark> > * vec_triangulated_pts
-    ) override;
-*/
-    bool OptimizePose
-    (
-      Frame * frame_i,
-      Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_i_idx
-    )override;
+  BA_options_Ceres & getOptions();
 
-    bool OptimizeLocal
-    (
-      Hash_Map<Frame*, size_t> & tmp_frames,
-      Hash_Map<MapLandmark*, std::unique_ptr<MapLandmark> > & tmp_structure,
-      Frame * frame_i,
-      std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts
-    )override;
+
+  bool OptimizePose
+  (
+    Frame * frame_i,
+    Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_i_idx
+  )override;
+
+  bool OptimizeLocal
+  (
+    Hash_Map<Frame*, size_t> & tmp_frames,
+    Hash_Map<MapLandmark*, std::unique_ptr<MapLandmark> > & tmp_structure,
+    Frame * frame_i,
+    std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts
+  )override;
 
 };
 

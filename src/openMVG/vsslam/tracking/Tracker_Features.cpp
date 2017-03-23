@@ -329,14 +329,14 @@ namespace VSSLAM  {
 
       start_time = omp_get_wtime();
       // Recovered motion
-      Mat4 c_T_r; // current_T_reference
+      Mat4 T_cr; // current_T_reference
       double AC_reproj_thresh_2;  // Reprojection error estimated for the model
       std::vector<size_t> inliers_M;  // Inliers of an estimated model
 
       // If calibrated camera we use Essential matrix otherwise Fundamental
       if (b_cam_init_calibrated && b_cam_cur_calibrated)
       {
-        b_motion_est_ok = estimateRobustRelativePosePinholeHE(init_ref_frame.get(), mCurrentFrame.get(), vec_putative_matches_ref_cur_idx, init_min_cos_angle_pt, init_track_min_matches, c_T_r, inliers_M, AC_reproj_thresh_2);
+        b_motion_est_ok = estimateRobustRelativePosePinholeHE(init_ref_frame.get(), mCurrentFrame.get(), vec_putative_matches_ref_cur_idx, init_min_cos_angle_pt, init_track_min_matches, T_cr, inliers_M, AC_reproj_thresh_2);
       }
       else
       {
@@ -357,10 +357,10 @@ namespace VSSLAM  {
       // -------------------
       start_time = omp_get_wtime();
       // initial frame
-      init_ref_frame->setReferenceFrame_cr_T(nullptr,Mat4::Identity());
+      init_ref_frame->setReferenceFrameAndPose_T(nullptr,Mat4::Identity());
       init_ref_frame->AC_reprojection_thresh_ = std::max<double>(4,AC_reproj_thresh_2);
       // current frame
-      mCurrentFrame->setReferenceFrame_cr_T(nullptr,c_T_r);
+      mCurrentFrame->setReferenceFrameAndPose_T(nullptr,T_cr);
       mCurrentFrame->AC_reprojection_thresh_ = std::max<double>(4,AC_reproj_thresh_2);
 
       std::cout<<"Tracker: [F_1] AC thresh: "<<init_ref_frame->AC_reprojection_thresh_ <<"\n";
@@ -385,7 +385,6 @@ namespace VSSLAM  {
       Mat34 P1,P2;
       P1 = cartographer_->getCameraProjectionMatrix(init_ref_frame.get(), nullptr);
       P2 = cartographer_->getCameraProjectionMatrix(mCurrentFrame.get(), nullptr);
-
 
 
       // Iterate through inliers and triangulate
@@ -420,6 +419,7 @@ namespace VSSLAM  {
         LandmarkObservations & obs = ml->obs_;
         obs[frame_init_id] = MapObservation(feat_id_ref,init_ref_frame.get());
         obs[frame_cur_id] = MapObservation(feat_id_cur,mCurrentFrame.get());
+        ml->n_all_obs_ = 2;
 
         // Mark as new initialization pt
         ml->association_type_ = 1;
@@ -496,8 +496,9 @@ namespace VSSLAM  {
     // -------------------
     // -- Predict location of current frame (using MM)
     // -------------------
-    Mat4 T_predict = motionModel.predictLocation(mPrevFrame.get(),mCurrentFrame.get());
-    mCurrentFrame->setPose_cr_T(T_predict);
+    Mat4 T_predict = motionModel.predictLocation(mPrevFrame.get());
+    // TODO: Check how to handle relative poses
+    mCurrentFrame->setPose_T(T_predict, nullptr);
 
     // -------------------
     // -- Match by projecting triangulated points from prev frame to current frame
@@ -513,7 +514,7 @@ namespace VSSLAM  {
 
       // Double search window for searching by projection
       start_time = omp_get_wtime();
-      featureMatcher_->matching_Projection_3D_2D(featureExtractor_, mCurrentFrame.get(), mPrevFrame->map_points_, map_putative_matches_3D_ptr_cur_idx, track_mm_win_size*4, track_match_desc_ratio, featureExtractor_->max_dist_desc_);
+      featureMatcher_->matching_Projection_3D_2D(featureExtractor_, mCurrentFrame.get(), mPrevFrame->map_points_, map_putative_matches_3D_ptr_cur_idx, track_mm_win_size*2, track_match_desc_ratio, featureExtractor_->max_dist_desc_);
 
       std::cout<<"Tracker: [Match Projection 3D-2D - Test 2] ("<<omp_get_wtime() - start_time<<" s)\n";
 
@@ -597,10 +598,10 @@ namespace VSSLAM  {
       if ((pt_frame - pt_3D_frame_projected).squaredNorm() < frame_reproj_thresh)
       {
         frame->setMapPoint(feat_id_cur,map_point);
+        map_point->n_all_obs_++;
         // Mark as motion model point or reference keyframe
         map_point->association_type_ = 2;
 
-        //map_point->obs_[frame_id] = MapObservation(feat_id_cur,frame);
 
       }
     }
@@ -619,13 +620,9 @@ namespace VSSLAM  {
       std::advance(it_p_match,k_i);
 
       frame->setMapPoint(it_p_match->second,it_p_match->first);
-      //frame->map_points_[it_p_match->second] = it_p_match->first;
-      //it_p_match->first->localMapFrameId_ = frame_id;
-
+      it_p_match->first->n_all_obs_++;
       // Mark as map tracking point
       it_p_match->first->association_type_ = 3;
-
-      //it_p_match->first->obs_[frame_id] = MapObservation(it_p_match->second,frame);
     }
   }
 
@@ -634,7 +631,8 @@ namespace VSSLAM  {
     // -------------------
     // -- Set location of current frame (as the one of last frame)
     // -------------------
-    mCurrentFrame->setPose_cr_T(mPrevFrame->getTransformationMatrix_cr());
+    // TODO: check how handle relative poses
+    mCurrentFrame->setPose_T(mPrevFrame->getTransformationMatrix(), nullptr);
 
     double start_time = omp_get_wtime();
     // -------------------
@@ -870,7 +868,7 @@ namespace VSSLAM  {
     // -------------------
     // -- Loop through matches and decide which we should triangulate
     // -------------------
-    Mat3 frame_cur_Rwc = mCurrentFrame->getRotationMatrix_rc();
+    Mat3 frame_cur_Rwc = mCurrentFrame->getRotationMatrixInverse();
 
     const IntrinsicBase * cam_intrinsic_cur = mCurrentFrame->getCameraIntrinsics();
     const Mat3 K_inv_cur = mCurrentFrame->getK_inv();
@@ -897,7 +895,7 @@ namespace VSSLAM  {
         if (frame_i != m_o.frame_ptr)
         {
           frame_i = m_o.frame_ptr;
-          frame_i_Rwc = frame_i->getRotationMatrix_rc();
+          frame_i_Rwc = frame_i->getRotationMatrixInverse();
           if (cam_intrinsic_i != frame_i->getCameraIntrinsics())
           {
             cam_intrinsic_i = frame_i->getCameraIntrinsics();
@@ -963,6 +961,7 @@ namespace VSSLAM  {
       // Set all observations
       ml->obs_ = pt_cur_obs;
       ml->addObservation(mCurrentFrame.get(),p_matches.first);
+      ml->n_all_obs_ = ml->obs_.size();
       // Mark this frame as the last frame that observed it
       ml->last_local_map_frame_id_ = mCurrentFrame->getFrameId();
       // Mark as new triangulated point
@@ -1001,6 +1000,7 @@ namespace VSSLAM  {
         {
           // Remove measurement from 3D point
           iter_mo = obs.erase(iter_mo);
+          ml->n_all_obs_--;
         }
         else
         {

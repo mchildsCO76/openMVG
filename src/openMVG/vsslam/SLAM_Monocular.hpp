@@ -53,11 +53,15 @@ struct SLAM_Monocular
   : tracker_(tracker)
   {
     cartographer_ = std::make_shared<Cartographer>();
+
     cartographer_->setCeresLocalBA();
+    //cartographer_->setSlamPPLocalBA();
+
     if (tracker_)
     {
       tracker_->setCartographer(cartographer_.get());
     }
+
   }
 
   void setMapFeatureExtractor(Abstract_FeatureExtractor * f_extractor)

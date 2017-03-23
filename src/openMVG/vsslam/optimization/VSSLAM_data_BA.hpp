@@ -21,29 +21,37 @@ namespace VSSLAM {
 
 class VSSLAM_Bundle_Adjustment
 {
-  public:
-    virtual ~VSSLAM_Bundle_Adjustment() = default;
-/*
-    virtual bool OptimizePose
-    (
-      std::vector<Frame*> * vec_frames,
-      Frame * frame_i,
-      Hash_Map<MapLandmark *,IndexT> * matches_3D_pts_frame_i_idx,
-      std::vector<std::unique_ptr<MapLandmark> > * vec_triangulated_pts
-    ) =0;*/
-    virtual bool OptimizePose
-    (
-      Frame * frame_i,
-      Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_i_idx
-    ) =0;
 
-    virtual bool OptimizeLocal
+public:
+  struct BA_options
+  {
+    bool b_verbose_;
+    MAP_POINT_TYPE map_landmark_type_;
+    MAP_CAMERA_TYPE map_camera_type_;
+
+    BA_options
     (
-      Hash_Map<Frame*, size_t> & tmp_frames,
-      Hash_Map<MapLandmark*, std::unique_ptr<MapLandmark> > & tmp_structure,
-      Frame * frame_i,
-      std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts
-    ) =0;
+      const MAP_CAMERA_TYPE map_camera_type = MAP_CAMERA_TYPE::GLOBAL,
+      const MAP_POINT_TYPE map_landmark_type = MAP_POINT_TYPE::GLOBAL_EUCLIDEAN,
+      const bool b_verbose = true
+    ): b_verbose_(b_verbose), map_camera_type_(map_camera_type), map_landmark_type_(map_landmark_type){};
+  };
+
+  virtual ~VSSLAM_Bundle_Adjustment() = default;
+
+  virtual bool OptimizePose
+  (
+    Frame * frame_i,
+    Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_i_idx
+  ) =0;
+
+  virtual bool OptimizeLocal
+  (
+    Hash_Map<Frame*, size_t> & tmp_frames,
+    Hash_Map<MapLandmark*, std::unique_ptr<MapLandmark> > & tmp_structure,
+    Frame * frame_i,
+    std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts
+  ) =0;
 
 };
 

@@ -76,8 +76,8 @@ public:
     }
 
     // Estimate the uncertainty of each feature detection
-    frame->pts_cov_.resize(regionsCasted->Features().size());
-    std::fill(frame->pts_cov_.begin(),frame->pts_cov_.end(), Eigen::Matrix2d::Identity());
+    frame->pts_information_mat_.resize(regionsCasted->Features().size());
+    std::fill(frame->pts_information_mat_.begin(),frame->pts_information_mat_.end(), Eigen::Matrix2d::Identity());
     // Return number of detected features
     return regionsCasted->Features().size();
   }

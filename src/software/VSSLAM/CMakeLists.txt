@@ -31,7 +31,15 @@ IF (OpenMVG_BUILD_OPENGL_EXAMPLES)
   # - VSSLAM (WIP)
   #
 
-  add_executable(openMVG_main_VSSLAM main_VSSLAM.cpp ../VO/CGlWindow.hpp)
+set(SLAMPP_SOURCE_DIR "/home/klemen/workspace/ANU/SlamPP_Dev/slam-plus-plus-dev_code/trunk/SLAM_plus_plus")
+set(SLAMPP_INCLUDE_DIR ${SLAMPP_SOURCE_DIR}/include ${SLAMPP_SOURCE_DIR}/include/cholmod/SuiteSparse)
+
+include_directories(${SLAMPP_INCLUDE_DIR})
+
+
+#file(GLOB_RECURSE SLAMPP_HEADERS ${SLAMPP_SOURCE_DIR}/include/slam/*.h)
+
+  add_executable(openMVG_main_VSSLAM main_VSSLAM.cpp ../VO/CGlWindow.hpp ${SLAMPP_HEADERS})
   target_link_libraries(openMVG_main_VSSLAM
     ${OPENGL_gl_LIBRARY}
     glfw

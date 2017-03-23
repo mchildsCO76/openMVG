@@ -26,15 +26,15 @@ using namespace openMVG::geometry;
     {
       // TODO: Check how to calculate if we have relative cameras
       // TODO: Compensate for time difference between frames
-      velocity_ = cur_frame->getTransformationMatrix_cr()*prev_frame->getTransformationMatrix_rc();
+      velocity_ = cur_frame->getTransformationMatrix()*prev_frame->getTransformationMatrixInverse();
 
       bValid_ = true;
     }
 
-    Mat4 predictLocation(Frame * prev_frame, Frame * cur_frame)
+    Mat4 predictLocation(Frame * prev_frame)
     {
       // TODO: Check how to predict if we have relative cameras model
-      return velocity_ * prev_frame->getTransformationMatrix_cr();
+      return velocity_ * prev_frame->getTransformationMatrix();
     }
 
   };
