@@ -127,7 +127,7 @@ bool exportCAMSToMICMAC(
       // Create orientation file
       std::ofstream file_MM_orient( stlplus::create_filespec(
            sOutCalibFolder, std::string("Orientation-") + stlplus::filename_part(view->s_Img_path), "xml" ).c_str() );
-      file_MM_orient << std::setprecision(8) << fixed ;
+      file_MM_orient << std::setprecision(8) << std::fixed ;
 
       // See ParamChantierPhotogram.xml in MicMac distrib for full specs. The doc is also useful !
       file_MM_orient
