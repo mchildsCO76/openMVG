@@ -322,9 +322,9 @@ int main(int argc, char **argv)
             << "--focal " << focal_pixels << std::endl
             << "--intrinsics " << sKmatrix << std::endl
             << "--camera_model " << i_User_camera_model << std::endl
-            << "--group_camera_model " << b_Group_camera_model << std::endl
+            << "--group_camera_model " << b_Group_camera_model << std::endl;
 #ifdef OPENMVG_USE_CXX11
-            << "--regex " << sCamsParamsRegex << std::endl;
+  std::cout << "--regex " << sCamsParamsRegex << std::endl;
 #endif
 
   // Expected properties for each image
