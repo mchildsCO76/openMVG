@@ -55,6 +55,8 @@ struct SLAM_Monocular
     cartographer_ = std::make_shared<Cartographer>();
 
     cartographer_->setCeresLocalBA();
+    cartographer_->setCeresGlobalBA();
+    //cartographer_->setSlamPPGlobalBA();
     //cartographer_->setSlamPPLocalBA();
 
     if (tracker_)
@@ -155,7 +157,7 @@ struct SLAM_Monocular
     double secsElapsed = stopTime - startTime; // that's all !
     std::cout<<"Track time:"<<secsElapsed<<"\n";
 
-    if (!bTrack)
+    if (tracker_->isMapInitialized() && !bTrack)
     {
       std::cout<<"TRY RELOCALIZATION!\n";
     }

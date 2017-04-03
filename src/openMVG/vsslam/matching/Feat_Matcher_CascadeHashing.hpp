@@ -6,10 +6,11 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 #pragma once
-
+#include <iterator>
 #include <openMVG/vsslam/matching/Abstract_FeatureMatcher.hpp>
 #include "openMVG/matching/matching_filters.hpp"
 #include "openMVG/matching/indMatchDecoratorXY.hpp"
+#include <openMVG/vsslam/tracking/PoseEstimation.hpp>
 
 namespace openMVG  {
 namespace VSSLAM  {
@@ -20,37 +21,41 @@ private:
 
   void purgeCandidateMatches
   (
-    std::vector<IndexT> & vec_putative_matches_1_2_idx,
-    matching::IndMatches & vec_matches_1_2_idx
+    Hash_Map<IndexT,IndexT> & map_putative_matches_1_2_idx,
+    Hash_Map<IndexT,IndexT> & map_matches_1_2_idx
   )
   {
     // Check that two are not matching the same point
     bool bOkMatch = true;
-    for (IndexT i=0; i<vec_putative_matches_1_2_idx.size(); ++i)
+
+    Hash_Map<IndexT,IndexT>::iterator iter_p_match_i = map_putative_matches_1_2_idx.begin();
+    Hash_Map<IndexT,IndexT>::iterator iter_p_match_j;
+    while (iter_p_match_i != map_putative_matches_1_2_idx.end())
     {
-      if (vec_putative_matches_1_2_idx[i] != UndefinedIndexT)
+      iter_p_match_j = std::next(iter_p_match_i);
+      while (iter_p_match_j != map_putative_matches_1_2_idx.end())
       {
-        for (IndexT j=i+1; j<vec_putative_matches_1_2_idx.size(); ++j)
+        // Two features are mapped in the same feature
+        if (iter_p_match_i->second == iter_p_match_j->second)
         {
-          // if value is doubled we delete both matches (mathces have to be unique)
-          if (vec_putative_matches_1_2_idx[i] == vec_putative_matches_1_2_idx[j])
-          {
-            bOkMatch = false;
-            vec_putative_matches_1_2_idx[j] = UndefinedIndexT;
-          }
-        }
-        if (bOkMatch)
-        {
-          // Match
-          vec_matches_1_2_idx.emplace_back(i,vec_putative_matches_1_2_idx[i]);
+          bOkMatch = false;
+          iter_p_match_j = map_putative_matches_1_2_idx.end();
         }
         else
         {
-          // reset duplicate flag
-          bOkMatch = true;
-
+          iter_p_match_j++;
         }
       }
+      if (bOkMatch)
+      {
+        map_matches_1_2_idx[iter_p_match_i->first] = iter_p_match_i->second;
+      }
+      else
+      {
+        // reset duplicate flag
+        bOkMatch = true;
+      }
+      iter_p_match_i++;
     }
   }
 
@@ -96,6 +101,7 @@ private:
     const Frame * frame_2,
     matching::IndMatches & vec_putative_matches,
     const float desc_ratio = 0.8,
+    const float feat_scale_ratio = std::numeric_limits<float>::infinity(),
     const float max_desc_d = std::numeric_limits<float>::infinity()
   )
   {
@@ -103,15 +109,15 @@ private:
 
     if (descriptor_type == typeid(float).name())
     {
-      matchingWithCascadeHashing_All_All_2D_2D<float>(frame_1,frame_2,vec_putative_matches,desc_ratio,max_desc_d);
+      matchingWithCascadeHashing_All_All_2D_2D<float>(frame_1,frame_2,vec_putative_matches,desc_ratio,feat_scale_ratio,max_desc_d);
     }
     else if (descriptor_type == typeid(double).name())
     {
-      matchingWithCascadeHashing_All_All_2D_2D<double>(frame_1,frame_2,vec_putative_matches,desc_ratio,max_desc_d);
+      matchingWithCascadeHashing_All_All_2D_2D<double>(frame_1,frame_2,vec_putative_matches,desc_ratio,feat_scale_ratio,max_desc_d);
     }
     else if (descriptor_type == typeid(unsigned char).name())
     {
-      matchingWithCascadeHashing_All_All_2D_2D<unsigned char>(frame_1,frame_2,vec_putative_matches,desc_ratio,max_desc_d);
+      matchingWithCascadeHashing_All_All_2D_2D<unsigned char>(frame_1,frame_2,vec_putative_matches,desc_ratio,feat_scale_ratio,max_desc_d);
     }
   }
 
@@ -121,8 +127,9 @@ private:
     const Frame * frame_1,
     const Frame * frame_2,
     matching::IndMatches & vec_putative_matches,
-    const float desc_ratio = 0.8,
-    const float max_desc_d = std::numeric_limits<float>::infinity()
+    const float desc_ratio_sq = 0.8,
+    const float feat_scale_ratio = std::numeric_limits<float>::infinity(),
+    const float max_desc_d_sq = std::numeric_limits<float>::infinity()
   )
   {
     // Compute the zero mean descriptor that will be used for hashing (one for all the image regions)
@@ -171,25 +178,35 @@ private:
       pvec_distances.end(),   // distance end
       2, // Number of neighbor in iterator sequence (minimum required 2)
       vec_nn_ratio_idx, // output (indices that respect the distance Ratio)
-      desc_ratio);
+      desc_ratio_sq);
+
+    const std::vector<float> & frame_1_feat_scale = frame_1->pts_scale_;
+    const std::vector<float> & frame_2_feat_scale = frame_2->pts_scale_;
 
     vec_putative_matches.reserve(vec_nn_ratio_idx.size());
     for (size_t k=0; k < vec_nn_ratio_idx.size(); ++k)
     {
       const size_t index = vec_nn_ratio_idx[k];
       // Check if distance of best descriptor is below threshold (useful?)
-      if (pvec_distances[index*2] > max_desc_d)
+      if (pvec_distances[index*2] > max_desc_d_sq)
         continue;
+
+      // Check if scale ratio between features is less than threshold
+      const float f_scale_1 = frame_1_feat_scale[pvec_indices[index*2].j_];
+      const float f_scale_2 = frame_2_feat_scale[pvec_indices[index*2].i_];
+      if ((f_scale_1<f_scale_2 ? f_scale_2/f_scale_1 : f_scale_1/f_scale_2) > feat_scale_ratio)
+        continue;
+
       vec_putative_matches.emplace_back(pvec_indices[index*2].j_, pvec_indices[index*2].i_);
     }
     // Remove duplicates
     matching::IndMatch::getDeduplicated(vec_putative_matches);
 
     // Remove matches that have the same (X,Y) coordinates
-    /*matching::IndMatchDecorator<float> matchDeduplicator(vec_putative_matches,
+    matching::IndMatchDecorator<float> matchDeduplicator(vec_putative_matches,
         frame_1_regions->GetRegionsPositions(), frame_2_regions->GetRegionsPositions());
     matchDeduplicator.getDeduplicated(vec_putative_matches);
-*/
+
 
   }
 
@@ -219,10 +236,13 @@ public:
     const Frame * frame_2,
     matching::IndMatches & vec_putative_matches_1_2_idx,
     const float desc_ratio = 0.8,
+    const float feat_scale_ratio = std::numeric_limits<float>::infinity(),
     const float max_desc_d = std::numeric_limits<float>::infinity()
   ) override
   {
-    matchingWithCascadeHashing(frame_1,frame_2,vec_putative_matches_1_2_idx,desc_ratio,max_desc_d);
+    const float desc_ratio_2 = desc_ratio*desc_ratio;
+    const float max_desc_d_2 = max_desc_d*max_desc_d;
+    matchingWithCascadeHashing(frame_1,frame_2,vec_putative_matches_1_2_idx,desc_ratio_2,feat_scale_ratio,max_desc_d_2);
   }
 
   // Matching all available 3D points with the 2D features of frame_2
@@ -233,16 +253,18 @@ public:
     const Frame * frame,
     Hash_Map<MapLandmark* ,IndexT> & matches_3D_pts_frame_idx,
     const float desc_ratio = 0.8,
+    const float feat_scale_ratio = std::numeric_limits<float>::infinity(),
     const float max_desc_d = std::numeric_limits<float>::infinity()
   ) override
   {
-    const float desc_ratio_2 = desc_ratio*desc_ratio;
-    const float max_desc_d_2 = max_desc_d*max_desc_d;
+    const float desc_ratio_sq = desc_ratio*desc_ratio;
+    const float max_desc_d_sq = max_desc_d*max_desc_d;
 
     // 3D data
     const size_t vec_3D_pts_size = vec_3D_pts.size();
     // Frame data
     features::Regions * const frame_regions = frame->getRegions();
+    const std::vector<MapLandmark *> & frame_3D_pts = frame->map_points_;
     const std::vector<Vec2> & frame_pts = frame->pts_undist_;
     const IntrinsicBase * cam_intrinsic = frame->getCameraIntrinsics();
 
@@ -254,9 +276,9 @@ public:
     #ifdef OPENMVG_USE_OPENMP
     #pragma omp parallel for schedule(dynamic)
     #endif
-    for (size_t p_i=0; p_i < vec_3D_pts_size; ++p_i)
+    for (size_t pt_3D_i=0; pt_3D_i < vec_3D_pts_size; ++pt_3D_i)
     {
-      MapLandmark * pt_3D = vec_3D_pts[p_i];
+      MapLandmark * pt_3D = vec_3D_pts[pt_3D_i];
 
       // Check if its triangulated
       if (!pt_3D)
@@ -268,7 +290,7 @@ public:
 
       // Project the point to frame 2
       Vec3 pt_3D_frame;
-      getRelativePointPosition(pt_3D->X_,pt_3D->ref_frame_,pt_3D_frame,frame);
+      PoseEstimator::getRelativePointPosition(pt_3D->X_,pt_3D->ref_frame_,pt_3D_frame,frame);
       if (pt_3D_frame(2) < 0)
         continue;
 
@@ -279,67 +301,76 @@ public:
       if (!frame->isPointInFrame(pt_3D_frame_projected))
         continue;
 
+      float pt_3D_scale = pt_3D->getFeatureMeanScale();
+      
       // Raw descriptors
-      void * pt_3D_raw_desc = pt_3D->bestDesc_;
-      void * candidate_pt_desc_raw;
+      void * pt_3D_raw_desc = pt_3D->feat_best_desc_;
+      void * frame_pt_desc_raw;
 
       //TODO: Get possible candidates through grid
 
-      // Check for the best and second best match
-      IndexT best_idx = UndefinedIndexT;
-      IndexT second_best_idx = UndefinedIndexT;
-      double best_distance_2 = max_desc_d_2;
-      double second_best_distance_2 = std::numeric_limits<double>::infinity();
-      double distance_2;
+      // Loop through all the candidates and find the best and second best
+      IndexT best_frame_feat_id = UndefinedIndexT;
+      IndexT second_best_frame_feat_id = UndefinedIndexT;
+      double best_desc_d_sq = max_desc_d_sq;
+      double second_best_desc_d_sq = std::numeric_limits<double>::infinity();
+      double desc_d_sq;
 
-      for (size_t c_i=0; c_i < frame_pts.size(); ++c_i)
+      for (size_t pt_f_i=0; pt_f_i < frame_pts.size(); ++pt_f_i)
       {
         // This point in the frame is already taken
-        if (frame->map_points_[c_i])
+        if (frame_3D_pts[pt_f_i])
+          continue;
+
+        // Check if points have feature scale ratio below threshold
+        float frame_pt_scale = frame->getFeatureScale(pt_f_i);
+        if ((frame_pt_scale<pt_3D_scale ? pt_3D_scale/frame_pt_scale : frame_pt_scale/pt_3D_scale) > feat_scale_ratio)
           continue;
 
         // Get candidate descriptor
-        featureExtractor_->getDescriptorRaw(frame_regions, c_i, &candidate_pt_desc_raw);
+        featureExtractor_->getDescriptorRaw(frame_regions, pt_f_i, &frame_pt_desc_raw);
 
-        // Compute distance_2
-        distance_2 = featureExtractor_->SquaredDescriptorDistance(pt_3D_raw_desc,candidate_pt_desc_raw);
+        // Compute distance_sq
+        desc_d_sq = featureExtractor_->SquaredDescriptorDistance(pt_3D_raw_desc,frame_pt_desc_raw);
 
         // Save if in best two
-        if (distance_2 < best_distance_2)
+        if (desc_d_sq < best_desc_d_sq)
         {
-          second_best_distance_2 = best_distance_2;
-          second_best_idx = best_idx;
-          best_distance_2 = distance_2;
-          best_idx = c_i;
+          // Former best move to second
+          second_best_desc_d_sq = best_desc_d_sq;
+          second_best_frame_feat_id = best_frame_feat_id;
+          // Save as best
+          best_desc_d_sq = desc_d_sq;
+          best_frame_feat_id = pt_f_i;
         }
-        else if (distance_2 < second_best_distance_2)
+        else if (desc_d_sq < second_best_desc_d_sq)
         {
-          second_best_distance_2 = distance_2;
-          second_best_idx = c_i;
+          // Save as second best
+          second_best_desc_d_sq = desc_d_sq;
+          second_best_frame_feat_id = pt_f_i;
         }
       }
 
       // Detect best match
-      if (best_idx != UndefinedIndexT)
+      if (best_frame_feat_id != UndefinedIndexT)
       {
-        if (second_best_idx != UndefinedIndexT  && (best_distance_2 / second_best_distance_2) < desc_ratio_2)
+        if (second_best_frame_feat_id != UndefinedIndexT && (best_desc_d_sq / second_best_desc_d_sq) < desc_ratio_sq)
         {
           // Best is unique enough
-          matches_3D_frame_idx[p_i] = best_idx;
+          matches_3D_frame_idx[pt_3D_i] = best_frame_feat_id;
         }
         else
         {
           // Best is unique
-          matches_3D_frame_idx[p_i] = best_idx;
+          matches_3D_frame_idx[pt_3D_i] = best_frame_feat_id;
         }
       }
-    }
 
+    }
     // -------------------
     // -- Purge matches
     // -------------------
     purgeCandidateMatches(vec_3D_pts,matches_3D_frame_idx,matches_3D_pts_frame_idx);
-
   }
 
   void matching_Projection_3D_2D
@@ -348,21 +379,21 @@ public:
     const Frame * frame,
     const std::vector<MapLandmark *> & vec_3D_pts,
     Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_idx,
-    const size_t max_dist = 15, //20*20
+    const size_t max_px_d = 15, //20*20
     const float desc_ratio = 0.8,
+    const float feat_scale_ratio = std::numeric_limits<float>::infinity(),
     const float max_desc_d = std::numeric_limits<float>::infinity()
   ) override
   {
-    const float desc_ratio_2 = desc_ratio*desc_ratio;
-    const float max_desc_d_2 = max_desc_d * max_desc_d;
-    const float max_dist_2 = max_dist * max_dist;
-
-    // TODO: adjust max_d_2 from the viewing angle
+    const float desc_ratio_sq = desc_ratio*desc_ratio;
+    const float max_desc_d_sq = max_desc_d * max_desc_d;
+    const float max_px_d_sq = max_px_d * max_px_d;
 
     // 3D data
     const size_t vec_3D_pts_size = vec_3D_pts.size();
     // Frame data
     features::Regions * const frame_regions = frame->getRegions();
+    const std::vector<MapLandmark *> & frame_3D_pts = frame->map_points_;
     const std::vector<Vec2> & frame_pts = frame->pts_undist_;
     const IntrinsicBase * cam_intrinsic = frame->getCameraIntrinsics();
 
@@ -374,11 +405,11 @@ public:
     #ifdef OPENMVG_USE_OPENMP
     #pragma omp parallel for schedule(dynamic)
     #endif
-    for (size_t p_i=0; p_i < vec_3D_pts_size; ++p_i)
+    for (size_t pt_3D_i=0; pt_3D_i < vec_3D_pts_size; ++pt_3D_i)
     {
-      MapLandmark * pt_3D = vec_3D_pts[p_i];
+      MapLandmark * pt_3D = vec_3D_pts[pt_3D_i];
 
-      // Check if its triangulated
+      // Check if landmark exists
       if (!pt_3D)
         continue;
 
@@ -388,7 +419,7 @@ public:
 
       // Project the point to frame 2
       Vec3 pt_3D_frame;
-      getRelativePointPosition(pt_3D->X_,pt_3D->ref_frame_,pt_3D_frame,frame);
+      PoseEstimator::getRelativePointPosition(pt_3D->X_,pt_3D->ref_frame_,pt_3D_frame,frame);
       if (pt_3D_frame(2) < 0)
         continue;
 
@@ -399,73 +430,73 @@ public:
       if (!frame->isPointInFrame(pt_3D_frame_projected))
         continue;
 
+      float pt_3D_scale = pt_3D->getFeatureMeanScale();
 
-      // Compute viewing angle between the average angle of the point and
-      Vec3 P0 = pt_3D->getWorldPosition() - frame->O_w_;
-      Vec3 Pn = pt_3D->getNormal();
-
-      const float cos_view_angle = P0.dot(Pn) / P0.norm();
-      // enlarge the area if the viewing angle is bigger
-      float factor = radiusByViewingAngle(cos_view_angle);
-      float max_dist_2 = (max_dist * factor) * (max_dist * factor);
 
       // Raw descriptors
-      void * pt_3D_raw_desc = pt_3D->bestDesc_;
-      void * candidate_pt_desc_raw;
+      void * pt_3D_raw_desc = pt_3D->feat_best_desc_;
+      void * frame_pt_desc_raw;
 
       //TODO: Get possible candidates through grid
 
       // Loop through all the candidates and find the best and second best
-      IndexT best_idx = UndefinedIndexT;
-      IndexT second_best_idx = UndefinedIndexT;
-      double best_distance_2 = max_desc_d_2;
-      double second_best_distance_2 = std::numeric_limits<double>::infinity();
-      double distance_2;
+      IndexT best_frame_feat_id = UndefinedIndexT;
+      IndexT second_best_frame_feat_id = UndefinedIndexT;
+      double best_desc_d_sq = max_desc_d_sq;
+      double second_best_desc_d_sq = std::numeric_limits<double>::infinity();
+      double desc_d_sq;
 
-      for (size_t c_i=0; c_i < frame_pts.size(); ++c_i)
+      for (size_t pt_f_i=0; pt_f_i < frame_pts.size(); ++pt_f_i)
       {
         // This point in the frame is already taken
-        if (frame->map_points_[c_i])
+        if (frame_3D_pts[pt_f_i])
           continue;
 
-
         // Check if points are close enough
-        if ((frame_pts[c_i] - pt_3D_frame_projected).squaredNorm() > max_dist_2)
+        if ((frame_pts[pt_f_i] - pt_3D_frame_projected).squaredNorm() > max_px_d_sq)
+          continue;
+
+        // Check if points have feature scale ratio below threshold
+        float frame_pt_scale = frame->getFeatureScale(pt_f_i);
+        if ((frame_pt_scale<pt_3D_scale ? pt_3D_scale/frame_pt_scale : frame_pt_scale/pt_3D_scale) > feat_scale_ratio)
           continue;
 
         // Get candidate descriptor
-        featureExtractor_->getDescriptorRaw(frame_regions, c_i, &candidate_pt_desc_raw);
+        featureExtractor_->getDescriptorRaw(frame_regions, pt_f_i, &frame_pt_desc_raw);
 
-        // Compute distance_2
-        distance_2 = featureExtractor_->SquaredDescriptorDistance(pt_3D_raw_desc,candidate_pt_desc_raw);
+        // Compute distance_sq
+        desc_d_sq = featureExtractor_->SquaredDescriptorDistance(pt_3D_raw_desc,frame_pt_desc_raw);
 
         // Save if in best two
-        if (distance_2 < best_distance_2)
+        if (desc_d_sq < best_desc_d_sq)
         {
-          second_best_distance_2 = best_distance_2;
-          second_best_idx = best_idx;
-          best_distance_2 = distance_2;
-          best_idx = c_i;
+          // Former best move to second
+          second_best_desc_d_sq = best_desc_d_sq;
+          second_best_frame_feat_id = best_frame_feat_id;
+          // Save as best
+          best_desc_d_sq = desc_d_sq;
+          best_frame_feat_id = pt_f_i;
         }
-        else if (distance_2 < second_best_distance_2)
+        else if (desc_d_sq < second_best_desc_d_sq)
         {
-          second_best_distance_2 = distance_2;
-          second_best_idx = c_i;
+          // Save as second best
+          second_best_desc_d_sq = desc_d_sq;
+          second_best_frame_feat_id = pt_f_i;
         }
       }
 
       // Detect best match
-      if (best_idx != UndefinedIndexT)
+      if (best_frame_feat_id != UndefinedIndexT)
       {
-        if (second_best_idx != UndefinedIndexT && (best_distance_2 / second_best_distance_2) < desc_ratio_2)
+        if (second_best_frame_feat_id != UndefinedIndexT && (best_desc_d_sq / second_best_desc_d_sq) < desc_ratio_sq)
         {
           // Best is unique enough
-          matches_3D_frame_idx[p_i] = best_idx;
+          matches_3D_frame_idx[pt_3D_i] = best_frame_feat_id;
         }
         else
         {
           // Best is unique
-          matches_3D_frame_idx[p_i] = best_idx;
+          matches_3D_frame_idx[pt_3D_i] = best_frame_feat_id;
         }
       }
     }
@@ -477,6 +508,156 @@ public:
 
   }
 
+
+  // Match frame_2 to 3D points of frame_1
+  void matching_Projection_3D_2D
+  (
+    const Abstract_FeatureExtractor * featureExtractor_,
+    const Frame * frame_1,
+    const Frame * frame_2,
+    Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_idx,
+    const size_t max_px_d = 15, //20*20
+    const float desc_ratio = 0.8,
+    const float feat_scale_ratio = std::numeric_limits<float>::infinity(),
+    const float max_desc_d = std::numeric_limits<float>::infinity()
+  ) override
+  {
+    const float desc_ratio_sq = desc_ratio*desc_ratio;
+    const float max_desc_d_sq = max_desc_d * max_desc_d;
+    const float max_px_d_sq = max_px_d * max_px_d;
+
+    // 3D data
+    const std::vector<MapLandmark *> & frame_1_3D_pts = frame_1->map_points_;
+    const std::vector<MapLandmark *> & frame_2_3D_pts = frame_1->map_points_;
+    const size_t frame_1_3D_pts_size = frame_1_3D_pts.size();
+    const size_t frame_2_3D_pts_size = frame_2_3D_pts.size();
+    
+    // Frame data
+    features::Regions * const frame_2_regions = frame_2->getRegions();
+    const std::vector<Vec2> & frame_2_2D_pts = frame_2->pts_undist_;
+    const IntrinsicBase * cam_intrinsic_2 = frame_2->getCameraIntrinsics();
+
+    // -------------------
+    // -- Match features of prev_frame(that are already triangulated and in map) with the features of the new frame_2
+    // -------------------
+    std::vector<IndexT>matches_3D_frame_idx(frame_1_3D_pts_size,UndefinedIndexT);
+
+    #ifdef OPENMVG_USE_OPENMP
+    #pragma omp parallel for schedule(dynamic)
+    #endif
+    for (size_t pt_f1_i=0; pt_f1_i < frame_1_3D_pts_size; ++pt_f1_i)
+    {
+      MapLandmark * pt_3D = frame_1_3D_pts[pt_f1_i];
+
+      // Check if landmark exists
+      if (!pt_3D)
+        continue;
+
+      // Already matched
+      if (matches_3D_pts_frame_idx.find(pt_3D) != matches_3D_pts_frame_idx.end())
+        continue;
+
+      // Project the point to frame_2 2
+      Vec3 pt_3D_frame_2;
+      PoseEstimator::getRelativePointPosition(pt_3D->X_,pt_3D->ref_frame_,pt_3D_frame_2,frame_2);
+      if (pt_3D_frame_2(2) < 0)
+        continue;
+
+      // Project the point to image plane of frame_2 2
+      const Vec2 pt_3D_frame_2_projected = cam_intrinsic_2->cam2ima(cam_intrinsic_2->have_disto()?cam_intrinsic_2->add_disto(pt_3D_frame_2.hnormalized()):pt_3D_frame_2.hnormalized());
+
+      // Check if projection is actually in the image borders
+      if (!frame_2->isPointInFrame(pt_3D_frame_2_projected))
+        continue;
+
+      float frame_1_pt_scale = frame_1->getFeatureScale(pt_f1_i);
+
+      // Compute viewing angle between the point and normal which was last seen
+      const Vec3 normal_X = (pt_3D->getWorldPosition() - frame_2->O_w_).normalized();
+      const Vec3 & normal_last = pt_3D->getLastNormal();
+
+      // Compute viewing angle
+      float angle_factor = radiusByViewingAngle(normal_X.dot(normal_last));   // [1,5]
+      // enlarge the area if the viewing angle is bigger
+      float max_px_d_2 = (max_px_d * max_px_d) * angle_factor;
+
+      // Raw descriptors
+      void * pt_3D_raw_desc = pt_3D->feat_best_desc_;
+      void * frame_2_pt_desc_raw;
+
+      //TODO: Get possible candidates through grid
+
+      // Loop through all the candidates and find the best and second best
+      IndexT best_frame_feat_id = UndefinedIndexT;
+      IndexT second_best_frame_feat_id = UndefinedIndexT;
+      double best_desc_d_sq = max_desc_d_sq;
+      double second_best_desc_d_sq = std::numeric_limits<double>::infinity();
+      double desc_d_sq;
+
+      for (size_t pt_f2_i=0; pt_f2_i < frame_2_3D_pts_size; ++pt_f2_i)
+      {
+        // This feature in the frame_2 is already taken
+        if (frame_2->map_points_[pt_f2_i])
+          continue;
+
+
+        // Check if points are close enough
+        if ((frame_2_2D_pts[pt_f2_i] - pt_3D_frame_2_projected).squaredNorm() > max_px_d_sq)
+          continue;
+
+        // Check if points have feature scale ratio below threshold
+        float frame_2_pt_scale = frame_1->getFeatureScale(pt_f1_i);
+        if ((frame_1_pt_scale<frame_2_pt_scale ? frame_2_pt_scale/frame_1_pt_scale : frame_1_pt_scale/frame_2_pt_scale) > feat_scale_ratio)
+          continue;
+
+        // Get candidate descriptor
+        featureExtractor_->getDescriptorRaw(frame_2_regions, pt_f2_i, &frame_2_pt_desc_raw);
+
+        // Compute distance_2
+        desc_d_sq = featureExtractor_->SquaredDescriptorDistance(pt_3D_raw_desc,frame_2_pt_desc_raw);
+
+        // Save if in best two
+        if (desc_d_sq < best_desc_d_sq)
+        {
+          // Former best move to second
+          second_best_desc_d_sq = best_desc_d_sq;
+          second_best_frame_feat_id = best_frame_feat_id;
+          // Save as best
+          best_desc_d_sq = desc_d_sq;
+          best_frame_feat_id = pt_f2_i;
+        }
+        else if (desc_d_sq < second_best_desc_d_sq)
+        {
+          // Save as second best
+          second_best_desc_d_sq = desc_d_sq;
+          second_best_frame_feat_id = pt_f2_i;
+        }
+      }
+
+      // Detect best match
+      if (best_frame_feat_id != UndefinedIndexT)
+      {
+        if (second_best_frame_feat_id != UndefinedIndexT && (best_desc_d_sq / second_best_desc_d_sq) < desc_ratio_sq)
+        {
+          // Best is unique enough
+          matches_3D_frame_idx[pt_f1_i] = best_frame_feat_id;
+        }
+        else
+        {
+          // Best is unique
+          matches_3D_frame_idx[pt_f1_i] = best_frame_feat_id;
+        }
+      }
+    }
+
+    // -------------------
+    // -- Purge matches
+    // -------------------
+    purgeCandidateMatches(frame_1_3D_pts,matches_3D_frame_idx,matches_3D_pts_frame_idx);
+
+  }
+
+
   void matching_EpipolarLine_2D_2D
   (
     const Abstract_FeatureExtractor * featureExtractor_,
@@ -484,16 +665,15 @@ public:
     const Frame * frame_2,
     const Mat3 & F_21,
     Hash_Map<IndexT,IndexT> & map_matches_1_2_idx,
-    const size_t max_epipolar_dist = 16,
+    const size_t epi_line_sigma = 4,
     const float desc_ratio = 0.8,
+    const float feat_scale_ratio = std::numeric_limits<float>::infinity(),
     const float max_desc_d = std::numeric_limits<float>::infinity()
   ) override
   {
-
-    const float max_epipolar_d_2 = max_epipolar_dist*max_epipolar_dist;
-
-    const std::vector<MapLandmark *> & frame_1_3D_pts = frame_1->map_points_;
-    const std::vector<MapLandmark *> & frame_2_3D_pts = frame_2->map_points_;
+    const float desc_ratio_sq = desc_ratio*desc_ratio;
+    const float max_desc_d_sq = max_desc_d*max_desc_d;
+    const float epi_line_thresh = (epi_line_sigma*epi_line_sigma) * 3.84;
 
     bool bCam1_Calibrated = frame_1->getCamCalibrated();
     bool bCam2_Calibrated = frame_2->getCamCalibrated();
@@ -501,12 +681,172 @@ public:
     const IntrinsicBase * cam_intrinsic_1 = frame_1->getCameraIntrinsics();
     const IntrinsicBase * cam_intrinsic_2 = frame_2->getCameraIntrinsics();
 
+    const std::vector<MapLandmark *> & frame_1_3D_pts = frame_1->map_points_;
+    const std::vector<MapLandmark *> & frame_2_3D_pts = frame_2->map_points_;
 
-    double startTime = omp_get_wtime();
+    features::Regions * const frame_1_regions = frame_1->getRegions();
+    features::Regions * const frame_2_regions = frame_2->getRegions();
 
-    matching::IndMatches putative_matches_1_2_idx;
-    matchingWithCascadeHashing(frame_1,frame_2,putative_matches_1_2_idx, desc_ratio,max_desc_d);
+    // Compute epipole in frame_2
+    Vec3 frame_1_center = frame_1->getCameraCenter();
 
+    // Project camera 1 center to frame 2
+    Vec3 frame_1_center_frame_2;
+    PoseEstimator::getRelativePointPosition(frame_1_center,nullptr,frame_1_center_frame_2,frame_2);
+
+    // Project the point to image plane of frame 2
+    const Vec2 epipole_frame_2 = cam_intrinsic_2->cam2ima(cam_intrinsic_2->have_disto()?cam_intrinsic_2->add_disto(frame_1_center_frame_2.hnormalized()):frame_1_center_frame_2.hnormalized());
+
+
+    matching::IndMatches map_putative_matches_1_2_idx;
+    matchingWithCascadeHashing(frame_1,frame_2,map_putative_matches_1_2_idx,desc_ratio_sq,feat_scale_ratio,max_desc_d_sq);
+
+    for (matching::IndMatches::iterator iter_pm = map_putative_matches_1_2_idx.begin(); iter_pm != map_putative_matches_1_2_idx.end();++iter_pm)
+    {
+      const IndexT feat_1_id = iter_pm->i_;
+      const IndexT feat_2_id = iter_pm->j_;
+
+      if (frame_1_3D_pts[feat_1_id] || frame_2_3D_pts[feat_2_id])
+      {
+        continue;
+      }
+
+      // Compute epipolar distance
+      const Vec2 pt_1 = (bCam1_Calibrated ? frame_1->getFeaturePosition(feat_1_id) : cam_intrinsic_1->remove_disto(frame_1->getFeaturePosition(feat_1_id))).cast<double>();
+      const Vec2 pt_2 = (bCam2_Calibrated ? frame_2->getFeaturePosition(feat_2_id) : cam_intrinsic_2->remove_disto(frame_2->getFeaturePosition(feat_2_id))).cast<double>();
+
+      const float & frame_1_pt_scale = frame_1->getFeatureScale(feat_1_id);
+      const float & frame_2_pt_scale = frame_2->getFeatureScale(feat_2_id);
+
+      // Check if points have feature scale ratio below threshold
+      if ((frame_1_pt_scale<frame_2_pt_scale ? frame_2_pt_scale/frame_1_pt_scale : frame_1_pt_scale/frame_2_pt_scale) > feat_scale_ratio)
+        continue;
+
+
+      // Check if point is not too close to epipole
+      if ((epipole_frame_2 - pt_2).squaredNorm() < 100)
+        continue;
+
+      // Epipolar line on frame_2
+      Vec3 x1_F = F_21 * pt_1.homogeneous() ; // Epipolar line on frame_2
+      // Compute distance from epipolar line
+      double dF_12 = x1_F.dot(pt_2.homogeneous());
+      double d_pt_2_ep_line = (dF_12 * dF_12) /  (x1_F.head<2>().squaredNorm()); // square distance of pt_2 from epipolar line in frame_2
+
+      if (d_pt_2_ep_line > epi_line_thresh)
+      {
+        continue;
+      }
+
+      map_matches_1_2_idx[feat_1_id] = feat_2_id;
+    }
+
+
+/*
+    Hash_Map<IndexT,IndexT> map_putative_matches_1_2_idx;
+    // For each point in frame 1 we try to find a match on epipolar line in step two
+    for (size_t pt_f1_i = 0; pt_f1_i<frame_1_3D_pts.size(); ++pt_f1_i)
+    {
+      // If point is already matched we skip it
+      if (frame_1_3D_pts[pt_f1_i])
+        continue;
+
+      const Vec2 & frame_1_pt = frame_1->getFeaturePosition(pt_f1_i);
+      const float & frame_1_pt_scale = frame_1->getFeatureScale(pt_f1_i);
+
+      // Raw descriptors
+      void * frame_1_pt_desc_raw;
+      void * frame_2_pt_desc_raw;
+
+      // Get frame_1 descriptor
+      featureExtractor_->getDescriptorRaw(frame_1_regions, pt_f1_i, &frame_1_pt_desc_raw);
+
+
+      IndexT best_frame_feat_id = UndefinedIndexT;
+      IndexT second_best_frame_feat_id = UndefinedIndexT;
+      double best_desc_d_sq = max_desc_d_sq;
+      double second_best_desc_d_sq = std::numeric_limits<double>::infinity();
+      double desc_d_sq;
+
+      for (size_t pt_f2_i=0; pt_f2_i < frame_2_3D_pts.size(); ++pt_f2_i)
+      {
+        // This point is already associated
+        if (frame_2_3D_pts[pt_f2_i])
+          continue;
+
+        const Vec2 & frame_2_pt = frame_2->getFeaturePosition(pt_f2_i);
+        const float & frame_2_pt_scale = frame_2->getFeatureScale(pt_f2_i);
+
+        // Check if points have feature scale ratio below threshold
+        if ((frame_1_pt_scale<frame_2_pt_scale ? frame_2_pt_scale/frame_1_pt_scale : frame_1_pt_scale/frame_2_pt_scale) > feat_scale_ratio)
+          continue;
+
+        // Get candidate descriptor
+        featureExtractor_->getDescriptorRaw(frame_2_regions, pt_f2_i, &frame_2_pt_desc_raw);
+
+        // Compute distance_sq
+        desc_d_sq = featureExtractor_->SquaredDescriptorDistance(frame_1_pt_desc_raw,frame_2_pt_desc_raw);
+
+        if (desc_d_sq > second_best_desc_d_sq || desc_d_sq > max_desc_d_sq)
+          continue;
+
+        // Check if point is not too close to epipole
+        if ((epipole_frame_2 - frame_2_pt).squaredNorm() < 100)
+          continue;
+
+
+        // Epipolar line on frame_2
+        Vec3 F_x1 = F_21 * frame_1_pt.homogeneous();
+
+        // Compute distance from epipolar line
+        double err = F_x1.dot(frame_2_pt.homogeneous());
+        double d_pt_2_ep_line_sq = (err * err) /  (F_x1.head<2>().squaredNorm()); // square distance of pt_2 from epipolar line in frame_2
+
+        // Check if in validation area of epipolar line
+        if (d_pt_2_ep_line_sq > epi_line_thresh)
+          continue;
+
+        // Save if in best two
+        if (desc_d_sq < best_desc_d_sq)
+        {
+          // Former best move to second
+          second_best_desc_d_sq = best_desc_d_sq;
+          second_best_frame_feat_id = best_frame_feat_id;
+          // Save as best
+          best_desc_d_sq = desc_d_sq;
+          best_frame_feat_id = pt_f2_i;
+        }
+        else if (desc_d_sq < second_best_desc_d_sq)
+        {
+          // Save as second best
+          second_best_desc_d_sq = desc_d_sq;
+          second_best_frame_feat_id = pt_f2_i;
+        }
+      }
+
+      // Detect best match
+      if (best_frame_feat_id != UndefinedIndexT)
+      {
+        if (second_best_frame_feat_id != UndefinedIndexT && (best_desc_d_sq / second_best_desc_d_sq) < desc_ratio_sq)
+        {
+          // Best is unique enough
+          map_putative_matches_1_2_idx[pt_f1_i] = best_frame_feat_id;
+        }
+        else
+        {
+          // Best is unique
+          map_putative_matches_1_2_idx[pt_f1_i] = best_frame_feat_id;
+        }
+      }
+
+    }
+
+    purgeCandidateMatches(map_putative_matches_1_2_idx,map_matches_1_2_idx);
+*/
+
+    //matchingWithCascadeHashing(frame_1,frame_2,vec_putative_matches_1_2_idx,desc_ratio_2,feat_scale_ratio,max_desc_d_2);
+    //matchingWithCascadeHashing(frame_1,frame_2,putative_matches_1_2_idx, desc_ratio,std::numeric_limits<float>::infinity(),max_desc_d_sq);
+    /*
     for (matching::IndMatches::iterator iter_pm = putative_matches_1_2_idx.begin(); iter_pm != putative_matches_1_2_idx.end();++iter_pm)
     {
       const IndexT feat_1_id = iter_pm->i_;
@@ -520,29 +860,26 @@ public:
       // Compute epipolar distance
       const Vec2 pt_1 = (bCam1_Calibrated ? frame_1->getFeaturePosition(feat_1_id) : cam_intrinsic_1->remove_disto(frame_1->getFeaturePosition(feat_1_id))).cast<double>();
       const Vec2 pt_2 = (bCam2_Calibrated ? frame_2->getFeaturePosition(feat_2_id) : cam_intrinsic_2->remove_disto(frame_2->getFeaturePosition(feat_2_id))).cast<double>();
+
+      // Check if point is not too close to epipole
+      if ((epipole_frame_2 - pt_2).squaredNorm() < 100)
+        continue;
+
       // Epipolar line on frame_2
       Vec3 x1_F = F_21 * pt_1.homogeneous() ; // Epipolar line on frame_2
       // Compute distance from epipolar line
       double dF_12 = x1_F.dot(pt_2.homogeneous());
       double d_pt_2_ep_line = (dF_12 * dF_12) /  (x1_F.head<2>().squaredNorm()); // square distance of pt_2 from epipolar line in frame_2
 
-      if (d_pt_2_ep_line > max_epipolar_d_2)
+      if (d_pt_2_ep_line > max_px_epi_d_2)
       {
         continue;
       }
 
       map_matches_1_2_idx[feat_1_id] = feat_2_id;
     }
-
-    std::cout<<"Matching: Epipolar 2D-2D ("<<omp_get_wtime() - startTime<<")\n";
-
+     */
   }
-
-
-
-
-
-
 };
 
 }

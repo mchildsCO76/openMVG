@@ -42,17 +42,28 @@ public:
   virtual bool OptimizePose
   (
     Frame * frame_i,
-    Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_i_idx
+    Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_i_idx,
+    bool b_use_loss_function = true
   ) =0;
+
+  virtual bool OptimizePose
+  (
+    Frame * frame_i,
+    bool b_use_loss_function = true
+  ) =0;
+
 
   virtual bool OptimizeLocal
   (
-    Hash_Map<Frame*, size_t> & tmp_frames,
-    Hash_Map<MapLandmark*, std::unique_ptr<MapLandmark> > & tmp_structure,
     Frame * frame_i,
-    std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts
+    std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts,
+    bool b_use_loss_function = true
   ) =0;
 
+  virtual bool addObservationToGlobalSystem(MapLandmark * map_point, MapObservation * map_observation) =0;
+  virtual bool addLandmarkToGlobalSysyem(MapLandmark * map_point) =0;
+  virtual bool addFrameToGlobalSystem(Frame * frame, bool b_frame_fixed) =0;
+  virtual bool optimizeGlobal(MapFrames & map_frames, MapLandmarks & map_landmarks) =0;
 };
 
 }

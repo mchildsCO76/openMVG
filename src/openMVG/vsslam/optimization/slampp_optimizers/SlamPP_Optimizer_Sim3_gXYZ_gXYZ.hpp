@@ -42,7 +42,6 @@ protected:
 
   CBAOptimizerCore_Sim3_gXYZ_gXYZ * m_p_optimizer; // PIMPL
 	std::map<size_t, size_t> m_camera_ownerships; // using a side channel now. this should be a part of the CVertexInvDepth class but I actually want to experiment a bit with global / local convergence so I'm leaving it here for now
-  size_t m_undefined_camera_id; // index of undefined camera (if we dont have constant vertices its size_t(-1) otherwise size_t::max/2 +1
 
 public:
 	SlamPP_Optimizer_Sim3_gXYZ_gXYZ(size_t undefined_camera_id = size_t(-1), bool b_verbose = false, bool b_use_schur = true,
@@ -69,12 +68,14 @@ public:
 	void Optimize(size_t n_max_iteration_num = 5, double f_min_dx_norm = .01, double f_min_dl_norm = .01) override; // throw(srd::bad_alloc, std::runtime_error)
 
 	double * Add_CamVertex(size_t n_vertex_id, const Eigen::Matrix<double, 12, 1> &v_cam_state) override; // throw(srd::bad_alloc)
-  double * Add_CamVertexFixed(size_t n_vertex_id, const Eigen::Matrix<double, 12, 1> &v_cam_state) override; // throw(srd::bad_alloc)
+	double * Add_CamVertexFixed(size_t n_vertex_id, const Eigen::Matrix<double, 12, 1> &v_cam_state) override; // throw(srd::bad_alloc)
+  double * Add_CamVertexConst(size_t n_vertex_id, const Eigen::Matrix<double, 12, 1> &v_cam_state) override; // throw(srd::bad_alloc)
 
   // a vertex can be added either way, it gets automatically converted to the representation space
   double * Add_XYZVertex(size_t n_vertex_id, size_t n_owner_id, const Eigen::Vector3d &v_xyz_position) override;
   double * Add_XYZVertexFixed(size_t n_vertex_id, size_t n_owner_id, const Eigen::Vector3d &v_xyz_position) override;
 
+  // Observations
 	void Add_P2CSim3GEdge(size_t n_landmark_vertex_id, size_t n_cam_vertex_id,
 		const Eigen::Vector2d &v_observation, const Eigen::Matrix2d &t_information) override; // throw(srd::bad_alloc)
 

@@ -36,8 +36,7 @@ public:
   (
     const image::Image<unsigned char> & ima,
     Frame * frame,
-    const size_t min_count,
-    const size_t max_count
+    const size_t min_count
   ) const override
   {
     // Cast region
@@ -56,16 +55,16 @@ public:
       if (feats.size() > min_count)
       {
         // shuffle to avoid to sample only in one bucket
-        if (max_count != 0)
+        if (min_count != 0)
         {
           std::random_shuffle(feats.begin(), feats.end());
-          feats.resize(max_count); // cut the array to keep only a given count of features
+          feats.resize(min_count); // cut the array to keep only a given count of features
         }
-        regionsCasted->Features().resize(feats.size());
+        regionsCasted->Features().resize(min_count);
         std::copy(feats.begin(),feats.end(),regionsCasted->Features().begin());
         break;
       }
-      else if (fast_score == scores[scores.size()-1] || feats.size() == min_count)
+      else if (fast_score == scores[scores.size()-1] && feats.size()!=0)
       {
         // If there is enough matches (or last detection step) we copy what we have
         regionsCasted->Features().resize(feats.size());

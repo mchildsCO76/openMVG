@@ -43,7 +43,17 @@ VSSLAM_Bundle_Adjustment_SlamPP::VSSLAM_Bundle_Adjustment_SlamPP
   if (options_.map_landmark_type_ == MAP_POINT_TYPE::GLOBAL_EUCLIDEAN && options_.map_camera_type_ == MAP_CAMERA_TYPE::GLOBAL)
   {
     problem_ = std::unique_ptr<SlamPP_Optimizer>(new SlamPP_Optimizer_Sim3_gXYZ_gXYZ(options_.undefined_cam_id, options_.b_verbose_, options_.b_use_schur_, options_.b_do_marginals_, options_.b_do_icra_style_marginals_));
+    // Set initial settings
+    problem_->Set_AllBatch(options_.b_all_batch);
+    problem_->Set_UpdateThreshold(options_.f_update_thresh);
+    problem_->Set_TrustRadius(options_.f_trust_radius);
+    problem_->Set_TrustRadius_Persistence(options_.b_trust_radius_persistent);
   }
+
+
+
+
+
 }
 
 VSSLAM_Bundle_Adjustment_SlamPP::BA_options_SlamPP &
@@ -55,10 +65,14 @@ VSSLAM_Bundle_Adjustment_SlamPP::getOptions()
 bool VSSLAM_Bundle_Adjustment_SlamPP::OptimizePose
 (
   Frame * frame_i,
-  Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_i_idx
+  Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_i_idx,
+  bool b_use_loss_function
 )
 {
   std::cout<<"Optimize pose: "<<frame_i->getFrameId()<<"\n";
+
+
+
 /*
   // if vector of frames is empty and no frame_i is given -> no pose to optimize
   if (!frame_i || matches_3D_pts_frame_i_idx.empty())
@@ -132,12 +146,21 @@ bool VSSLAM_Bundle_Adjustment_SlamPP::OptimizePose
   return true;
 }
 
+bool VSSLAM_Bundle_Adjustment_SlamPP::OptimizePose
+(
+  Frame * frame_i,
+  bool b_use_loss_function
+)
+{
+  std::cout<<"Optimize pose: "<<frame_i->getFrameId()<<"\n";
+  return true;
+}
+
 bool VSSLAM_Bundle_Adjustment_SlamPP::OptimizeLocal
 (
-  Hash_Map<Frame*, size_t> & tmp_frames,
-  Hash_Map<MapLandmark*, std::unique_ptr<MapLandmark> > & tmp_structure,
   Frame * frame_i,
-  std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts
+  std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts,
+  bool b_use_loss_function
 )
 {
  /* std::cout<<"Optimize Local\n";
@@ -544,6 +567,146 @@ bool VSSLAM_Bundle_Adjustment_SlamPP::OptimizeLocal
 }
 
 
+bool VSSLAM_Bundle_Adjustment_SlamPP::addObservationToGlobalSystem(MapLandmark * map_point, MapObservation * map_observation)
+{
+  // Frame of interest (current frame)
+  Frame * frame_obs = map_observation->frame_ptr;
+  const IndexT & frame_obs_id = frame_obs->getFrameId();
+  const IndexT & landmark_id = map_point->id_;
+  const IndexT feat_obs_id = map_observation->feat_id;
+
+  // Check if frame exists in the system
+  if (map_poses_.find(frame_obs_id) == map_poses_.end())
+  {
+    std::cout<<"Error: Appropriate frame not in the system!! Skipping landmark!";
+    return false;
+  }
+
+  // Check if landmark exists in the system
+  if (map_landmarks_.find(landmark_id) == map_landmarks_.end())
+  {
+    std::cout<<"Error: Appropriate landmark not in the system!! Skipping landmark!";
+    return false;
+  }
+
+
+  // Add measurement edge
+  const size_t frame_slampp_id = map_poses_.find(frame_obs_id)->second.first;
+  const size_t landmark_slampp_id = map_landmarks_.find(landmark_id)->second.first;
+
+  problem_->Add_P2CSim3GEdge(landmark_slampp_id,frame_slampp_id,frame_obs->getFeaturePosition(feat_obs_id), frame_obs->getFeatureInformationMatrix(feat_obs_id));
+
+  return true;
+}
+bool VSSLAM_Bundle_Adjustment_SlamPP::addLandmarkToGlobalSysyem(MapLandmark * map_point)
+{
+  // Create vertex for Landmark
+  const size_t landmark_slampp_id = getNextVertexId();
+
+  // Add landmarks as global point : m_undefined_camera_id as no owner
+  double * landmark_ptr = problem_->Add_XYZVertex(landmark_slampp_id,size_t(-1), map_point->X_);
+
+  // Add landmark to map
+  map_landmarks_[map_point->id_] = std::make_pair(landmark_slampp_id,landmark_ptr);
+
+  LandmarkObservations & obs = map_point->obs_;
+  for(auto & m_o : obs)
+  {
+    Frame * frame_obs = m_o.second.frame_ptr;
+
+    // Frame of interest (current frame)
+    const IndexT & frame_obs_id = frame_obs->getFrameId();
+    const IndexT & feat_obs_id = m_o.second.feat_id;
+    const IndexT & cam_obs_idx = frame_obs->getCamId();
+    IntrinsicBase * & cam_obs_intrinsic = frame_obs->getCameraIntrinsics();
+
+    // Add frame to the problem if its not added yet
+    if (map_poses_.find(frame_obs_id) == map_poses_.end())
+    {
+      std::cout<<"Error: Appropriate frame not in the system!! Skipping landmark!";
+      return false;
+    }
+
+    // Add measurement edge
+    const size_t frame_slampp_id = map_poses_.find(frame_obs_id)->second.first;
+    problem_->Add_P2CSim3GEdge(landmark_slampp_id,frame_slampp_id,frame_obs->getFeaturePosition(feat_obs_id), frame_obs->getFeatureInformationMatrix(feat_obs_id));
+
+  }
+  return true;
+}
+bool VSSLAM_Bundle_Adjustment_SlamPP::addFrameToGlobalSystem(Frame * frame, bool b_frame_fixed)
+{
+
+  // Add frame of interest (current frame)
+  const IndexT & frame_id = frame->getFrameId();
+  const IndexT & cam_idx = frame->getCamId();
+  IntrinsicBase * & cam_intrinsic = frame->getCameraIntrinsics();
+
+  if (map_poses_.find(frame_id) == map_poses_.end())
+  {
+    // Pose parameters
+    Eigen::Matrix<double, 12, 1> frame_sim3_state;
+    frame->getPoseInverse_StateVector(frame_sim3_state,frame->ref_frame_);
+
+    // Add camera to BA problem
+    size_t frame_slampp_id = getNextVertexId();
+    std::cout<<"F: "<<frame_id<<" slamPP: "<<frame_slampp_id<<"\n";
+    double * frame_state_ptr;
+    if (b_frame_fixed)
+    {
+      // Set the observing camera as fixed
+      frame_state_ptr = problem_->Add_CamVertexFixed(frame_slampp_id,frame_sim3_state);
+    }
+    else
+    {
+      frame_state_ptr = problem_->Add_CamVertex(frame_slampp_id,frame_sim3_state);
+    }
+
+    // Add camera to map
+    map_poses_[frame_id] = std::make_pair(frame_slampp_id,frame_state_ptr);
+  }
+  else
+  {
+    std::cout<<"Cartographer: [Slam++ GlobalBA] Frame "<<frame->getFrameId()<< "already in the system!";
+    return false;
+  }
+
+  std::cout<<"Cartographer: [Slam++ GlobalBA] Add frame: "<<frame->getFrameId()<< " Fixed: "<<b_frame_fixed<<" to global map!\n";
+  return true;
+
+}
+bool VSSLAM_Bundle_Adjustment_SlamPP::optimizeGlobal(MapFrames & map_frames, MapLandmarks & map_landmarks)
+{
+  // Optimize the solution
+  problem_->Optimize(options_.n_max_inc_iters,options_.f_inc_nlsolve_thresh, options_.f_inc_nlsolve_thresh);
+
+
+  // Update camera poses with refined data
+  for (auto & pose_it : map_poses_)
+  {
+    const IndexT & frame_id = pose_it.first;
+    Frame * frame = map_frames[frame_id].get();
+
+    Eigen::Map<const Eigen::VectorXd> frame_state_after(pose_it.second.second, 7);
+    frame->setPoseInverse_sim3(frame_state_after,frame->ref_frame_);
+  }
+
+  for (auto & landmark_it : map_landmarks_)
+  {
+    const IndexT & landmark_id = landmark_it.first;
+    MapLandmark * landmark = map_landmarks[landmark_id].get();
+
+    Eigen::Map<const Eigen::Vector3d> landmark_state_after(landmark_it.second.second, 3);
+
+    landmark->X_ = landmark_state_after;
+  }
+
+  std::cout<<"Cartographer: [Slam++ GlobalBA] Optimized OK!\n";
+
+
+
+  return true;
+}
 
 }
 }

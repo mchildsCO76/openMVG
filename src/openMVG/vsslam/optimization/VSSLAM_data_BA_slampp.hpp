@@ -72,6 +72,20 @@ class VSSLAM_Bundle_Adjustment_SlamPP : public VSSLAM_Bundle_Adjustment
 
     BA_options_SlamPP options_;
     std::unique_ptr<SlamPP_Optimizer> problem_;
+    Hash_Map<IndexT, std::pair<size_t,double *> > map_poses_;
+    Hash_Map<IndexT, std::pair<size_t,double *> > map_landmarks_;
+
+    size_t next_vertex_idx_slampp_ = 0;
+    size_t next_const_vertex_idx_slampp_ = std::numeric_limits<size_t>::max(); // Constant vertices have decreasing ids starting with max
+
+    size_t getNextVertexId()
+    {
+      return next_vertex_idx_slampp_++;
+    }
+    size_t getNextConstVertexId()
+    {
+      return next_const_vertex_idx_slampp_--;
+    }
 
   public:
 
@@ -86,17 +100,27 @@ class VSSLAM_Bundle_Adjustment_SlamPP : public VSSLAM_Bundle_Adjustment
     bool OptimizePose
     (
       Frame * frame_i,
-      Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_i_idx
+      Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_i_idx,
+      bool b_use_loss_function = true
+    )override;
+
+    bool OptimizePose
+    (
+      Frame * frame_i,
+      bool b_use_loss_function = true
     )override;
 
     bool OptimizeLocal
     (
-      Hash_Map<Frame*, size_t> & tmp_frames,
-      Hash_Map<MapLandmark*, std::unique_ptr<MapLandmark> > & tmp_structure,
       Frame * frame_i,
-      std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts
+      std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts,
+      bool b_use_loss_function = true
     )override;
 
+    bool addObservationToGlobalSystem(MapLandmark * map_point, MapObservation * map_observation)override;
+    bool addLandmarkToGlobalSysyem(MapLandmark * map_point)override;
+    bool addFrameToGlobalSystem(Frame * frame, bool b_frame_fixed = false)override;
+    bool optimizeGlobal(MapFrames & map_frames, MapLandmarks & map_landmarks)override;
 };
 
 }

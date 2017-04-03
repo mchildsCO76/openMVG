@@ -90,8 +90,8 @@ class Cartographer
     // -- Local map
     // ---------------------
     Hash_Map<MapLandmark*, std::unique_ptr<MapLandmark> > tmp_structure;
-    Hash_Map<Frame*, size_t> tmp_frames;
-IndexT local_p_id = 0;
+
+    IndexT local_p_id = 0;
     // Feature extractor used
     Abstract_FeatureExtractor * feature_extractor_ = nullptr;;
 
@@ -117,12 +117,24 @@ IndexT local_p_id = 0;
       return map_camera_type;
     }
 
+    bool isMapInitialized()
+    {
+      return map_initialized;
+    }
+
     void setCeresLocalBA()
     {
-
+      std::cout<<"Set local BA: ceres\n";
       VSSLAM_Bundle_Adjustment_Ceres::BA_options_Ceres options;
       options.linear_solver_type_ = ceres::DENSE_SCHUR;
       local_BA_obj = std::unique_ptr<VSSLAM_Bundle_Adjustment>(new VSSLAM_Bundle_Adjustment_Ceres(options));
+    }
+
+    void setCeresGlobalBA()
+    {
+      VSSLAM_Bundle_Adjustment_Ceres::BA_options_Ceres options;
+      options.linear_solver_type_ = ceres::DENSE_SCHUR;
+      BA_obj = std::unique_ptr<VSSLAM_Bundle_Adjustment>(new VSSLAM_Bundle_Adjustment_Ceres(options));
     }
 
     void setSlamPPLocalBA()
@@ -130,38 +142,40 @@ IndexT local_p_id = 0;
       VSSLAM_Bundle_Adjustment_SlamPP::BA_options_SlamPP options;
       local_BA_obj = std::unique_ptr<VSSLAM_Bundle_Adjustment>(new VSSLAM_Bundle_Adjustment_SlamPP(options));
     }
+
+    void setSlamPPGlobalBA()
+    {
+      VSSLAM_Bundle_Adjustment_SlamPP::BA_options_SlamPP options;
+      BA_obj = std::unique_ptr<VSSLAM_Bundle_Adjustment>(new VSSLAM_Bundle_Adjustment_SlamPP(options));
+    }
+
     bool optimizePose
     (
       Frame * frame_i,
-      Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_i_idx
+      Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_i_idx,
+      bool b_use_loss_function = true
     )
     {
-      return local_BA_obj->OptimizePose(frame_i, matches_3D_pts_frame_i_idx);
+      return local_BA_obj->OptimizePose(frame_i, matches_3D_pts_frame_i_idx,b_use_loss_function);
     }
-
+    bool optimizePose
+    (
+      Frame * frame_i,
+      bool b_use_loss_function = true
+    )
+    {
+      return local_BA_obj->OptimizePose(frame_i,b_use_loss_function);
+    }
     bool optimizeLocal
     (
       Frame * frame_i,
-      std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts
+      std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts,
+      bool b_use_loss_function = true
     )
     {
-
-      std::cout<<"Optimize Local A\n";
-      return local_BA_obj->OptimizeLocal(tmp_frames, tmp_structure, frame_i, vec_triangulated_pts);
+      return local_BA_obj->OptimizeLocal(frame_i, vec_triangulated_pts,b_use_loss_function);
     }
 
-    /*
-    bool optimizeLocal
-    (
-      std::vector<Frame*> * vec_frames,
-      Frame * frame_i,
-      Hash_Map<MapLandmark *,IndexT> * matches_3D_ptr_cur_idx,
-      std::vector<std::unique_ptr<MapLandmark> > * vec_triangulated_pts
-    )
-    {
-      tmp_frames, tmp_structure, frame_i,
-      return local_BA_obj->OptimizePose(vec_frames,frame_i, matches_3D_ptr_cur_idx, vec_triangulated_pts);
-    }*/
 
     // ------------------------------
     // -- Set basic map parameters
@@ -201,9 +215,12 @@ IndexT local_p_id = 0;
     );
 
 
-    // Determine what is the min degree of landmark necessary to be able to initialize the map
-    size_t findMinLandmarkDegreeForGlobalMapInitialization();
-    size_t findMinLandmarkDegreeForDefinedInGlobalMap
+
+
+    // Determine what is the min number of observations landmark need to be considered for global map
+    // Observations can be from any frame (not only keyframes)
+    double findMinLandmarkQualityForGlobalMapInitialization();
+    double findMinLandmarkQualityForDefinedInGlobalMap
     (
       Frame * frame,
       std::vector<std::unique_ptr<MapLandmark> > * vec_new_pts_3D_obs
@@ -249,7 +266,7 @@ IndexT local_p_id = 0;
     // ------------------------------
     // -- Frame manipulation
     // ------------------------------
-    void addFrameToGlobalMap(const std::shared_ptr<Frame> & frame);
+    void addFrameToGlobalMap(const std::shared_ptr<Frame> & frame, bool b_frame_fixed);
 
 
     // ------------------------------
@@ -268,7 +285,6 @@ IndexT local_p_id = 0;
     );
     MapLandmark * addLandmarkToLocalMap(std::unique_ptr<MapLandmark> & lm);
     MapLandmark * addLandmarkToGlobalMap(std::unique_ptr<MapLandmark> & lm);
-    MapLandmark * addLandmarkFromLocalToGlobalMap(std::unique_ptr<MapLandmark> & lm);
 
     void eliminateInactiveLocalLandmarks();
 
@@ -331,14 +347,29 @@ IndexT local_p_id = 0;
       std::vector<MapLandmark*> & local_points
     );
 
+    void resetFlagLocalMapPoints(std::vector<MapLandmark*> & local_points);
     // void updateLocalMap(Frame * currentFrame);
 
 
-    void addObservationToIncSystem()
-    {};
-    void addLandmarkToIncSystem(){};
-    void addFrameToIncSystem(){};
-    void optimizeIncSystem(){};
+    void addObservationToIncSystem(MapLandmark * map_point, MapObservation * map_observation)
+    {
+      BA_obj->addObservationToGlobalSystem(map_point,map_observation);
+    };
+    void addLandmarkToIncSystem(MapLandmark * map_point)
+    {
+      BA_obj->addLandmarkToGlobalSysyem(map_point);
+    };
+    void addFrameToIncSystem(Frame * frame, bool b_frame_fixed = false)
+    {
+      BA_obj->addFrameToGlobalSystem(frame,b_frame_fixed);
+    };
+    bool optimizeIncSystem()
+    {
+      bool b_ok = BA_obj->optimizeGlobal(keyframes,structure);
+      std::cout<<"Cartographer: [BA] Global optimization step: "<<step_id<<" was: "<<b_ok<<"!\n";
+      return b_ok;
+    };
+
 
 };
 

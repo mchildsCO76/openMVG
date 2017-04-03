@@ -22,7 +22,6 @@
 #include <openMVG/vsslam/detection/Feat_Extractor_FastDipole.hpp>
 #include <openMVG/vsslam/detection/Feat_Extractor_SIFT.hpp>
 
-#include <openMVG/vsslam/matching/Feat_Matcher_Basic.hpp>
 #include <openMVG/vsslam/matching/Feat_Matcher_CascadeHashing.hpp>
 
 #include <openMVG/vsslam/SLAM_Monocular.hpp>
@@ -30,6 +29,9 @@
 #include <openMVG/vsslam/Frame.hpp>
 #include <openMVG/vsslam/VSSLAM_Data.hpp>
 #include "openMVG/types.hpp"
+
+#include <openMVG/vsslam/Export.hpp>
+#include <openMVG/vsslam/matching/Feat_Matcher_Basic.hpp>
 
 
 using namespace openMVG;
@@ -63,6 +65,30 @@ bool checkIntrinsicStringValidity(const std::string & Kmatrix, double & focal, d
     if (i==5) ppy = readvalue;
   }
   return true;
+}
+
+void DrawCircle(float cx, float cy, float r)
+{
+    int num_segments = 20;
+    glBegin(GL_LINE_LOOP);
+    for(int ii = 0; ii < num_segments; ii++)
+    {
+        float theta = 2.0f * 3.1415926f * float(ii) / float(num_segments);//get the current angle
+
+        float x = r * cosf(theta);//calculate the x component
+        float y = r * sinf(theta);//calculate the y component
+
+        glVertex2f(x + cx, y + cy);//output vertex
+
+    }
+    glEnd();
+}
+
+
+void DrawSteps()
+{
+
+
 }
 
 
@@ -197,6 +223,7 @@ int main(int argc, char **argv)
       // Set Fast Dipole feature detector/descriptor
       //feat_extractor_ptr.reset(new Feat_Extractor_FastDipole());
       feat_extractor_ptr.reset(new Feat_Extractor_SIFT());
+      //feat_matcher_ptr.reset(new Feat_Matcher_CascadeHashing(feat_extractor_ptr.get()));
       feat_matcher_ptr.reset(new Feat_Matcher_Basic());
       //feat_matcher_ptr.reset(new Feat_Matcher_CascadeHashing(feat_extractor_ptr.get()));
 
@@ -255,6 +282,7 @@ int main(int argc, char **argv)
   }
 
   // FOR DISPLAY
+  std::shared_ptr<Frame> display_prev_frame;
   // -----------------
   // -- FRAME BY FRAME processing
   // -----------------
@@ -303,6 +331,7 @@ int main(int argc, char **argv)
       //    . track features
       //    . if some tracks are cut, detect and insert new features
       //--
+      Abstract_Tracker::TRACKING_STATUS pre_status = monocular_slam.tracker_->getTrackingStatus();
 
       double startTime = omp_get_wtime();
       // do stuff
@@ -312,7 +341,7 @@ int main(int argc, char **argv)
 
       Tracker_Features * tr = dynamic_cast<Tracker_Features*>(monocular_slam.tracker_);
 
-      Frame * current_frame = tr->mPrevFrame.get();
+      Frame * display_current_frame = tr->mPrevFrame.get();
 
       //--
       // Draw feature trajectories
@@ -324,127 +353,605 @@ int main(int argc, char **argv)
       glColor3f(0.f, 1.f, 0.f);
       glLineWidth(2.f);
 
+
+      // Draw all features in current frame - YELLOW
+      for (size_t map_point_i = 0; map_point_i<display_current_frame->map_points_.size(); map_point_i++)
+      {
+        glPointSize(2.0f);
+        glColor3f(1.f, 1.f, 0.f);
+        glBegin(GL_POINTS);
+        Vec2 pt = display_current_frame->getFeaturePosition(map_point_i);
+        glVertex2f(pt(0),pt(1));
+        glEnd();
+      }
+
+
+      if (false)
+      {
+        if( pre_status == Abstract_Tracker::TRACKING_STATUS::NOT_INIT || pre_status == Abstract_Tracker::TRACKING_STATUS::INIT)
+        {
+          ////////////////////////////////////////////////////////////////////////
+          // Show initial matches &&
+          ////////////////////////////////////////////////////////////////////////
+          size_t step_i = 0;
+          for (step_i = 0; step_i < monocular_slam.tracker_->display_pt2d_A.size(); step_i++)
+          {
+            glBindTexture(GL_TEXTURE_2D, text2D); //Binding the texture
+            glEnable(GL_TEXTURE_2D);              //Enable texture
+            //-- Update the openGL texture with the current frame pixel values
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
+             currentImage.Width(), currentImage.Height(),
+            GL_LUMINANCE, GL_UNSIGNED_BYTE,
+            currentImage.data());
+
+            //-- Draw the current image
+            window.SetOrtho(currentImage.Width(), currentImage.Height());
+            window.DrawFullScreenTexQuad(currentImage.Width(), currentImage.Height());
+            glDisable(GL_TEXTURE_2D);
+
+            // Clear the depth buffer so the drawn image become the background
+            glClear(GL_DEPTH_BUFFER_BIT);
+            glDisable(GL_LIGHTING);
+
+            // Draw all features in current frame - YELLOW
+            for (size_t map_point_i = 0; map_point_i<display_current_frame->map_points_.size(); map_point_i++)
+            {
+              glPointSize(2.0f);
+              glColor3f(1.f, 1.f, 0.f);
+              glBegin(GL_POINTS);
+              Vec2 pt = display_current_frame->getFeaturePosition(map_point_i);
+              glVertex2f(pt(0),pt(1));
+              glEnd();
+            }
+
+            for (size_t i=0; i<monocular_slam.tracker_->display_pt2d_A[step_i].size(); ++i)
+            {
+              Vec2 ptA = monocular_slam.tracker_->display_pt2d_A[step_i][i];
+              Vec2 ptB = monocular_slam.tracker_->display_pt2d_B[step_i][i];
+              Vec2 ptC = monocular_slam.tracker_->display_pt2d_C[step_i][i];
+
+
+              glPointSize(4.0f);
+              glBegin(GL_POINTS);
+
+              // feature matched in prev frame  - RED
+              glColor3f(1.f, 0.f, 0.f);
+              glVertex2f(ptA(0),ptA(1));
+
+              glEnd();
+
+              DrawCircle(ptA(0),ptA(1),ptC(0));
+
+              glBegin(GL_POINTS);
+              // Projected point to current frame  - BLUE
+              glColor3f(0.f, 1.f, 0.f);
+              glVertex2f(ptB(0),ptB(1));
+
+              glEnd();
+
+              DrawCircle(ptB(0),ptB(1),ptC(1));
+
+              // Line from point in prev to predicted - WHITE
+              glColor3f(1.f, 1.f, 1.f);
+              glBegin(GL_LINE_STRIP);
+              glVertex2f(ptA(0),ptA(1));
+              glVertex2f(ptB(0),ptB(1));
+              glEnd();
+
+            }
+
+            glFlush();
+            window.Swap(); // Swap openGL buffer
+            if (step_i<(monocular_slam.tracker_->display_pt2d_A.size()-1))
+              sleep(3);
+          }
+        }
+        else if ( pre_status == Abstract_Tracker::TRACKING_STATUS::OK)
+        {
+
+          ////////////////////////////////////////////////////////////////////////
+          // Show putative matches of matching with MM - two iterations
+          ////////////////////////////////////////////////////////////////////////
+          std::cout<<"-----------------------------------\n";
+          std::cout<<"-------PUTATIVE WITH MM---------\n";
+          std::cout<<"-----------------------------------\n";
+          size_t step_i;
+          for (step_i = 0; step_i < 2; step_i++)
+          {
+            std::cout<<"--step :"<<step_i<<"----------------\n";
+            glBindTexture(GL_TEXTURE_2D, text2D); //Binding the texture
+            glEnable(GL_TEXTURE_2D);              //Enable texture
+            //-- Update the openGL texture with the current frame pixel values
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
+             currentImage.Width(), currentImage.Height(),
+            GL_LUMINANCE, GL_UNSIGNED_BYTE,
+            currentImage.data());
+
+            //-- Draw the current image
+            window.SetOrtho(currentImage.Width(), currentImage.Height());
+            window.DrawFullScreenTexQuad(currentImage.Width(), currentImage.Height());
+            glDisable(GL_TEXTURE_2D);
+
+            // Clear the depth buffer so the drawn image become the background
+            glClear(GL_DEPTH_BUFFER_BIT);
+            glDisable(GL_LIGHTING);
+
+            // Draw all features in current frame - YELLOW
+            for (size_t map_point_i = 0; map_point_i<display_current_frame->map_points_.size(); map_point_i++)
+            {
+              glPointSize(2.0f);
+              glColor3f(1.f, 1.f, 0.f);
+              glBegin(GL_POINTS);
+              Vec2 pt = display_current_frame->getFeaturePosition(map_point_i);
+              glVertex2f(pt(0),pt(1));
+              glEnd();
+            }
+
+            for (size_t i=0; i<monocular_slam.tracker_->display_pt2d_A[step_i].size(); ++i)
+            {
+              Vec2 ptA = monocular_slam.tracker_->display_pt2d_A[step_i][i];
+              Vec2 ptB = monocular_slam.tracker_->display_pt2d_B[step_i][i];
+              Vec2 ptC = monocular_slam.tracker_->display_pt2d_C[step_i][i];
+              float pt_s = monocular_slam.tracker_->display_size_A[step_i][i];
+
+
+              glPointSize(4.0f);
+              glBegin(GL_POINTS);
+
+              // Point in prev frame  - RED
+              glColor3f(1.f, 0.f, 0.f);
+              glVertex2f(ptA(0),ptA(1));
+
+              // Matched point in current frame - BLUE
+              if (ptB(0)!=-1 && ptB(1)!=-1)
+              {
+                glColor3f(0.f, 0.f, 1.f);
+                glVertex2f(ptB(0),ptB(1));
+              }
+
+              // Predicted location of the point based on prev_frame and camera pose  - GREEN
+              if (ptB(0)!=-1 && ptB(1)!=-1)
+              {
+                glColor3f(0.f, 1.f, 0.f);
+              }
+              else
+              {
+                glColor3f(1.f, 0.f, 0.f);
+              }
+              glVertex2f(ptC(0),ptC(1));
+
+              glEnd();
+
+              // Line from point in prev to predicted - WHITE
+              glColor3f(1.f, 1.f, 1.f);
+              glBegin(GL_LINE_STRIP);
+              glVertex2f(ptA(0),ptA(1));
+              glVertex2f(ptC(0),ptC(1));
+              glEnd();
+
+              // Line from predicted to matched - green
+              if (ptB(0)!=-1 && ptB(1)!=-1)
+              {
+                glColor3f(0.f, 1.f, 0.f);
+                glBegin(GL_LINE_STRIP);
+                glVertex2f(ptC(0),ptC(1));
+                glVertex2f(ptB(0),ptB(1));
+                glEnd();
+              }
+              // Area of search around predicted point
+              if (ptB(0)!=-1 && ptB(1)!=-1)
+              {
+                glColor3f(0.f, 1.f, 0.f);
+              }
+              else
+              {
+                glColor3f(1.f, 0.f, 0.f);
+              }
+              DrawCircle(ptC(0),ptC(1),pt_s);
+            }
+
+            glFlush();
+            window.Swap(); // Swap openGL buffer
+
+              sleep(3);
+          }
+
+          ////////////////////////////////////////////////////////////////////////
+          // Show accepted matches in a frame
+          ////////////////////////////////////////////////////////////////////////
+          std::cout<<"-----------------------------------\n";
+          std::cout<<"-------ACCEPTED MM in frame---------\n";
+          std::cout<<"-----------------------------------\n";
+          step_i = 2;
+          glBindTexture(GL_TEXTURE_2D, text2D); //Binding the texture
+          glEnable(GL_TEXTURE_2D);              //Enable texture
+          //-- Update the openGL texture with the current frame pixel values
+          glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
+           currentImage.Width(), currentImage.Height(),
+          GL_LUMINANCE, GL_UNSIGNED_BYTE,
+          currentImage.data());
+
+          //-- Draw the current image
+          window.SetOrtho(currentImage.Width(), currentImage.Height());
+          window.DrawFullScreenTexQuad(currentImage.Width(), currentImage.Height());
+          glDisable(GL_TEXTURE_2D);
+
+          // Clear the depth buffer so the drawn image become the background
+          glClear(GL_DEPTH_BUFFER_BIT);
+          glDisable(GL_LIGHTING);
+
+          // Draw all features in current frame - YELLOW
+          for (size_t map_point_i = 0; map_point_i<display_current_frame->map_points_.size(); map_point_i++)
+          {
+            glPointSize(2.0f);
+            glColor3f(1.f, 1.f, 0.f);
+            glBegin(GL_POINTS);
+            Vec2 pt = display_current_frame->getFeaturePosition(map_point_i);
+            glVertex2f(pt(0),pt(1));
+            glEnd();
+          }
+
+          for (size_t i=0; i<monocular_slam.tracker_->display_pt2d_A[step_i].size(); ++i)
+          {
+            Vec2 ptA = monocular_slam.tracker_->display_pt2d_A[step_i][i];
+            Vec2 ptC = monocular_slam.tracker_->display_pt2d_C[step_i][i];
+            float pt_s = monocular_slam.tracker_->display_size_A[step_i][i];
+
+
+            glPointSize(4.0f);
+            glBegin(GL_POINTS);
+
+            // feature matched in current frame  - RED
+            glColor3f(1.f, 0.f, 0.f);
+            glVertex2f(ptA(0),ptA(1));
+
+            // Projected point to current frame  - GREEN
+              glColor3f(0.f, 1.f, 0.f);
+            glVertex2f(ptC(0),ptC(1));
+
+            glEnd();
+
+            // Line from point in prev to predicted - WHITE
+            glColor3f(1.f, 1.f, 1.f);
+            glBegin(GL_LINE_STRIP);
+            glVertex2f(ptA(0),ptA(1));
+            glVertex2f(ptC(0),ptC(1));
+            glEnd();
+
+            // Area of search around predicted point
+            glColor3f(0.f, 1.f, 0.f);
+            DrawCircle(ptC(0),ptC(1),pt_s);
+          }
+
+          glFlush();
+          window.Swap(); // Swap openGL buffer
+
+          sleep(3);
+
+
+          ////////////////////////////////////////////////////////////////////////
+          // Show local map points
+          ////////////////////////////////////////////////////////////////////////
+          std::cout<<"-----------------------------------\n";
+          std::cout<<"-------LOCAL MAP MATCHES-----------\n";
+          std::cout<<"-----------------------------------\n";
+          step_i = 3;
+
+          glBindTexture(GL_TEXTURE_2D, text2D); //Binding the texture
+          glEnable(GL_TEXTURE_2D);              //Enable texture
+          //-- Update the openGL texture with the current frame pixel values
+          glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
+           currentImage.Width(), currentImage.Height(),
+          GL_LUMINANCE, GL_UNSIGNED_BYTE,
+          currentImage.data());
+
+          //-- Draw the current image
+          window.SetOrtho(currentImage.Width(), currentImage.Height());
+          window.DrawFullScreenTexQuad(currentImage.Width(), currentImage.Height());
+          glDisable(GL_TEXTURE_2D);
+
+          // Clear the depth buffer so the drawn image become the background
+          glClear(GL_DEPTH_BUFFER_BIT);
+          glDisable(GL_LIGHTING);
+
+          // Draw all features in current frame - YELLOW
+          for (size_t map_point_i = 0; map_point_i<display_current_frame->map_points_.size(); map_point_i++)
+          {
+            glPointSize(2.0f);
+            glColor3f(1.f, 1.f, 0.f);
+            glBegin(GL_POINTS);
+            Vec2 pt = display_current_frame->getFeaturePosition(map_point_i);
+            glVertex2f(pt(0),pt(1));
+            glEnd();
+          }
+
+          for (size_t i=0; i<monocular_slam.tracker_->display_pt2d_A[step_i].size(); ++i)
+          {
+            Vec2 ptA = monocular_slam.tracker_->display_pt2d_A[step_i][i];
+            Vec2 ptB = monocular_slam.tracker_->display_pt2d_B[step_i][i];
+            float pt_s = monocular_slam.tracker_->display_size_A[step_i][i];
+
+
+            glPointSize(4.0f);
+            glBegin(GL_POINTS);
+
+            // feature matched in current frame  - RED
+            if (ptA(0)!=-1 && ptA(1)!=-1)
+            {
+              // Its a match -> measurement BLUE and projection GREEN
+              glColor3f(0.f, 0.f, 1.f);
+              glVertex2f(ptA(0),ptA(1));
+              glColor3f(0.f, 1.f, 0.f);
+              glVertex2f(ptB(0),ptB(1));
+              glColor3f(0.f, 1.f, 0.f);
+            }
+            else
+            {
+              // No match -> projection RED
+              glColor3f(1.f, 1.f, 0.f);
+              glVertex2f(ptB(0),ptB(1));
+
+              glColor3f(1.f, 0.f, 0.f);
+            }
+
+            glEnd();
+
+            // Area of search around predicted point
+            DrawCircle(ptB(0),ptB(1),pt_s);
+          }
+
+          glFlush();
+          window.Swap(); // Swap openGL buffer
+
+          sleep(3);
+
+
+          ////////////////////////////////////////////////////////////////////////
+          // Show matches with epipolar lines
+          ////////////////////////////////////////////////////////////////////////
+          std::cout<<"-----------------------------------\n";
+          std::cout<<"-------EPIPOLAR MATCHING-----------\n";
+          std::cout<<"-----------------------------------\n";
+          for (step_i = 4; step_i < monocular_slam.tracker_->display_pt2d_A.size()-2; step_i++)
+          {
+            std::cout<<"--step :"<<step_i<<"----------------\n";
+            glBindTexture(GL_TEXTURE_2D, text2D); //Binding the texture
+            glEnable(GL_TEXTURE_2D);              //Enable texture
+            //-- Update the openGL texture with the current frame pixel values
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
+             currentImage.Width(), currentImage.Height(),
+            GL_LUMINANCE, GL_UNSIGNED_BYTE,
+            currentImage.data());
+
+            //-- Draw the current image
+            window.SetOrtho(currentImage.Width(), currentImage.Height());
+            window.DrawFullScreenTexQuad(currentImage.Width(), currentImage.Height());
+            glDisable(GL_TEXTURE_2D);
+
+            // Clear the depth buffer so the drawn image become the background
+            glClear(GL_DEPTH_BUFFER_BIT);
+            glDisable(GL_LIGHTING);
+
+            // Draw all features in current frame - YELLOW
+            for (size_t map_point_i = 0; map_point_i<display_current_frame->map_points_.size(); map_point_i++)
+            {
+              glPointSize(2.0f);
+              glColor3f(1.f, 1.f, 0.f);
+              glBegin(GL_POINTS);
+              Vec2 pt = display_current_frame->getFeaturePosition(map_point_i);
+              glVertex2f(pt(0),pt(1));
+              glEnd();
+            }
+
+            for (size_t i=0; i<monocular_slam.tracker_->display_pt2d_A[step_i].size(); ++i)
+            {
+              Vec2 ptA = monocular_slam.tracker_->display_pt2d_A[step_i][i];
+              Vec2 ptB = monocular_slam.tracker_->display_pt2d_B[step_i][i];
+              float pt_s = monocular_slam.tracker_->display_size_A[step_i][i];
+
+
+              glPointSize(4.0f);
+              glBegin(GL_POINTS);
+
+              // Point in prev frame  - RED
+              glColor3f(1.f, 0.f, 0.f);
+              glVertex2f(ptB(0),ptB(1));
+
+              // Matched point in current frame - BLUE
+              glColor3f(0.f, 0.f, 1.f);
+              glVertex2f(ptA(0),ptA(1));
+
+              glEnd();
+
+              // Line from point in prev to predicted - WHITE
+              glColor3f(1.f, 1.f, 1.f);
+              glBegin(GL_LINE_STRIP);
+              glVertex2f(ptA(0),ptA(1));
+              glVertex2f(ptB(0),ptB(1));
+              glEnd();
+
+            }
+
+            glFlush();
+            window.Swap(); // Swap openGL buffer
+
+            if (step_i < (monocular_slam.tracker_->display_pt2d_A.size()-1))
+              sleep(3);
+          }
+
+
+          ////////////////////////////////////////////////////////////////////////
+          // Show putative new triangulated pts
+          ////////////////////////////////////////////////////////////////////////
+
+          std::cout<<"-----------------------------------\n";
+          std::cout<<"-------New putative 3D pts---------\n";
+          std::cout<<"-----------------------------------\n";
+          for (step_i = monocular_slam.tracker_->display_pt2d_A.size()-2; step_i < monocular_slam.tracker_->display_pt2d_A.size(); step_i++)
+          {
+            std::cout<<"--step :"<<step_i<<"----------------\n";
+            glBindTexture(GL_TEXTURE_2D, text2D); //Binding the texture
+            glEnable(GL_TEXTURE_2D);              //Enable texture
+            //-- Update the openGL texture with the current frame pixel values
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
+             currentImage.Width(), currentImage.Height(),
+            GL_LUMINANCE, GL_UNSIGNED_BYTE,
+            currentImage.data());
+
+            //-- Draw the current image
+            window.SetOrtho(currentImage.Width(), currentImage.Height());
+            window.DrawFullScreenTexQuad(currentImage.Width(), currentImage.Height());
+            glDisable(GL_TEXTURE_2D);
+
+            // Clear the depth buffer so the drawn image become the background
+            glClear(GL_DEPTH_BUFFER_BIT);
+            glDisable(GL_LIGHTING);
+
+            // Draw all features in current frame - YELLOW
+            for (size_t map_point_i = 0; map_point_i<display_current_frame->map_points_.size(); map_point_i++)
+            {
+              glPointSize(2.0f);
+              glColor3f(1.f, 1.f, 0.f);
+              glBegin(GL_POINTS);
+              Vec2 pt = display_current_frame->getFeaturePosition(map_point_i);
+              glVertex2f(pt(0),pt(1));
+              glEnd();
+            }
+
+            for (size_t i=0; i<monocular_slam.tracker_->display_pt2d_A[step_i].size(); ++i)
+            {
+              Vec2 ptA = monocular_slam.tracker_->display_pt2d_A[step_i][i];
+              Vec2 ptC = monocular_slam.tracker_->display_pt2d_C[step_i][i];
+              float pt_s = monocular_slam.tracker_->display_size_A[step_i][i];
+
+
+              glPointSize(4.0f);
+              glBegin(GL_POINTS);
+
+
+              // New triangulated pts
+              if (ptC(0) == 6)
+                glColor3f(0.f, 0.f, 1.f); // 2 obs BLUE
+              else if (ptC(0) == 7)
+                glColor3f(0.f, 1.f, 0.f); // more obs GREEN
+              else
+                glColor3f(1.f, 0.f, 0.f);  // error RED
+
+              glVertex2f(ptA(0),ptA(1));
+
+              glEnd();
+
+              // Area of search around predicted point
+              DrawCircle(ptA(0),ptA(1),pt_s);
+            }
+
+            glFlush();
+            window.Swap(); // Swap openGL buffer
+
+            if (step_i < monocular_slam.tracker_->display_pt2d_A.size()-1)
+              sleep(3);
+          }
+        }
+      }
+
+      monocular_slam.tracker_->display_pt2d_A.clear();
+      monocular_slam.tracker_->display_pt2d_B.clear();
+      monocular_slam.tracker_->display_pt2d_C.clear();;
+      monocular_slam.tracker_->display_size_A.clear();
+
+
+      bool b_snake_trail = true;
+
       if( monocular_slam.tracker_->getTrackingStatus() == Abstract_Tracker::TRACKING_STATUS::OK)
       {
-        //std::cout<<"AA\n";
-        size_t nn = 0;
-        Frame * current_frame = tr->mPrevFrame.get();
-
-
-        //std::cout<<"AA2\n";
-        for (MapLandmark * map_point : current_frame->map_points_)
+        for (size_t map_point_i = 0; map_point_i<display_current_frame->map_points_.size(); map_point_i++)
         {
+          MapLandmark * map_point = display_current_frame->map_points_[map_point_i];
+
           if (!map_point)
             continue;
 
-          //std::cout<<"AA3\n";
-          LandmarkObservations & map_obs = map_point->obs_;
-
-          //std::cout<<"AA31\n";
-
-          glBegin(GL_LINE_STRIP);
-
-
-          // Show points with color as degree of connection
-
-          //std::cout<<"AA4\n";
-          if (!map_point->isActive()){
-            glColor3f(1.f, 0.f, 0.f);
-          }
-          else{
-            switch(map_point->n_all_obs_)
-            {
-              case 2:
-                glColor3f(1.f, 0.f, 0.f);
-                break;
-              case 3:
-                glColor3f(1.f, 1.f, 0.f);
-                break;
-              case 4:
-                glColor3f(0.f, 1.f, 1.f);
-                break;
-              default:
-                glColor3f(0.f, 1.f, 0.f);
-                break;
-            }
-          }
-/*
-          // How points are associated with current frame
-          if (!map_point->isActive())
-            continue;
-
+          // Define color based on the type of association of the point
+          Vec3 color;
           switch(map_point->association_type_)
           {
             case 1:
-              // Initialization point - red
-              glColor3f(1.f, 0.f, 0.f);
-              break;
+            // Initialization points
+              color = Vec3(1.0,0.0,0.0);  // RED
+            break;
             case 2:
-              // Motion tracking / reference kf - green
-              glColor3f(0.f, 1.f, 0.f);
-              break;
+            // Motion Model points
+              color = Vec3(0.0,1.0,0.0);  // GREEN
+            break;
             case 3:
-              // Map tracking - light blue
-              glColor3f(0.f, 1.f, 1.f);
-              break;
+            // reference frame points
+              color = Vec3(1.0,1.0,0.0);  // YELLOW
+            break;
             case 4:
-              // New triangulation - blue
-              glColor3f(0.f, 0.f, 1.f);
-              break;
-            default:
-              glColor3f(0.f, 0.f, 0.f);
-              break;
+            // Reference map points
+              color = Vec3(1.0,0.0,1.0);  // MAGENTA
+            break;
+            case 5:
+            // Local map points
+              color = Vec3(0.0,1.0,1.0);  // CYAN
+            break;
+            case 6:
+            // Triangulated 2 points
+              color = Vec3(1.0,1.0,1.0);  // WHITE
+            break;
+            case 7:
+            // Triangulated multiple points
+              color = Vec3(0.0,0.0,1.0);  // BLUE
+            break;
           }
+          glColor3f(color(0),color(1),color(2));
 
 
-*/
-
-          //std::cout<<"AA3\n";
-
-          for(auto obs : map_obs)
+          if (b_snake_trail)
           {
-            const Vec2 & p0 = (obs.second.frame_ptr->getFeaturePositionDetected(obs.second.feat_id));
-            glVertex2f(p0.x(), p0.y());
+            // Show track trail through all previous tracks
+            LandmarkObservations & map_obs = map_point->obs_;
+
+            // Show track trail through all previous tracks
+            glBegin(GL_LINE_STRIP);
+            for(auto obs : map_obs)
+            {
+              const Vec2 & p0 = (obs.second.frame_ptr->getFeaturePositionDetected(obs.second.feat_id));
+              // Check if projection is actually in the image borders
+              if (!display_current_frame->isPointInFrame(p0))
+                continue;
+              glVertex2f(p0.x(), p0.y());
+            }
+            glEnd();
           }
-          glEnd();
-          nn++;
 
+          // Get projection of the point
+          Vec3 pt_3D_frame;
+          PoseEstimator::getRelativePointPosition(map_point->X_,map_point->ref_frame_,pt_3D_frame,display_current_frame);
 
-        }
-        std::cout<<"BB: "<<nn<<"\n";
+          IntrinsicBase * cam_intrinsic = display_current_frame->getCameraIntrinsics();
+          Vec2 pt_3D_frame_projected = cam_intrinsic->cam2ima(pt_3D_frame.hnormalized());
 
-      }
-      for (features::PointFeature pts : current_frame->getRegions()->GetRegionsPositions())
-      {
-        glPointSize(4.0f);
-        glBegin(GL_POINTS);
-        glColor3f(1.f, 1.f, 1.f); // Yellow
-
-          glVertex2f(pts.x(), pts.y());
-        glEnd();
-
-      }
-/*
-      for (auto p : monocular_slam.tracker_->mPrevFrame->regions->GetRegionsPositions())
-      {
-        // draw the current tracked point
-        {
+          // Draw point
           glPointSize(4.0f);
           glBegin(GL_POINTS);
-          glColor3f(1.f, 1.f, 0.f); // Yellow
-          //const Vec2f & p0 = iter->pos_;
-          glVertex2f(p.x(), p.y());
+          glVertex2f(pt_3D_frame_projected(0),pt_3D_frame_projected(1));
           glEnd();
-          //std::cout<<"I: "<<p.x()<<", "<<p.y()<<"\n";
-        }
-      }*/
 
+          // Draw Scale
+          //DrawCircle(pt_3D_frame_projected(0),pt_3D_frame_projected(1),display_current_frame->getFeatureScale(map_point_i));
+          DrawCircle(pt_3D_frame_projected(0),pt_3D_frame_projected(1),4);
+        }
+      }
+
+      display_prev_frame = monocular_slam.tracker_->mPrevFrame->share_ptr();
       glFlush();
       window.Swap(); // Swap openGL buffer
 
-      std::cout<<"DD\n";
       //if (frameId>0)
-      //sleep(2);
+      //sleep(1);
+      std::cout<<"Press ENTER to continue....."<<std::endl<<std::endl;
+      std::cin.ignore(1);
     }
   }
 

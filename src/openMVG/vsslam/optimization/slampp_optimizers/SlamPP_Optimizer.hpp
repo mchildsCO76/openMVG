@@ -68,6 +68,10 @@ public:
 
 class SlamPP_Optimizer {
 public:
+  size_t m_undefined_camera_id; // index of undefined camera (if we dont have constant vertices its size_t(-1) otherwise size_t::max/2 +1
+
+  SlamPP_Optimizer(size_t undefined_camera_id) : m_undefined_camera_id(undefined_camera_id){};
+
 	virtual ~SlamPP_Optimizer() = default;
 
 	virtual size_t n_Vertex_Num() const = 0;
@@ -89,7 +93,8 @@ public:
 	virtual void Optimize(size_t n_max_iteration_num = 5, double f_min_dx_norm = .01, double f_min_dl_norm = .01) = 0; // throw(srd::bad_alloc, std::runtime_error)
 
 	virtual double * Add_CamVertex(size_t n_vertex_id, const Eigen::Matrix<double, 12, 1> &v_cam_state) = 0; // throw(srd::bad_alloc)
-  virtual double * Add_CamVertexFixed(size_t n_vertex_id, const Eigen::Matrix<double, 12, 1> &v_cam_state) = 0; // throw(srd::bad_alloc)
+  virtual double * Add_CamVertexConst(size_t n_vertex_id, const Eigen::Matrix<double, 12, 1> &v_cam_state) = 0; // throw(srd::bad_alloc)
+  virtual double * Add_CamVertexFixed(size_t n_vertex_id, const Eigen::Matrix<double, 12, 1> &v_cam_state) =0; // throw(srd::bad_alloc)
 
 	// a vertex can be added either way, it gets automatically converted to the representation space
 	virtual double * Add_XYZVertex(size_t n_vertex_id, size_t n_owner_id, const Eigen::Vector3d &v_xyz_position) = 0; // throw(srd::bad_alloc)

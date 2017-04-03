@@ -8,6 +8,7 @@
 #pragma once
 
 #include <openMVG/vsslam/matching/Abstract_FeatureMatcher.hpp>
+#include <openMVG/vsslam/tracking/PoseEstimation.hpp>
 
 namespace openMVG  {
 namespace VSSLAM  {
@@ -125,121 +126,6 @@ private:
 
 public:
 
-  // Match two sets of features by:
-  //   for each feature in F_1:
-  //     compare descriptors only of features in F_2
-  //     that are inside a window around position of feature in F_1
-/*
-  size_t matching_Window_2D_2D
-  (
-    Abstract_FeatureExtractor * featureExtractor_,
-    const Frame * frame_1,
-    const Frame * frame_2,
-    Hash_Map<size_t,size_t> & matches_1_2_idx,
-    const size_t win_size = 400,
-    const float desc_ratio = 0.8,
-    const float max_desc_d = std::numeric_limits<float>::infinity()
-  ) override
-  {
-    features::Regions * const frame_1_regions = frame_1->getRegions();
-    const std::vector<Vec2> & frame_1_pts = frame_1->pts_undist_;
-    const size_t frame_1_pts_size = frame_1->getNumberOfFeatures();
-
-    features::Regions * const frame_2_regions = frame_2->getRegions();
-    const std::vector<Vec2> & frame_2_pts = frame_2->pts_undist_;
-    const size_t frame_2_pts_size = frame_2->getNumberOfFeatures();
-
-    // -------------------
-    // -- Match reference-current candidates
-    // -------------------
-    std::vector<int>putative_matches_1_2_idx(frame_1_pts_size,-1);
-
-    double startTime = omp_get_wtime();
-
-    #ifdef OPENMVG_USE_OPENMP
-    #pragma omp parallel for schedule(dynamic)
-    #endif
-    for (size_t p_i=0; p_i < frame_1_pts_size; ++p_i)
-    {
-      //TODO: Get possible candidates through grid
-
-      size_t best_idx = std::numeric_limits<size_t>::infinity();
-      size_t second_best_idx = std::numeric_limits<size_t>::infinity();
-      double best_distance = std::numeric_limits<double>::infinity();
-      double second_best_distance = std::numeric_limits<double>::infinity();
-
-      // Raw descriptors
-      void * ref_pt_desc_raw;
-      void * candidate_pt_desc_raw;
-
-      // Get descriptor of reference point
-      featureExtractor_->getDescriptorRaw(frame_1_regions, p_i, &ref_pt_desc_raw);
-
-      for (size_t c_i=0; c_i < frame_2_pts_size; ++c_i)
-      {
-        // Check if points are close enough
-        if ((frame_2_pts[c_i] - frame_1_pts[p_i]).squaredNorm() > win_size)
-          continue;
-
-        // Get candidate descriptor
-        featureExtractor_->getDescriptorRaw(frame_2_regions, c_i, &candidate_pt_desc_raw);
-
-        // Compute distance
-        double distance = featureExtractor_->SquaredDescriptorDistance(ref_pt_desc_raw,candidate_pt_desc_raw);
-
-        // Save if in best two
-        if (distance < best_distance)
-        {
-          second_best_distance = best_distance;
-          second_best_idx = best_idx;
-          best_distance = distance;
-          best_idx = c_i;
-        }
-        else if (distance < second_best_distance)
-        {
-          second_best_distance = distance;
-          second_best_idx = c_i;
-        }
-      }
-
-      // Detect best match
-      if (best_idx != std::numeric_limits<size_t>::infinity() && best_distance < max_desc_d)
-      {
-        if (second_best_idx != std::numeric_limits<size_t>::infinity()  && second_best_distance < max_desc_d)
-        {
-          if ((best_distance / second_best_distance) < desc_ratio)
-          {
-            // Best is unique enough
-            putative_matches_1_2_idx[p_i] = best_idx;
-          }
-        }
-        else
-        {
-          // Best is unique
-          putative_matches_1_2_idx[p_i] = best_idx;
-        }
-      }
-    }
-
-    double stopTime = omp_get_wtime();
-    double secsElapsed = stopTime - startTime; // that's all !
-    std::cout<<"Matching: Window 2D-2D ("<<secsElapsed<<")\n";
-
-    // -------------------
-    // -- Purge matches
-    // -------------------
-    startTime = omp_get_wtime();
-
-    purgeCandidateMatches(putative_matches_1_2_idx, matches_1_2_idx);
-
-    stopTime = omp_get_wtime();
-    secsElapsed = stopTime - startTime; // that's all !
-    std::cout<<"Matching: Purge ("<<secsElapsed<<")\n";
-
-    return matches_1_2_idx.size();
-  }
-*/
-
   void matching_AllAll_2D_2D
   (
     const Abstract_FeatureExtractor * featureExtractor_,
@@ -247,6 +133,7 @@ public:
     const Frame * frame_2,
     matching::IndMatches & vec_putative_matches_1_2_idx,
     const float desc_ratio = 0.8,
+    const float feat_scale_ratio = std::numeric_limits<float>::infinity(),
     const float max_desc_d = std::numeric_limits<float>::infinity()
   ) override
   {
@@ -273,7 +160,7 @@ public:
     {
       IndexT best_idx = UndefinedIndexT;
       IndexT second_best_idx = UndefinedIndexT;
-      double best_distance_2 = std::numeric_limits<double>::infinity();
+      double best_distance_2 = max_desc_d_2;
       double second_best_distance_2 = std::numeric_limits<double>::infinity();
       double distance_2;
 
@@ -307,6 +194,9 @@ public:
         }
       }
 
+      const std::vector<float> & frame_1_feat_scale = frame_1->pts_scale_;
+      const std::vector<float> & frame_2_feat_scale = frame_2->pts_scale_;
+
       // Detect best match
       if (best_idx != UndefinedIndexT && best_distance_2 < max_desc_d_2)
       {
@@ -314,10 +204,25 @@ public:
         {
           if ((best_distance_2 / second_best_distance_2) < desc_ratio_2)
           {
-            // Best is unique enough
-            putative_matches_1_2_idx[p_i] = best_idx;
+
+            // Check if scale ratio between features is less than threshold
+            const float f_scale_1 = frame_1_feat_scale[p_i];
+            const float f_scale_2 = frame_2_feat_scale[best_idx];
+            if ((f_scale_1<f_scale_2 ? f_scale_2/f_scale_1 : f_scale_1/f_scale_2) < feat_scale_ratio)
+              // Best is unique enough
+              putative_matches_1_2_idx[p_i] = best_idx;
           }
         }
+        else
+        {
+          const float f_scale_1 = frame_1_feat_scale[p_i];
+          const float f_scale_2 = frame_2_feat_scale[best_idx];
+          if ((f_scale_1<f_scale_2 ? f_scale_2/f_scale_1 : f_scale_1/f_scale_2) < feat_scale_ratio)
+            // Best is unique enough
+            putative_matches_1_2_idx[p_i] = best_idx;
+
+        }
+
       }
     }
     // -------------------
@@ -334,6 +239,7 @@ public:
     const Frame * frame,
     Hash_Map<MapLandmark* ,IndexT> & matches_3D_pts_frame_idx,
     const float desc_ratio = 0.8,
+    const float feat_scale_ratio = std::numeric_limits<float>::infinity(),
     const float max_desc_d_2 = std::numeric_limits<float>::infinity()
   ) override
   {
@@ -370,7 +276,7 @@ public:
 
       // Project the point to frame 2
       Vec3 pt_3D_frame;
-      getRelativePointPosition(pt_3D->X_,pt_3D->ref_frame_,pt_3D_frame,frame);
+      PoseEstimator::getRelativePointPosition(pt_3D->X_,pt_3D->ref_frame_,pt_3D_frame,frame);
       if (pt_3D_frame(2) < 0)
         continue;
 
@@ -382,7 +288,7 @@ public:
         continue;
 
       // Raw descriptors
-      void * pt_3D_raw_desc = pt_3D->bestDesc_;
+      void * pt_3D_raw_desc = pt_3D->feat_best_desc_;
       void * candidate_pt_desc_raw;
 
       //TODO: Get possible candidates through grid
@@ -459,6 +365,7 @@ public:
     Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_idx,
     const size_t win_size = 400, //20*20
     const float desc_ratio = 0.8,
+    const float feat_scale_ratio = std::numeric_limits<float>::infinity(),
     const float max_desc_d_2 = std::numeric_limits<float>::infinity()
   ) override
   {
@@ -494,7 +401,7 @@ public:
 
       // Project the point to frame 2
       Vec3 pt_3D_frame;
-      getRelativePointPosition(pt_3D->X_,pt_3D->ref_frame_,pt_3D_frame,frame);
+      PoseEstimator::getRelativePointPosition(pt_3D->X_,pt_3D->ref_frame_,pt_3D_frame,frame);
       if (pt_3D_frame(2) < 0)
         continue;
 
@@ -506,7 +413,7 @@ public:
         continue;
 
       // Raw descriptors
-      void * pt_3D_raw_desc = pt_3D->bestDesc_;
+      void * pt_3D_raw_desc = pt_3D->feat_best_desc_;
       void * candidate_pt_desc_raw;
 
       //TODO: Get possible candidates through grid
@@ -580,6 +487,20 @@ public:
 
     std::cout<<"Matching: Purge ("<<omp_get_wtime() - startTime<<")\n";
   }
+  // Match frame_2 to 3D points of frame_1
+  void matching_Projection_3D_2D
+  (
+    const Abstract_FeatureExtractor * featureExtractor_,
+    const Frame * frame_1,
+    const Frame * frame_2,
+    Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_idx,
+    const size_t max_px_d = 15, //20*20
+    const float desc_ratio = 0.8,
+    const float feat_scale_ratio = std::numeric_limits<float>::infinity(),
+    const float max_desc_d = std::numeric_limits<float>::infinity()
+  ) override
+  {
+  }
 
   void matching_EpipolarLine_2D_2D
   (
@@ -588,11 +509,13 @@ public:
     const Frame * frame_2,
     const Mat3 & F_21,
     Hash_Map<IndexT,IndexT> & map_matches_1_2_idx,
-    const size_t max_epipolar_d2 = 16,
+    const size_t max_px_epi_d = 4,
     const float desc_ratio = 0.8,
-    const float max_desc_d_2 = std::numeric_limits<float>::infinity()
+    const float feat_scale_ratio = std::numeric_limits<float>::infinity(),
+    const float max_desc_d = std::numeric_limits<float>::infinity()
   ) override
   {
+    /*
     const float desc_ratio_2 = desc_ratio*desc_ratio;
 
     const std::vector<MapLandmark *> & frame_1_3D_pts = frame_1->map_points_;
@@ -711,7 +634,7 @@ public:
     purgeCandidateMatches(putative_matches_1_2_idx, map_matches_1_2_idx);
 
     std::cout<<"Matching: Purge ("<<omp_get_wtime() - startTime<<")\n";
-
+*/
   }
 
 

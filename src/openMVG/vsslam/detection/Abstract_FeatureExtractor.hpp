@@ -24,8 +24,7 @@ public:
   (
     const image::Image<unsigned char> & ima,
     Frame * frame,
-    const size_t min_count,
-    const size_t max_count
+    const size_t min_count
   ) const = 0;
 
   virtual bool describe

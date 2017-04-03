@@ -52,9 +52,21 @@ public:
   // ---------------
 
   // Frames
+  size_t n_keep_last_frames = 5;
+  std::deque<std::shared_ptr<Frame> > mPrevFrames;  // List of
+
   std::shared_ptr<Frame> mLastRefFrame;
+  std::shared_ptr<Frame> mPrevPrevFrame;
   std::shared_ptr<Frame> mPrevFrame;
   std::shared_ptr<Frame> mCurrentFrame;
+
+
+  std::vector<std::vector<Vec2> > display_pt2d_A;
+  std::vector<std::vector<Vec2> > display_pt2d_B;
+  std::vector<std::vector<Vec2> > display_pt2d_C;
+  std::vector<std::vector<float> > display_size_A;
+
+
 
   // ---------------
   // Methods
@@ -77,6 +89,20 @@ public:
   TRACKING_STATUS getTrackingStatus()
   {
     return trackingStatus;
+  }
+
+  bool isMapInitialized()
+  {
+    return cartographer_->isMapInitialized();
+  }
+
+  void addPrevFrame(std::shared_ptr<Frame> & frame)
+  {
+    mPrevFrames.emplace_back(frame->share_ptr());
+    while (mPrevFrames.size() > n_keep_last_frames)
+    {
+      mPrevFrames.pop_front();
+    }
   }
 
   void printTrackingStatus()

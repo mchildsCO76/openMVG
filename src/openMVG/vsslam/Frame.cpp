@@ -32,6 +32,8 @@ using namespace openMVG::geometry;
     P_rc_ = dynamic_cast<const Pinhole_Intrinsic*>(getCameraIntrinsics())->Kinv() * T_rc_.block(0,0,3,4);
 
 
+    timestamp_ = fId;
+
   }
 
   void Frame::updateFeaturesData()
@@ -121,6 +123,50 @@ using namespace openMVG::geometry;
     return (obs_cur - pt_cur).squaredNorm();
   }
 
+  bool Frame::checkFeatureAssociation(const Vec3 & pt_3D_frame, const IndexT feat_id, double thresh) const
+  {
+    if (pt_3D_frame(2) < 0)
+      return false;
+
+    // Project the point to image plane of frame 2
+    const IntrinsicBase * cam_intrinsic = cam_->cam_intrinsic_ptr;
+    const Vec2 pt_3D_frame_projected = cam_intrinsic->cam2ima(cam_intrinsic->have_disto()?cam_intrinsic->add_disto(pt_3D_frame.hnormalized()):pt_3D_frame.hnormalized());
+
+    // Check if projection is actually in the image borders
+    if (!isPointInFrame(pt_3D_frame_projected))
+      return false;
+
+    // Error between projection and measurement
+    const Vec2 pt_err = pts_undist_[feat_id] - pt_3D_frame_projected;
+
+    // Reprojection error
+    //return (pt_err.squaredNorm() < thresh);
+
+    //// Chi2 error
+    return (pt_err.transpose() * pts_information_mat_[feat_id].cwiseProduct(pts_information_mat_[feat_id]) * pt_err) < thresh;
+  }
+
+  float Frame::computeSceneMedianDistance() const
+  {
+    std::vector<float> vec_depths;
+    vec_depths.reserve(n_feats_);
+
+    for (size_t p_i=0; p_i < map_points_.size(); ++p_i)
+    {
+      if (!map_points_[p_i])
+        continue;
+
+      MapLandmark * pt_3D = map_points_[p_i];
+      const Vec3 & pt_3D_w = pt_3D->getWorldPosition();
+      // Compute z
+      float z = (T_cr_.block(2,0,1,4)*Vec4(pt_3D_w.homogeneous())).norm();
+      vec_depths.push_back(z);
+    }
+    std::sort(vec_depths.begin(), vec_depths.end());
+
+    return vec_depths[(vec_depths.size()-1)/2];
+  }
+
 
   // Update all pose related matrices
   // Everything is updated from T_cr_
@@ -153,7 +199,13 @@ using namespace openMVG::geometry;
     // Projection (only useful if its calibrated camera otherwise it changes)
     if (getCamCalibrated())
     {
+
+      double s = T_cr_.block(0,0,3,1).norm();
+      Vec3 t = T_cr_.block(0,3,3,1);
+      //P_cr_ = dynamic_cast<const Pinhole_Intrinsic*>(getCameraIntrinsics())->K() * T_cr_.block(0,0,3,4);
       P_cr_ = dynamic_cast<const Pinhole_Intrinsic*>(getCameraIntrinsics())->K() * T_cr_.block(0,0,3,4);
+
+
       P_rc_ = dynamic_cast<const Pinhole_Intrinsic*>(getCameraIntrinsics())->Kinv() * T_rc_.block(0,0,3,4);
     }
   }
@@ -172,12 +224,10 @@ using namespace openMVG::geometry;
     // we already have the pose in the reference frame
     if (tmp_ref == ref_frame_)
     {
-      std::cout<<"Get pose:\n T: "<<T_cr_;
       // T = [sR t]
       s = T_cr_.block(0,0,3,1).norm();
       R = R_cr_;
       t = T_cr_.block(0,3,3,1);
-      std::cout<<"\n s: "<<s<<"\n R: "<<R<<"\n t: "<<t<<"\n";
     }
     // TODO: relative poses
     /*else
@@ -323,7 +373,7 @@ using namespace openMVG::geometry;
   // Set pose of the frame with [sR t] transformation expressed
   // as sim3 vector [upsilon, omega, sigma] from this frame (camera) to reference frame : tmp_ref_T_c
   // TODO: If reference frame of the given transformation (tmp_ref) is not equal to reference frame of the frame (ref_frame)
-  void Frame::setPose_rc_sim3
+  void Frame::setPoseInverse_sim3
   (
     const Eigen::Matrix<double, 7, 1> & v_state,
     Frame * tmp_ref

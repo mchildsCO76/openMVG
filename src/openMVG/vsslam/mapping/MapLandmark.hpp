@@ -42,7 +42,8 @@ public:
     X_(-1,-1,-1),
     normal_(0,0,0),
     ref_frame_(nullptr),
-    bestDesc_(nullptr),
+    feat_best_desc_(nullptr),
+    feat_mean_scale_(0),
     active_(false),
     last_obs_step_(0),
     last_local_map_frame_id_(UndefinedIndexT)
@@ -54,14 +55,17 @@ public:
   Frame * ref_frame_;
 
   LandmarkObservations obs_;  // map of keyframe_ids and map observation objects
-  void * bestDesc_; // Pointer to the best descriptor of the point (most average of them all?)
+  void * feat_best_desc_; // Pointer to the best descriptor of the point (most average of them all?)
+  float feat_mean_scale_;  // Mean of the scales of the features associated
   size_t n_all_obs_ = 0; // Number of all observations (both frames and keyframes)
 
   size_t last_obs_step_;
+  IndexT last_local_map_frame_id_;  // Id of frame for which the point was last added to local map
+  Vec3 last_normal_;
+
   bool active_; // True if the point is in global map
 
   //Local Map  data
-  IndexT last_local_map_frame_id_;  // Id of frame for which the point was last added to local map
 
   // 1 - initialization point; 2- motion model/reference kf; 3-map tracking point; 4- new triangulated point
   size_t association_type_ = 0; // Through which tye of association the point was added
@@ -104,6 +108,18 @@ public:
   {
     return normal_;
   }
+
+  const Vec3 & getLastNormal() const
+  {
+    return last_normal_;
+  }
+
+  const float & getFeatureMeanScale() const
+  {
+    return feat_mean_scale_;
+  }
+
+
   void addObservation(Frame * frame, const IndexT & feat_id);
 
   // Method which defines what is enough quality for the points to be added to the system
@@ -111,6 +127,19 @@ public:
 
   bool hasFrameObservation(const IndexT & frame_id);
 
+
+  void setNumberOfObservations(size_t n_obs)
+  {
+    n_all_obs_ = n_obs;
+  }
+  void increaseNumberOfObservations()
+  {
+    n_all_obs_++;
+  }
+  void decreaseNumberOfObservations()
+  {
+    n_all_obs_ > 0 ? n_all_obs_-- : 0;
+  }
 
 };
 

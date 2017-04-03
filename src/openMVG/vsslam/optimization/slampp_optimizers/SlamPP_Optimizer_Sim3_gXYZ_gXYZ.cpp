@@ -114,9 +114,8 @@ SlamPP_Optimizer_Sim3_gXYZ_gXYZ::SlamPP_Optimizer_Sim3_gXYZ_gXYZ
   bool b_use_schur,
 	bool b_do_marginals,
 	bool b_do_icra_style_marginals) // throw(srd::bad_alloc)
-	:m_p_optimizer(new CBAOptimizerCore_Sim3_gXYZ_gXYZ(b_verbose, b_use_schur,
-	 b_do_marginals, b_do_icra_style_marginals)),
-	 m_undefined_camera_id(undefined_camera_id)
+	:SlamPP_Optimizer(undefined_camera_id), m_p_optimizer(new CBAOptimizerCore_Sim3_gXYZ_gXYZ(b_verbose, b_use_schur,
+	 b_do_marginals, b_do_icra_style_marginals))
 {}
 
 SlamPP_Optimizer_Sim3_gXYZ_gXYZ::~SlamPP_Optimizer_Sim3_gXYZ_gXYZ()
@@ -198,8 +197,22 @@ double * SlamPP_Optimizer_Sim3_gXYZ_gXYZ::Add_CamVertex(size_t n_vertex_id, cons
 	return r_cam0.r_v_State().data();
 }
 
-// Fixed vertex has id starting with size_t_max - 1
+// Fixed vertex is vertex with unary factor
 double * SlamPP_Optimizer_Sim3_gXYZ_gXYZ::Add_CamVertexFixed(size_t n_vertex_id, const Eigen::Matrix<double, 12, 1> &v_cam_state) // throw(srd::bad_alloc)
+{
+  std::cout<<"AA1\n";
+  CVertexCamSim3 &r_cam0 = m_p_optimizer->r_System().r_Get_Vertex<CVertexCamSim3>(n_vertex_id, v_cam_state);
+  std::cout<<"AA2\n";
+  // Add unary factor (UF) to make the optimized system positive definite
+  m_p_optimizer->r_System().r_Add_Edge(CEdgePoseCamSim3(n_vertex_id, size_t(-1),
+        Eigen::Vector7d::Zero(), Eigen::Matrix7d::Identity() * 100, m_p_optimizer->r_System()));
+  std::cout<<"AA3\n";
+  // Return pointer to state of vertex
+  return r_cam0.r_v_State().data();
+}
+
+// Const vertex has id starting with size_t_max - 1
+double * SlamPP_Optimizer_Sim3_gXYZ_gXYZ::Add_CamVertexConst(size_t n_vertex_id, const Eigen::Matrix<double, 12, 1> &v_cam_state) // throw(srd::bad_alloc)
 {
   CVertexCamSim3 &r_cam0 = m_p_optimizer->r_System().r_Get_ConstVertex<CVertexCamSim3>(n_vertex_id, v_cam_state);
   // Add unary factor (UF) to make the optimized system positive definite

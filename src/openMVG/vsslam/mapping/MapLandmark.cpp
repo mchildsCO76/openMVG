@@ -15,22 +15,39 @@ namespace VSSLAM  {
   {
     // Set normal to zero
     normal_.setZero();
-    // Compute average of normal
+    // Update average scale of the descriptor
+    feat_mean_scale_ = 0.0;
+
+    // Compute average of normal and scale
     for (auto & o_i : obs_)
     {
       Vec3 O_frame_i = o_i.second.frame_ptr->getCameraCenter();
       if (ref_frame_ == nullptr)
       {
         Vec3 normal_i = X_ - O_frame_i;
-        normal_ = normal_ + normal_i/normal_i.norm();
+        normal_ += normal_i/normal_i.norm();
       }
+
+      feat_mean_scale_ += o_i.second.frame_ptr->getFeatureScale(o_i.second.feat_id);
+
     }
     normal_ = normal_/obs_.size();
+    feat_mean_scale_ = feat_mean_scale_/obs_.size();
   }
+
+
 
   void MapLandmark::addObservation(Frame * frame, const IndexT & feat_id)
   {
     obs_[frame->getFrameId()] = MapObservation(feat_id,frame);
+
+    // Update last normal
+    Vec3 O_frame_i = frame->getCameraCenter();
+    if (ref_frame_ == nullptr)
+    {
+      last_normal_ = (X_ - O_frame_i).normalized();
+    }
+
     updateNormal();
   }
 

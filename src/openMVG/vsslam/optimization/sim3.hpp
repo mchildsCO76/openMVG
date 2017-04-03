@@ -178,6 +178,7 @@ static void SO3_expAndTheta(const Eigen::Vector3d & omega, Mat3 & R, double & th
 // ``logmat(.)`` being the matrix logarithm and ``vee(.)`` the vee-operator
 // of Sim(3).
 //
+
 static void Sim3_log(const Mat3 & R, const Vec3 & t, const double & scale, Eigen::Matrix<double, 7, 1> & v_log)
 {
   // The derivation of the closed-form Sim(3) logarithm for is done
@@ -248,6 +249,13 @@ static void Sim3_log(const Mat3 & R, const Vec3 & t, const double & scale, Eigen
 
 }
 
+static void Sim3_log(const Mat4 & T, Eigen::Matrix<double, 7, 1> & v_log)
+{
+  double s = T.block(0,0,3,1).norm();
+  Mat3 R = T.block(0,0,3,3) / s;
+  Vec3 t = T.block(0,3,3,1);
+  Sim3_log(R,t,s,v_log);
+}
 
 // Adjusted from Sophus exp (sim3.hpp line 280)
 // https://github.com/strasdat/Sophus/blob/master/sophus/sim3.hpp
@@ -264,6 +272,7 @@ static void Sim3_log(const Mat3 & R, const Vec3 & t, const double & scale, Eigen
 // ``expmat(.)`` being the matrix exponential and ``hat(.)`` the hat-operator
 // of Sim(3), see below.
 //
+
 static void Sim3_exp(const Eigen::Matrix<double, 7, 1> & v_log, Mat3 & R, Vec3 & t, double & scale)
 {
   const double f_epsilon = 1e-6;
@@ -323,5 +332,14 @@ static void Sim3_exp(const Eigen::Matrix<double, 7, 1> & v_log, Mat3 & R, Vec3 &
   SO3_expAndTheta(omega,R,th);
 }
 
+static void Sim3_exp(const Eigen::Matrix<double, 7, 1> & v_log, Mat4 & T)
+{
+  T = Mat4::Identity();
+  Mat3 R; Vec3 t; double s;
+  Sim3_exp(v_log,R,t,s);
+
+  T.block(0,0,3,3) = s * R;
+  T.block(0,3,3,1) = t;
+}
 }
 }

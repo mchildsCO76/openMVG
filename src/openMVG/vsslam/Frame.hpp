@@ -51,10 +51,12 @@ private:
 
 public:
 
-  // Information matrix of each detection
-  std::vector<Eigen::Matrix2d> pts_information_mat_;
   // Distorted/undistorted points - if camera is calibrated (for faster reading)
   std::vector<Vec2> pts_undist_;
+  // Information matrix of each detection
+  std::vector<Eigen::Matrix2d> pts_information_mat_;
+  // Scale of features
+  std::vector<float> pts_scale_;
 
   // Associated features with map points
   std::vector<MapLandmark *> map_points_; // NULL pointer means no association
@@ -81,9 +83,10 @@ public:
   // Position of camera in world coordinates
   Vec3 O_w_;
 
+  double timestamp_;
 
 
-  double AC_reprojection_thresh_ = 0.0f;
+  double reproj_thresh_sq_ = 4.0f;
   // Owner
   IndexT owner_frame_id_ = UndefinedIndexT; // undefined
   Frame * ref_frame_ = nullptr; // owner frame of current frame (nullptr -> global)
@@ -159,6 +162,18 @@ public:
     return pts_undist_[i];
   }
 
+  const float & getFeatureScale(const IndexT & i) const
+  {
+    // If camera is calibrated we precalculate the undistorted points
+    return pts_scale_[i];
+  }
+
+  const float getFeatureSigmaSq(const IndexT & i) const
+  {
+    // If camera is calibrated we precalculate the undistorted points
+    return 16.0f; //4.0f*4.0f
+  }
+
   const Eigen::Matrix2d & getFeatureInformationMatrix(const IndexT & i) const
   {
     // Return information matrix of the current feature
@@ -180,6 +195,9 @@ public:
 
   double getSquaredReprojectionError(const Vec3 & pt_frame, const IndexT feat_id) const;
 
+  bool checkFeatureAssociation(const Vec3 & pt3D_frame, const IndexT feat_id, double chi2_px2_thresh) const;
+
+  float computeSceneMedianDistance() const;
 
   /// c - current frame; r - reference frame {e.g W}
   /// transformation from world to camera X_c = T_cr_ * X_w (computer vision)
@@ -259,7 +277,7 @@ public:
   // Set pose of the frame with [sR t] transformation expressed
   // as sim3 vector [upsilon, omega, sigma] from this frame (camera) to reference frame : tmp_ref_T_c
   // TODO: If reference frame of the given transformation (tmp_ref) is not equal to reference frame of the frame (ref_frame)
-  void setPose_rc_sim3
+  void setPoseInverse_sim3
   (
     const Eigen::Matrix<double, 7, 1> & v_state,
     Frame * tmp_ref

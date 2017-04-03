@@ -92,6 +92,15 @@ public:
 private:
   BA_options_Ceres options_;
   ceres::Problem problem_;
+  // Data wrapper for refinement:
+  Hash_Map<IndexT, std::vector<double> > map_intrinsics_;
+  Hash_Map<IndexT, std::vector<double> > map_poses_;
+
+  // Set a LossFunction to be less penalized by false measurements
+  //  - set it to NULL if you don't want use a lossFunction.
+  ceres::LossFunction * p_LossFunction_;
+
+
 
 public:
   VSSLAM_Bundle_Adjustment_Ceres
@@ -105,16 +114,29 @@ public:
   bool OptimizePose
   (
     Frame * frame_i,
-    Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_i_idx
+    Hash_Map<MapLandmark *,IndexT> & matches_3D_pts_frame_i_idx,
+    bool b_use_loss_function = true
+  )override;
+
+  bool OptimizePose
+  (
+    Frame * frame_i,
+    bool b_use_loss_function = true
   )override;
 
   bool OptimizeLocal
   (
-    Hash_Map<Frame*, size_t> & tmp_frames,
-    Hash_Map<MapLandmark*, std::unique_ptr<MapLandmark> > & tmp_structure,
     Frame * frame_i,
-    std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts
+    std::vector<std::unique_ptr<MapLandmark> > & vec_triangulated_pts,
+    bool b_use_loss_function = true
   )override;
+
+
+  bool addObservationToGlobalSystem(MapLandmark * map_point, MapObservation * map_observation)override;
+  bool addLandmarkToGlobalSysyem(MapLandmark * map_point)override;
+  bool addFrameToGlobalSystem(Frame * frame, bool b_frame_fixed = false)override;
+  bool optimizeGlobal(MapFrames & map_frames, MapLandmarks & map_landmarks)override;
+
 
 };
 
