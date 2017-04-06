@@ -91,7 +91,7 @@ public:
   }
 
   void updateNormal();
-
+  void updateLastNormal(Frame * last_frame);
   const Vec3 & getWorldPosition() const
   {
     if (ref_frame_ == nullptr)
@@ -121,9 +121,6 @@ public:
 
 
   void addObservation(Frame * frame, const IndexT & feat_id);
-
-  // Method which defines what is enough quality for the points to be added to the system
-  bool isValidByConnectivityDegree(const size_t & min_degree_landmark) const;
 
   bool hasFrameObservation(const IndexT & frame_id);
 

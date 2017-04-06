@@ -38,6 +38,7 @@ struct SLAM_Monocular
 
   // Camera
   Hash_Map<IndexT, std::shared_ptr<Camera> > cameras;
+  Hash_Map<IndexT, image::Image<unsigned char> * > cameras_mask;
   //IntrinsicBase * cam_intrinsic_;
 
   // Tracking
@@ -71,7 +72,8 @@ struct SLAM_Monocular
     cartographer_->setFeatureExtractor(f_extractor);
   }
 
-  int createCamera(const CameraParams & cam_params)
+  int createCamera(const CameraParams & cam_params,
+      image::Image<unsigned char> * mask = nullptr)
   {
     std::shared_ptr<Camera> cam = std::make_shared<Camera>();
     cam->bCalibrated = cam_params.bCalibrated;
@@ -115,6 +117,7 @@ struct SLAM_Monocular
     cam->computeImageBorders();
     // Insert camera into database
     cameras[cameras.size()]=cam;
+    cameras_mask[cameras_mask.size()]=mask;
     return cameras.size();
   }
 
@@ -151,7 +154,7 @@ struct SLAM_Monocular
 
     double startTime = omp_get_wtime();
     // Track frame
-    bool bTrack = tracker_->track(ima,current_frame);
+    bool bTrack = tracker_->track(ima,current_frame,cameras_mask[camId]);
 
     double stopTime = omp_get_wtime();
     double secsElapsed = stopTime - startTime; // that's all !

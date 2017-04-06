@@ -100,7 +100,7 @@ using namespace openMVG::geometry;
     }
   }
 
-  IndexT Frame::getNumberMapPoints() const
+  size_t Frame::getNumberMapPoints() const
   {
     IndexT n_matches = 0;
     for (IndexT i = 0; i<map_points_.size(); ++i)
@@ -110,6 +110,19 @@ using namespace openMVG::geometry;
     }
     return n_matches;
   }
+
+
+  size_t Frame::getNumberGlobalMapPoints() const
+  {
+    IndexT n_matches = 0;
+    for (IndexT i = 0; i<map_points_.size(); ++i)
+    {
+      if (map_points_[i])
+        n_matches++;
+    }
+    return n_matches;
+  }
+
 
   double Frame::getSquaredReprojectionError(const Vec3 & pt_frame, const IndexT feat_id) const
   {
@@ -146,7 +159,7 @@ using namespace openMVG::geometry;
     return (pt_err.transpose() * pts_information_mat_[feat_id].cwiseProduct(pts_information_mat_[feat_id]) * pt_err) < thresh;
   }
 
-  float Frame::computeSceneMedianDistance() const
+  void Frame::computeSceneStatistics()
   {
     std::vector<float> vec_depths;
     vec_depths.reserve(n_feats_);
@@ -164,7 +177,18 @@ using namespace openMVG::geometry;
     }
     std::sort(vec_depths.begin(), vec_depths.end());
 
-    return vec_depths[(vec_depths.size()-1)/2];
+    f_scene_median = vec_depths[(vec_depths.size()-1)/2];
+    f_scene_095 = vec_depths[((vec_depths.size()-1)*0.85)];
+
+    std::cout<<"F: "<<frame_id_<<"Scene statistics: m: "<<f_scene_median<<" 95: "<<f_scene_095<<" L: "<<vec_depths[vec_depths.size()-1]<<"\n";
+  }
+
+  bool Frame::checkLandmarkPosition(const Vec3 & map_landmark_3D_in_frame)
+  {
+    if (map_landmark_3D_in_frame(2)<0 || map_landmark_3D_in_frame(2) > f_scene_095*3)
+      return false;
+    return true;
+
   }
 
 

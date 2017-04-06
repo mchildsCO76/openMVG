@@ -215,8 +215,6 @@ class Cartographer
     );
 
 
-
-
     // Determine what is the min number of observations landmark need to be considered for global map
     // Observations can be from any frame (not only keyframes)
     double findMinLandmarkQualityForGlobalMapInitialization();
@@ -226,7 +224,8 @@ class Cartographer
       std::vector<std::unique_ptr<MapLandmark> > * vec_new_pts_3D_obs
     );
 
-
+    size_t getNumberOfNewGlobalLandmarksWithFrame(Frame *,
+        std::vector<std::unique_ptr<MapLandmark> > * vec_new_pts_3D_obs);
 
     // ------------------------------
     // -- Map manipulation
@@ -251,7 +250,7 @@ class Cartographer
       for (MapLandmark * lm : frame->map_points_)
       {
         // we use min_obs -1 because this frame will ad and observation as well
-        if (lm && (lm->isActive() || lm->isValidByConnectivityDegree(min_obs_per_landmark-1)))
+        if (lm && (lm->isActive() || checkLandmarkQuality(lm , min_obs_per_landmark-1)))
         {
           n_defined_pts++;
           if (n_defined_pts == min_landmark_per_frame)
@@ -260,6 +259,16 @@ class Cartographer
       }
       return false;
     }
+    // ------------------------------
+    // -- Map quality
+    // ------------------------------
+    bool checkLandmarkQuality(MapLandmark * map_landmark, double thresh_quality)
+    {
+      if (map_landmark->n_all_obs_ < thresh_quality)
+        return false;
+      return true;
+    }
+
 
 
 

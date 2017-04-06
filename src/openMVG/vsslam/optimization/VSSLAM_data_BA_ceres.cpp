@@ -90,6 +90,7 @@ bool VSSLAM_Bundle_Adjustment_Ceres::OptimizePose
   // Data wrapper for refinement:
   Hash_Map<IndexT, std::vector<double> > map_intrinsics;
   Hash_Map<IndexT, std::vector<double> > map_poses;
+  Hash_Map<MapLandmark*, ceres::ResidualBlockId> map_residuals;
 
   // Set a LossFunction to be less penalized by false measurements
   //  - set it to NULL if you don't want use a lossFunction.
@@ -128,6 +129,35 @@ bool VSSLAM_Bundle_Adjustment_Ceres::OptimizePose
   if (frame_i->getCamCalibrated())
     problem.SetParameterBlockConstant(parameter_block);
 
+  // Add matches that are already associated with the frame
+  for (size_t mp_i = 0; mp_i < frame_i->map_points_.size(); ++mp_i)
+  {
+    MapLandmark* & map_point = frame_i->map_points_[mp_i];
+    if (!map_point)
+      continue;
+
+    // Add measurement in frame_i to landmark
+    // Create the cost function for the measurement
+    ceres::CostFunction* cost_function = IntrinsicsToCostFunction(cam_i_intrinsic,
+        frame_i->getFeaturePosition(mp_i),
+        frame_i->getFeatureInformationMatrix(mp_i));
+
+    // Add cost term
+    if (cost_function)
+    {
+      ceres::ResidualBlockId residual_id = problem.AddResidualBlock(cost_function,
+        p_LossFunction,
+        &map_intrinsics[cam_i_idx][0],
+        &map_poses[frame_i_id][0],
+        map_point->X_.data());
+
+      // Fix all the points as we only estimate for the pose
+      problem.SetParameterBlockConstant(map_point->X_.data());
+
+      map_residuals[map_point] = residual_id;
+    }
+  }
+
   // Add all 3D-2D matchings -> they are fixed
   for (auto & match : matches_3D_pts_frame_i_idx)
   {
@@ -140,7 +170,7 @@ bool VSSLAM_Bundle_Adjustment_Ceres::OptimizePose
 
     if (cost_function)
     {
-      problem.AddResidualBlock(cost_function,
+      ceres::ResidualBlockId residual_id = problem.AddResidualBlock(cost_function,
         p_LossFunction,
         &map_intrinsics[cam_i_idx][0],
         &map_poses[frame_i_id][0],
@@ -149,6 +179,8 @@ bool VSSLAM_Bundle_Adjustment_Ceres::OptimizePose
       // For now we set everything fixed -> pose of the current frame is just approximated
       // We do this to make the BA really small
         problem.SetParameterBlockConstant(match.first->X_.data());
+
+        map_residuals[match.first] = residual_id;
     }
   }
 
@@ -194,6 +226,8 @@ bool VSSLAM_Bundle_Adjustment_Ceres::OptimizePose
         << " Time (s): " << summary.total_time_in_seconds << "\n"
         << std::endl;
     }
+
+
 
     // Update camera poses with refined data
     Mat3 R_refined;
@@ -494,25 +528,26 @@ bool VSSLAM_Bundle_Adjustment_Ceres::OptimizeLocal
     MapLandmark * & map_point = frame_i->map_points_[mp_i];
     if (!map_point)
       continue;
+/*
 
-    // Add measurement in frame_i to landmark
-    // Create the cost function for the measurement
-    ceres::CostFunction* cost_function = IntrinsicsToCostFunction(cam_i_intrinsic,
-        frame_i->getFeaturePosition(mp_i),
-        frame_i->getFeatureInformationMatrix(mp_i));
-
-    // Add cost term
-    if (cost_function)
-    {
-      problem.AddResidualBlock(cost_function,
-        p_LossFunction,
-        &map_intrinsics[cam_i_idx][0],
-        &map_poses[frame_i_id][0],
-        map_point->X_.data());
-    }
-
+*/
     if (map_point->isActive())
     {
+      // Add measurement in frame_i to landmark
+      // Create the cost function for the measurement
+      ceres::CostFunction* cost_function = IntrinsicsToCostFunction(cam_i_intrinsic,
+          frame_i->getFeaturePosition(mp_i),
+          frame_i->getFeatureInformationMatrix(mp_i));
+
+      // Add cost term
+      if (cost_function)
+      {
+        problem.AddResidualBlock(cost_function,
+          p_LossFunction,
+          &map_intrinsics[cam_i_idx][0],
+          &map_poses[frame_i_id][0],
+          map_point->X_.data());
+      }
       // If landmark is global we fix it
       problem.SetParameterBlockConstant(map_point->X_.data());
     }

@@ -260,8 +260,10 @@ namespace VSSLAM  {
         }
 
         // Compute ray angle between points
-        const Vec3 ray1 = Vec3(R1.transpose() * Vec3( K1.inverse() * Vec3( x1_( 0 ), x1_( 1 ), 1.0 ) )).normalized();
-        const Vec3 ray2 = Vec3(R2.transpose() * Vec3( K2.inverse() * Vec3( x2_( 0 ), x2_( 1 ), 1.0 ) )).normalized();
+        const Vec3 ray1 = X;
+        const Vec3 ray2 = X - (-R2.transpose() * t2);
+        //const Vec3 ray1 = Vec3(R1.transpose() * Vec3( K1.inverse() * Vec3( x1_( 0 ), x1_( 1 ), 1.0 ) )).normalized();
+        //const Vec3 ray2 = Vec3(R2.transpose() * Vec3( K2.inverse() * Vec3( x2_( 0 ), x2_( 1 ), 1.0 ) )).normalized();
         const double mag = ray1.norm() * ray2.norm();
         const double dotAngle = ray1.dot( ray2 );
         const double cosParallax = clamp( dotAngle / mag, -1.0 + 1.e-8, 1.0 - 1.e-8 );
@@ -307,7 +309,7 @@ namespace VSSLAM  {
   )
   {
     // Max error in px for H/E to be considered an inlier
-    float max_thresh_px_model = sqrt(AC_threshold_sq);  // Not squared
+    float max_thresh_px_model = sqrt(4);  // Not squared
 
     std::cout<<"Pose: Try estimating H and E\n";
 
@@ -433,6 +435,9 @@ namespace VSSLAM  {
           // Compute ray angle between points
           const Vec3 ray1 = Vec3(R1.transpose() * Vec3( cam_1_K.inverse() * Vec3( x1_( 0 ), x1_( 1 ), 1.0 ) )).normalized();
           const Vec3 ray2 = Vec3(R2.transpose() * Vec3( cam_2_K.inverse() * Vec3( x2_( 0 ), x2_( 1 ), 1.0 ) )).normalized();
+
+          //const Vec3 ray1 = X;
+          //const Vec3 ray2 = X - (-R2.transpose() * t2);
           const double mag = ray1.norm() * ray2.norm();
           const double dotAngle = ray1.dot( ray2 );
           const double cosParallax = clamp( dotAngle / mag, -1.0 + 1.e-8, 1.0 - 1.e-8 );

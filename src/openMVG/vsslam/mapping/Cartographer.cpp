@@ -86,7 +86,7 @@ bool Cartographer::initializationAddStep
       for (Hash_Map<MapLandmark*, std::unique_ptr<MapLandmark> >::iterator iter_ml = tmp_structure.begin(); iter_ml!=tmp_structure.end();)
       {
         // Check if landmark should be added to the global map
-        if ((iter_ml->first)->isValidByConnectivityDegree(min_landmark_quality))
+        if (checkLandmarkQuality(iter_ml->first, min_obs_per_landmark))
         {
           // Add landmark to global map
           MapLandmark * g_lm = addLandmarkToGlobalMap(iter_ml->second);
@@ -231,7 +231,7 @@ void Cartographer::addLandmarksToStructure
     MapLandmark * m_landmark;
     // Check if point is defined to be put in global map
     // If it has the measurement from this frame we check with adjusted threshold otherwise with a global
-    if (map_initialized && pt_3D_new->isValidByConnectivityDegree(pt_3D_new->hasFrameObservation(frame_id) ? min_degree_connectivity : min_obs_per_landmark))
+    if (map_initialized && checkLandmarkQuality(pt_3D_new.get(), pt_3D_new->hasFrameObservation(frame_id) ? min_degree_connectivity : min_obs_per_landmark))
     {
       m_landmark = addLandmarkToGlobalMap(pt_3D_new);
     }
@@ -310,7 +310,7 @@ void Cartographer::addObservationsToLandmarks
       MapObservation * map_observation =&(map_point->obs_[frame_id]);
       addObservationToIncSystem(map_point,map_observation);
     }
-    else if (map_initialized && map_point->isValidByConnectivityDegree(min_degree_connectivity))
+    else if (map_initialized && checkLandmarkQuality(map_point, min_obs_per_landmark))
     {
       // Add observation to the landmark
       map_point->addObservation(frame,feat_id);
@@ -361,7 +361,7 @@ void Cartographer::verifyLocalLandmarks(Frame * frame)
       PoseEstimator::getRelativePointPosition(ml->X_,ml->ref_frame_,pt_3D_frame_i,frame_i);
 
 
-      if (!frame_i->checkFeatureAssociation(pt_3D_frame_i,m_o.feat_id,5.991))
+      if (!frame_i->checkLandmarkPosition(pt_3D_frame_i) || !frame_i->checkFeatureAssociation(pt_3D_frame_i,m_o.feat_id,5.991))
       {
         // Remove landmark from frame
         frame_i->clearMapPoint(m_o.feat_id);
@@ -507,7 +507,7 @@ void Cartographer::clearAllMapData()
 
 void Cartographer::eliminateInactiveLocalLandmarks()
 {
-  std::cout<<"Cartographer: Eliminate inactive local landmarks! Before: "<<tmp_structure.size();
+  std::cout<<"Cartographer: Eliminate inactive local landmarks! Before: "<<tmp_structure.size()<<"\n";
   for (Hash_Map<MapLandmark*, std::unique_ptr<MapLandmark> >::iterator iter_ml = tmp_structure.begin(); iter_ml!=tmp_structure.end();)
   {
     MapLandmark * ml = iter_ml->first;
@@ -528,8 +528,10 @@ void Cartographer::eliminateInactiveLocalLandmarks()
       ++iter_ml;
     }
   }
-  std::cout<<"Cartographer: Eliminate inactive local landmarks! After: "<<tmp_structure.size();
+  std::cout<<"Cartographer: Eliminate inactive local landmarks! After: "<<tmp_structure.size()<<"\n";
 }
+
+
 
 void Cartographer::getLocalMapPoints(Frame * frame_current, std::vector<Frame*> & local_frames, std::vector<MapLandmark*> & local_points)
 {

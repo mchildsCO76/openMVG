@@ -40,7 +40,7 @@ private:
   // ---------------
   // Tracking init settings
   // ---------------
-  float init_min_cos_angle_pt = 0.99998 ; // Min angle between rays for the point to be triangulated (0.99998 ~ 0.36deg; 0.99995 ~ 0.5deg;  0.9998 ~ 1.15deg)
+  float init_min_cos_angle_pt = 0.99995 ; // Min angle between rays for the point to be triangulated (0.99998 ~ 0.36deg; 0.99995 ~ 0.5deg;  0.9998 ~ 1.15deg)
   // Matching is 2D-2D
   float init_match_desc_ratio = 0.8; // Matching ration of descriptors
   float init_match_max_scale_ratio = 2; // Matching can be done only between points with max twice the scale difference
@@ -53,7 +53,7 @@ private:
   // ---------------
   // Track with Motion Model
   float track_match_mm_desc_ratio = 0.9; // Matching ratio for matching using motion model
-  float track_match_mm_max_scale_ratio = 2; // Matching can be done only between points with max twice the scale difference
+  float track_match_mm_max_scale_ratio = 1.2; // Matching can be done only between points with max twice the scale difference
   float track_mm_win_size = 10;
 
   // Track with Local Map
@@ -83,11 +83,11 @@ private:
   // ---------------
   // Triangulation settings
   // ---------------
-  size_t triangulate_local_map_size = 5; // Number of best local frames used for triangulating the map
-  size_t triangulate_min_obs_for_new_pt = 3; // Minimum observations required for new triangulation (only to start the process)
-  float triangulate_match_lm_max_scale_ratio = 2; // Matching can be done only between points with max twice the scale difference
+  size_t triangulate_local_map_size = 10; // Number of best local frames used for triangulating the map
+  size_t triangulate_min_obs_for_new_pt = 4; // Minimum observations required for new triangulation (only to start the process)
+  float triangulate_match_lm_max_scale_ratio = 1.2; // Matching can be done only between points with max twice the scale difference
   float triangulate_match_epipolar_desc_ratio = 0.6;
-  float track_epipolar_dist = 3;
+  float track_epipolar_dist = 4;
 
 
   // ---------------
@@ -120,6 +120,7 @@ public:
     featureMatcher_(featMatcher),
     max_tracked_points(max_features_tracked)
   {
+    display_iterations = std::vector<size_t>(6,0);
   }
 
   ~Tracker_Features() = default;
@@ -145,10 +146,12 @@ public:
   bool track
   (
     const image::Image<unsigned char> & ima,
-    std::shared_ptr<Frame> current_frame
+    std::shared_ptr<Frame> current_frame,
+    const image::Image<unsigned char> * mask = nullptr
   ) override;
 
-
+  bool needNewKeyframe(Frame * frame,
+      std::vector<std::unique_ptr<MapLandmark> > & vec_new_pts_3D);
 
   /// INITIALIZATION
   void resetTrackingInitialization();
@@ -184,7 +187,7 @@ public:
 
   //void removeOutliersInLocalFrames(std::vector<Frame *> & local_map_frames);
 
-  void removeOutliersInNewTriangulatedPoints(std::vector<std::unique_ptr<MapLandmark> > & vec_putative_new_pts_3D);
+  void removeOutliersInNewTriangulatedPoints(Frame * frame, std::vector<std::unique_ptr<MapLandmark> > & vec_putative_new_pts_3D);
 
 
   // Detect and describe points in current frame
@@ -193,7 +196,8 @@ public:
   (
     const image::Image<unsigned char> & ima,
     Frame * frame,
-    const size_t & min_count
+    const size_t & min_count,
+    const image::Image<unsigned char> * mask = nullptr
   );
 };
 

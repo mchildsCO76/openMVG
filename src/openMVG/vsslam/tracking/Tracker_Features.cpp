@@ -15,7 +15,8 @@ namespace VSSLAM  {
   bool Tracker_Features::track
   (
     const image::Image<unsigned char> & ima,
-    std::shared_ptr<Frame> current_frame
+    std::shared_ptr<Frame> current_frame,
+    const image::Image<unsigned char> * mask
   )
   {
     bool track_status = false;
@@ -28,7 +29,7 @@ namespace VSSLAM  {
     // -------------------------
     // -- Detect features
     // -------------------------
-    detect(ima,mCurrentFrame.get(),max_tracked_points);
+    detect(ima,mCurrentFrame.get(),max_tracked_points,mask);
 
     const size_t & n_feats_detected = mCurrentFrame->getNumberOfFeatures();
 
@@ -74,6 +75,8 @@ namespace VSSLAM  {
           // Match current frame with lastFrame
           b_track_OK = trackWithMotionModel();
           std::cout<<"Tracker: [Track] Motion Model: "<<b_track_OK<<" ("<<omp_get_wtime() - start_time<<" s)\n";
+
+          display_iterations[0] = 2;
         }
 
         // If motion model tracking didnt work we try with reference frame
@@ -85,9 +88,13 @@ namespace VSSLAM  {
         {
           b_track_OK = trackWithReferenceFrame();
           std::cout<<"Tracker: [Track] Reference frame: "<<b_track_OK<<" ("<<omp_get_wtime() - start_time<<" s)\n";
+          display_iterations[1] = 2;
         }
-
-
+        else
+        {
+          display_iterations[1] = 0;
+        }
+        display_iterations[2] = 0;
       }
       else if (trackingStatus == TRACKING_STATUS::LOST)
       {
@@ -101,6 +108,8 @@ namespace VSSLAM  {
         last_relocalized_frame_id = mCurrentFrame->getFrameId();
 
         std::cout<<"Tracker: [Track] Relocalization: "<<b_track_OK<<" ("<<omp_get_wtime() - start_time<<" s)\n";
+
+        display_iterations[2] = 2;
       }
 
       // If successfuly tracked
@@ -111,17 +120,20 @@ namespace VSSLAM  {
         // -- Local map tracking
         // ----------------
         trackLocalMap();
+        display_iterations[3] = 2;
 
         size_t n_matches = mCurrentFrame->getNumberMapPoints();
         std::cout<<"Tracker: [Track] Total matches with Map: "<<n_matches<<" ("<<omp_get_wtime() - start_time<<" s)\n";
 
+
+        mCurrentFrame->computeSceneStatistics();
 
         start_time = omp_get_wtime();
         // ----------------
         // -- Find new points that we can triangulate
         // ----------------
         std::vector<std::unique_ptr<MapLandmark> > vec_new_pts_3D;
-        //findNewLandmarks(mCurrentFrame.get(),vec_new_pts_3D);
+        findNewLandmarks(mCurrentFrame.get(),vec_new_pts_3D);
 
         std::cout<<"Tracker: [Track Triangulate] #new putative triangulated Pts: "<<vec_new_pts_3D.size()<<" ("<<omp_get_wtime() - start_time<<" s)\n";
 
@@ -148,6 +160,7 @@ namespace VSSLAM  {
           display_pt2d_B.push_back(d_B);
           display_pt2d_C.push_back(d_C);
           display_size_A.push_back(d_s);
+          display_text.push_back("Triangulation: Initial new 3D matches");
         }
         ////////////////////////////////////
 
@@ -172,7 +185,7 @@ namespace VSSLAM  {
         std::cout<<"Tracker: [Track] Local Map verification ("<<omp_get_wtime() - start_time<<" s)\n";
 
         removeOutliersInFrame(mCurrentFrame.get());
-        removeOutliersInNewTriangulatedPoints(vec_new_pts_3D);
+        removeOutliersInNewTriangulatedPoints(mCurrentFrame.get(),vec_new_pts_3D);
 
         std::cout<<"Tracker: [Track Triangulate] Outlier removal: #new triangulated Pts: "<<vec_new_pts_3D.size()<<" ("<<omp_get_wtime() - start_time<<" s)\n";
 
@@ -200,8 +213,10 @@ namespace VSSLAM  {
           display_pt2d_B.push_back(d_B);
           display_pt2d_C.push_back(d_C);
           display_size_A.push_back(d_s);
+          display_text.push_back("Triangulation: Accepted new 3D landmarks");
         }
         ////////////////////////////////////
+        display_iterations[5] = 2;
 
 
 
@@ -217,7 +232,9 @@ namespace VSSLAM  {
           // ----------------
           // -- Decide if current frame is keyframe and if should be added to the system
           // ----------------
-          bool bKeyframe = true;
+
+          bool bKeyframe = needNewKeyframe(mCurrentFrame.get(), vec_new_pts_3D);
+
 
           // Add to the system
           if (bKeyframe)
@@ -252,6 +269,13 @@ namespace VSSLAM  {
           track_status = true;
         }
       }
+      else
+      {
+        display_iterations[3] = 0;  // tracking map
+        display_iterations[4] = 0;  // epipolar map
+        display_iterations[5] = 2;  // triangulations map
+
+      }
 
       if (!b_track_OK)
       {
@@ -282,6 +306,29 @@ namespace VSSLAM  {
 
     // Return if tracking is ok
     return track_status;
+  }
+
+  bool Tracker_Features::needNewKeyframe(Frame * frame,
+      std::vector<std::unique_ptr<MapLandmark> > & vec_new_pts_3D)
+  {
+    // We create new keyframe if:
+    // - more than X frames have passed from last mapping
+    // - OR
+    // - tracking is weak (less than 90% of matches than in last reference frame)
+    // - OR
+    // - its necessary for creating new points (more than 20% of points are new)
+
+    // Get number of matches with the map
+    size_t last_ref_frame_n_matches = mLastRefFrame->getNumberGlobalMapPoints();
+    size_t frame_n_matches = frame->getNumberGlobalMapPoints();
+
+    // Check how many frames would become ok if we add this frame as keyframe
+    size_t n_new_pts = vec_new_pts_3D.size();
+
+    if (frame_n_matches < last_ref_frame_n_matches*0.9 || n_new_pts > frame_n_matches*0.2 )
+      return true;
+    else
+      return false;
   }
 
   // --------------------------
@@ -365,6 +412,7 @@ namespace VSSLAM  {
         display_pt2d_B.push_back(d_B);
         display_pt2d_C.push_back(d_C);
         display_size_A.push_back(d_s);
+        display_text.push_back("Initialization: Initial 2D-2D matches");
       }
       ////////////////////////////////////
 
@@ -431,6 +479,7 @@ namespace VSSLAM  {
         display_pt2d_B.push_back(d_B);
         display_pt2d_C.push_back(d_C);
         display_size_A.push_back(d_s);
+        display_text.push_back("Initialization: Matches with essential matrix");
       }
       ////////////////////////////////////
 
@@ -534,6 +583,7 @@ namespace VSSLAM  {
         display_pt2d_B.push_back(d_B);
         display_pt2d_C.push_back(d_C);
         display_size_A.push_back(d_s);
+        display_text.push_back("Initialization: Triangulated points");
       }
       ////////////////////////////////////
 
@@ -556,6 +606,20 @@ namespace VSSLAM  {
 
       std::cout<<"Tracker: [Initialization] Optimize local OK ("<<omp_get_wtime() - start_time<<" s)\n";
 
+
+      start_time = omp_get_wtime();
+      // -------------------
+      // -- Determine inliers
+      // -------------------
+
+      // Compute scene borders
+      //init_ref_frame->computeSceneStatistics();
+      //mCurrentFrame->computeSceneStatistics();
+      // Check for outliers in the frames
+      removeOutliersInNewTriangulatedPoints(mCurrentFrame.get(),vec_new_triangulated_pts);
+
+
+      std::cout<<"Tracker: [Initialization] # of initial tracked points: "<<vec_new_triangulated_pts.size()<<" ("<<omp_get_wtime() - start_time<<" s)\n";
 
       ////////////////////////////////////
       // Display triangulated points - INLIERS
@@ -587,16 +651,9 @@ namespace VSSLAM  {
         display_pt2d_B.push_back(d_B);
         display_pt2d_C.push_back(d_C);
         display_size_A.push_back(d_s);
+        display_text.push_back("Initialization: Accepted triangulated points");
       }
       ////////////////////////////////////
-
-      start_time = omp_get_wtime();
-      // -------------------
-      // -- Determine inliers
-      // -------------------
-      removeOutliersInNewTriangulatedPoints(vec_new_triangulated_pts);
-
-      std::cout<<"Tracker: [Initialization] # of initial tracked points: "<<vec_new_triangulated_pts.size()<<" ("<<omp_get_wtime() - start_time<<" s)\n";
 
 
       // -------------------
@@ -662,62 +719,6 @@ namespace VSSLAM  {
     std::cout<<"Tracker: [Track] Match by projection with frame: "<<mPrevFrame->getFrameId()<<": Total # matches: "<<map_putative_matches_3D_pts_frame_idx.size()<<" ("<<omp_get_wtime() - start_time<<" s)\n";
 
 
-    ////////////////////////////////////
-    // Display initial matches proj 3d-2d using motion model
-    ///////////////////////////////////
-    {
-      std::vector<Vec2> d_A; std::vector<Vec2> d_B;std::vector<Vec2> d_C; std::vector<float> d_s;
-      for ( size_t k_i = 0; k_i < mPrevFrame->map_points_.size(); ++k_i)
-      {
-        MapLandmark * landmark = mPrevFrame->map_points_[k_i];
-
-        if (!landmark)
-          continue;
-
-        Vec3 pt_3D_frame;
-        PoseEstimator::getRelativePointPosition(landmark->X_,landmark->ref_frame_,pt_3D_frame,mCurrentFrame.get());
-
-        if (pt_3D_frame(2) < 0)
-          continue;
-
-        IntrinsicBase * cam_intrinsic = mCurrentFrame->getCameraIntrinsics();
-        Vec2 pt_3D_frame_projected = cam_intrinsic->cam2ima(pt_3D_frame.hnormalized());
-        // Check if projection is actually in the image borders
-        if (!mCurrentFrame->isPointInFrame(pt_3D_frame_projected))
-          continue;
-
-        d_A.push_back(mPrevFrame->pts_undist_[k_i]);
-
-        if (map_putative_matches_3D_pts_frame_idx.find(landmark)!=map_putative_matches_3D_pts_frame_idx.end())
-        {
-          d_B.push_back(mCurrentFrame->pts_undist_[map_putative_matches_3D_pts_frame_idx.find(landmark)->second]);
-        }
-        else
-        {
-          d_B.push_back(Vec2(-1,-1));
-        }
-
-        d_C.push_back(pt_3D_frame_projected);
-
-        // Compute viewing angle between the point and normal which was last seen
-        Vec3 normal_X = (landmark->getWorldPosition() - mCurrentFrame->O_w_).normalized();
-        const Vec3 & normal_last = landmark->getLastNormal();
-
-        // Compute viewing angle
-        float angle_factor = featureMatcher_->radiusByViewingAngle(normal_X.dot(normal_last));   // [1,5]
-
-        // enlarge the area if the viewing angle is bigger
-        float win_size = track_mm_win_size * sqrt(angle_factor);
-
-        d_s.push_back(win_size);
-      }
-      display_pt2d_A.push_back(d_A);
-      display_pt2d_B.push_back(d_B);
-      display_pt2d_C.push_back(d_C);
-      display_size_A.push_back(d_s);
-    }
-    ////////////////////////////////////
-
     // If not enough matches we try again with wider search window
     if (map_putative_matches_3D_pts_frame_idx.size() < track_min_matches)
     {
@@ -735,11 +736,11 @@ namespace VSSLAM  {
       }
     }
 
-
     ////////////////////////////////////
-    // Display initial matches proj 3d-2d using motion model - try 2
+    // Display initial matches proj 3d-2d using motion model
     ///////////////////////////////////
     {
+      IntrinsicBase * cam_intrinsic = mCurrentFrame->getCameraIntrinsics();
       std::vector<Vec2> d_A; std::vector<Vec2> d_B;std::vector<Vec2> d_C; std::vector<float> d_s;
       for ( size_t k_i = 0; k_i < mPrevFrame->map_points_.size(); ++k_i)
       {
@@ -751,27 +752,95 @@ namespace VSSLAM  {
         Vec3 pt_3D_frame;
         PoseEstimator::getRelativePointPosition(landmark->X_,landmark->ref_frame_,pt_3D_frame,mCurrentFrame.get());
 
-        if (pt_3D_frame(2) < 0)
-          continue;
-
-        IntrinsicBase * cam_intrinsic = mCurrentFrame->getCameraIntrinsics();
         Vec2 pt_3D_frame_projected = cam_intrinsic->cam2ima(pt_3D_frame.hnormalized());
-        // Check if projection is actually in the image borders
-        if (!mCurrentFrame->isPointInFrame(pt_3D_frame_projected))
-          continue;
 
-        d_A.push_back(mPrevFrame->pts_undist_[k_i]);
+        d_B.push_back(mPrevFrame->pts_undist_[k_i]);
 
         if (map_putative_matches_3D_pts_frame_idx.find(landmark)!=map_putative_matches_3D_pts_frame_idx.end())
         {
-          d_B.push_back(mCurrentFrame->pts_undist_[map_putative_matches_3D_pts_frame_idx.find(landmark)->second]);
+          d_C.push_back(mCurrentFrame->pts_undist_[map_putative_matches_3D_pts_frame_idx.find(landmark)->second]);
         }
         else
         {
-          d_B.push_back(Vec2(-1,-1));
+          d_C.push_back(Vec2(-1,-1));
         }
 
-        d_C.push_back(pt_3D_frame_projected);
+        d_A.push_back(pt_3D_frame_projected);
+
+        // Compute viewing angle between the point and normal which was last seen
+        Vec3 normal_X = (landmark->getWorldPosition() - mCurrentFrame->O_w_).normalized();
+        const Vec3 & normal_last = landmark->getLastNormal();
+
+        // Compute viewing angle
+        float angle_factor = featureMatcher_->radiusByViewingAngle(normal_X.dot(normal_last));   // [1,5]
+
+        // enlarge the area if the viewing angle is bigger
+        float win_size = angle_factor;//track_mm_win_size * sqrt(angle_factor);
+
+        d_s.push_back(win_size);
+      }
+      display_pt2d_A.push_back(d_A);
+      display_pt2d_B.push_back(d_B);
+      display_pt2d_C.push_back(d_C);
+      display_size_A.push_back(d_s);
+      display_text.push_back("MotionModel: Initial 3D-2D matches");
+    }
+    ////////////////////////////////////
+
+
+    // -------------------
+    // -- Do tiny BA to refine the pose based on the matches
+    // -------------------
+    mCurrentFrame->reproj_thresh_sq_ = default_reproj_thresh_sq;
+
+    start_time = omp_get_wtime();
+    // Optimize pose with static points (both local and global)
+    if (!cartographer_->optimizePose(mCurrentFrame.get(),map_putative_matches_3D_pts_frame_idx,true))
+    {
+      std::cout<<"Tracker: [Track] Optimize Pose Failed\n";
+      return false;
+    }
+
+    std::cout<<"Tracker: [Track] Optimize pose OK ("<<omp_get_wtime() - start_time<<" s)\n";
+
+    removeOutliersInFrame(mCurrentFrame.get());
+    // Check Chi2 error for each point and mark which ones are ok
+    markInliersInFrame(mCurrentFrame.get(), map_putative_matches_3D_pts_frame_idx,true,2);
+    size_t n_matches = mCurrentFrame->getNumberMapPoints();
+
+    std::cout<<"Tracker: [Track] # matched with motion model: "<<n_matches<<" ("<<omp_get_wtime() - start_time<<" s)\n";
+
+
+    ////////////////////////////////////
+    // Display matches proj 3d-2d using motion model after BA
+    ///////////////////////////////////
+    {
+      IntrinsicBase * cam_intrinsic = mCurrentFrame->getCameraIntrinsics();
+      std::vector<Vec2> d_A; std::vector<Vec2> d_B;std::vector<Vec2> d_C; std::vector<float> d_s;
+      for ( size_t k_i = 0; k_i < mPrevFrame->map_points_.size(); ++k_i)
+      {
+        MapLandmark * landmark = mPrevFrame->map_points_[k_i];
+
+        if (!landmark)
+          continue;
+
+        Vec3 pt_3D_frame;
+        PoseEstimator::getRelativePointPosition(landmark->X_,landmark->ref_frame_,pt_3D_frame,mCurrentFrame.get());
+
+        Vec2 pt_3D_frame_projected = cam_intrinsic->cam2ima(pt_3D_frame.hnormalized());
+
+        d_B.push_back(mPrevFrame->pts_undist_[k_i]);
+
+        if (map_putative_matches_3D_pts_frame_idx.find(landmark)!=map_putative_matches_3D_pts_frame_idx.end())
+        {
+          d_C.push_back(mCurrentFrame->pts_undist_[map_putative_matches_3D_pts_frame_idx.find(landmark)->second]);
+        }
+        else
+        {
+          d_C.push_back(Vec2(-1,-1));
+        }
+
+        d_A.push_back(pt_3D_frame_projected);
 
         // Compute viewing angle between the point and normal which was last seen
         Vec3 normal_X = (landmark->getWorldPosition() - mCurrentFrame->O_w_).normalized();
@@ -789,18 +858,101 @@ namespace VSSLAM  {
       display_pt2d_B.push_back(d_B);
       display_pt2d_C.push_back(d_C);
       display_size_A.push_back(d_s);
+      display_text.push_back("MotionModel: Accepted 3D-2D matches after BA");
     }
     ////////////////////////////////////
 
 
     // -------------------
-    // -- Do tiny BA to refine the pose based on the matches
+    // -- Check if motion model matching is successful
     // -------------------
+    if (n_matches < track_min_matches)
+    {
+      return false;
+    }
+    return true;
+  }
+
+  bool Tracker_Features::trackWithReferenceFrame()
+  {
+    std::cout<<"Tracker: [Track] Use Reference frame\n";
+    // -------------------
+    // -- Set location of current frame (as the one of last frame)
+    // -------------------
+    // TODO: check how handle relative poses
+    mCurrentFrame->setPose_T(mPrevFrame->getTransformationMatrix(), nullptr);
+
+    double start_time = omp_get_wtime();
+    // -------------------
+    // -- Try to match all-all with the last reference frame
+    // -------------------
+    Hash_Map<MapLandmark* ,IndexT> map_putative_matches_3D_pts_frame_idx;
+    featureMatcher_->matching_AllAll_3D_2D(featureExtractor_, mLastRefFrame->map_points_, mCurrentFrame.get(), map_putative_matches_3D_pts_frame_idx, track_match_rf_desc_ratio, track_match_rf_max_scale_ratio, featureExtractor_->max_dist_desc_);
+
+    std::cout<<"Tracker: [Track] All-All 3D-2D! RF ID: "<<mLastRefFrame->getFrameId()<<" with # pts: "<<mLastRefFrame->getNumberMapPoints()<<"\n";
+    std::cout<<"Tracker: [Track] All-All 3D-2D! # matches: "<<map_putative_matches_3D_pts_frame_idx.size()<<" ("<<omp_get_wtime() - start_time<<" s)\n";
+
+
+
+    ////////////////////////////////////
+    // Display initial matches proj 3d-2d using motion model
+    ///////////////////////////////////
+    {
+      IntrinsicBase * cam_intrinsic = mCurrentFrame->getCameraIntrinsics();
+      std::vector<Vec2> d_A; std::vector<Vec2> d_B;std::vector<Vec2> d_C; std::vector<float> d_s;
+      for ( size_t k_i = 0; k_i < mLastRefFrame->map_points_.size(); ++k_i)
+      {
+        MapLandmark * landmark = mLastRefFrame->map_points_[k_i];
+
+        if (!landmark)
+          continue;
+
+        Vec3 pt_3D_frame;
+        PoseEstimator::getRelativePointPosition(landmark->X_,landmark->ref_frame_,pt_3D_frame,mCurrentFrame.get());
+
+        Vec2 pt_3D_frame_projected = cam_intrinsic->cam2ima(pt_3D_frame.hnormalized());
+
+        d_B.push_back(mLastRefFrame->pts_undist_[k_i]);
+
+        if (map_putative_matches_3D_pts_frame_idx.find(landmark)!=map_putative_matches_3D_pts_frame_idx.end())
+        {
+          d_C.push_back(mCurrentFrame->pts_undist_[map_putative_matches_3D_pts_frame_idx.find(landmark)->second]);
+        }
+        else
+        {
+          d_C.push_back(Vec2(-1,-1));
+        }
+
+        d_A.push_back(pt_3D_frame_projected);
+
+
+        // enlarge the area if the viewing angle is bigger
+        float win_size = 1;
+
+        d_s.push_back(win_size);
+      }
+      display_pt2d_A.push_back(d_A);
+      display_pt2d_B.push_back(d_B);
+      display_pt2d_C.push_back(d_C);
+      display_size_A.push_back(d_s);
+      display_text.push_back("ReferenceFrame: Inital 3D-2D matches");
+    }
+    ////////////////////////////////////
+
+
+    // Check if we got enough matches
+    if (map_putative_matches_3D_pts_frame_idx.size() < track_min_matches)
+    {
+      std::cout<<"Tracker: [Track] Match with Reference Frame Failed\n";
+      return false;
+    }
+
+    // TODO: Check how to set reprojection threshold if we just use BA
     mCurrentFrame->reproj_thresh_sq_ = default_reproj_thresh_sq;
 
-    start_time = omp_get_wtime();
     // Optimize pose with static points (both local and global)
-    if (!cartographer_->optimizePose(mCurrentFrame.get(),map_putative_matches_3D_pts_frame_idx,false))
+    start_time = omp_get_wtime();
+    if (!cartographer_->optimizePose(mCurrentFrame.get(),map_putative_matches_3D_pts_frame_idx,true))
     {
       std::cout<<"Tracker: [Track] Optimize Pose Failed\n";
       return false;
@@ -808,17 +960,20 @@ namespace VSSLAM  {
 
     std::cout<<"Tracker: [Track] Optimize pose OK ("<<omp_get_wtime() - start_time<<" s)\n";
 
-    // Check Chi2 error for each point and mark which ones are ok
-    markInliersInFrame(mCurrentFrame.get(), map_putative_matches_3D_pts_frame_idx,true,2);
+    removeOutliersInFrame(mCurrentFrame.get());
+    markInliersInFrame(mCurrentFrame.get(), map_putative_matches_3D_pts_frame_idx,true,3);
+
     size_t n_matches = mCurrentFrame->getNumberMapPoints();
 
-    std::cout<<"Tracker: [Track] # matched with local map of reference frame: "<<n_matches<<" ("<<omp_get_wtime() - start_time<<" s)\n";
+    std::cout<<"Tracker: [Track] # matched with reference frame: "<<n_matches<<" ("<<omp_get_wtime() - start_time<<" s)\n";
 
 
     ////////////////////////////////////
     // Display link between projeccted point and feature on the frame
     ///////////////////////////////////
     {
+      IntrinsicBase * cam_intrinsic = mCurrentFrame->getCameraIntrinsics();
+
       std::vector<Vec2> d_A; std::vector<Vec2> d_B;std::vector<Vec2> d_C; std::vector<float> d_s;
       for ( size_t k_i = 0; k_i < mCurrentFrame->map_points_.size(); ++k_i)
       {
@@ -830,18 +985,10 @@ namespace VSSLAM  {
         Vec3 pt_3D_frame;
         PoseEstimator::getRelativePointPosition(landmark->X_,landmark->ref_frame_,pt_3D_frame,mCurrentFrame.get());
 
-        if (pt_3D_frame(2) < 0)
-          continue;
-
-        IntrinsicBase * cam_intrinsic = mCurrentFrame->getCameraIntrinsics();
         Vec2 pt_3D_frame_projected = cam_intrinsic->cam2ima(pt_3D_frame.hnormalized());
-        // Check if projection is actually in the image borders
-        if (!mCurrentFrame->isPointInFrame(pt_3D_frame_projected))
-          continue;
-
-        d_A.push_back(mCurrentFrame->pts_undist_[k_i]);
-
-        d_C.push_back(pt_3D_frame_projected);
+        d_B.push_back(Vec2(-1,-1));
+        d_C.push_back(mCurrentFrame->pts_undist_[k_i]);
+        d_A.push_back(pt_3D_frame_projected);
 
         Hash_Map<MapLandmark *,IndexT>::iterator it = map_putative_matches_3D_pts_frame_idx.find(landmark);
         size_t it_dist = std::distance(map_putative_matches_3D_pts_frame_idx.begin(), it);
@@ -852,6 +999,7 @@ namespace VSSLAM  {
       display_pt2d_B.push_back(d_B);
       display_pt2d_C.push_back(d_C);
       display_size_A.push_back(d_s);
+      display_text.push_back("ReferenceFrame: Accepted 3D-2D matches after BA");
     }
     ////////////////////////////////////
 
@@ -863,6 +1011,9 @@ namespace VSSLAM  {
       return false;
     }
     return true;
+
+
+
   }
 
 
@@ -929,12 +1080,63 @@ namespace VSSLAM  {
     // Set pose
     mCurrentFrame->setPose_Rts(R,t,s,nullptr);
 
+    ////////////////////////////////////
+    // Display initial matches proj 3d-2d using motion model
+    ///////////////////////////////////
+    {
+      IntrinsicBase * cam_intrinsic = mCurrentFrame->getCameraIntrinsics();
+      std::vector<Vec2> d_A; std::vector<Vec2> d_B;std::vector<Vec2> d_C; std::vector<float> d_s;
+      for ( size_t k_i = 0; k_i < local_map_points.size(); ++k_i)
+      {
+        MapLandmark * landmark = local_map_points[k_i];
+
+        if (!landmark)
+          continue;
+
+        Vec3 pt_3D_frame;
+        PoseEstimator::getRelativePointPosition(landmark->X_,landmark->ref_frame_,pt_3D_frame,mCurrentFrame.get());
+
+        Vec2 pt_3D_frame_projected = cam_intrinsic->cam2ima(pt_3D_frame.hnormalized());
+
+        if (!mCurrentFrame->isPointInFrame(pt_3D_frame_projected))
+        {
+          continue;
+        }
+
+        d_B.push_back(Vec2(-1,-1));
+
+        if (map_putative_matches_3D_pts_frame_idx.find(landmark)!=map_putative_matches_3D_pts_frame_idx.end())
+        {
+          d_C.push_back(mCurrentFrame->pts_undist_[map_putative_matches_3D_pts_frame_idx.find(landmark)->second]);
+        }
+        else
+        {
+          d_C.push_back(Vec2(-1,-1));
+        }
+
+        d_A.push_back(pt_3D_frame_projected);
+
+
+        // enlarge the area if the viewing angle is bigger
+        float win_size = 10;
+
+        d_s.push_back(win_size);
+      }
+      display_pt2d_A.push_back(d_A);
+      display_pt2d_B.push_back(d_B);
+      display_pt2d_C.push_back(d_C);
+      display_size_A.push_back(d_s);
+      display_text.push_back("ReferenceMap: Initial 3D-2D matches");
+    }
+    ////////////////////////////////////
+
+
     // TODO: Check how to set reprojection threshold if we just use BA
     mCurrentFrame->reproj_thresh_sq_ = default_reproj_thresh_sq;
 
     // Optimize pose with static points (both local and global)
     start_time = omp_get_wtime();
-    if (!cartographer_->optimizePose(mCurrentFrame.get(),map_putative_matches_3D_pts_frame_idx,false))
+    if (!cartographer_->optimizePose(mCurrentFrame.get(),map_putative_matches_3D_pts_frame_idx,true))
     {
       std::cout<<"Tracker: [Track] Optimize Pose Failed\n";
       return false;
@@ -942,15 +1144,18 @@ namespace VSSLAM  {
 
     std::cout<<"Tracker: [Track] Optimize pose OK ("<<omp_get_wtime() - start_time<<" s)\n";
 
+    removeOutliersInFrame(mCurrentFrame.get());
     markInliersInFrame(mCurrentFrame.get(), map_putative_matches_3D_pts_frame_idx,true,4);
     size_t n_matches = mCurrentFrame->getNumberMapPoints();
 
-    std::cout<<"Tracker: [Track] # matched with local map of reference frame: "<<n_matches<<" ("<<omp_get_wtime() - start_time<<" s)\n";
+    std::cout<<"Tracker: [Track] # matched with local map of reference map: "<<n_matches<<" ("<<omp_get_wtime() - start_time<<" s)\n";
 
     ////////////////////////////////////
-    // Display link between projeccted point and feature on the frame
+    // Display link between projected point and feature on the frame
     ///////////////////////////////////
     {
+      IntrinsicBase * cam_intrinsic = mCurrentFrame->getCameraIntrinsics();
+
       std::vector<Vec2> d_A; std::vector<Vec2> d_B;std::vector<Vec2> d_C; std::vector<float> d_s;
       for ( size_t k_i = 0; k_i < mCurrentFrame->map_points_.size(); ++k_i)
       {
@@ -962,18 +1167,10 @@ namespace VSSLAM  {
         Vec3 pt_3D_frame;
         PoseEstimator::getRelativePointPosition(landmark->X_,landmark->ref_frame_,pt_3D_frame,mCurrentFrame.get());
 
-        if (pt_3D_frame(2) < 0)
-          continue;
-
-        IntrinsicBase * cam_intrinsic = mCurrentFrame->getCameraIntrinsics();
         Vec2 pt_3D_frame_projected = cam_intrinsic->cam2ima(pt_3D_frame.hnormalized());
-        // Check if projection is actually in the image borders
-        if (!mCurrentFrame->isPointInFrame(pt_3D_frame_projected))
-          continue;
-
-        d_A.push_back(mCurrentFrame->pts_undist_[k_i]);
-
-        d_C.push_back(pt_3D_frame_projected);
+        d_B.push_back(Vec2(-1,-1));
+        d_C.push_back(mCurrentFrame->pts_undist_[k_i]);
+        d_A.push_back(pt_3D_frame_projected);
 
         Hash_Map<MapLandmark *,IndexT>::iterator it = map_putative_matches_3D_pts_frame_idx.find(landmark);
         size_t it_dist = std::distance(map_putative_matches_3D_pts_frame_idx.begin(), it);
@@ -984,6 +1181,7 @@ namespace VSSLAM  {
       display_pt2d_B.push_back(d_B);
       display_pt2d_C.push_back(d_C);
       display_size_A.push_back(d_s);
+      display_text.push_back("ReferenceMap: Accepted 3D-2D matches after BA");
     }
     ////////////////////////////////////
 
@@ -997,104 +1195,6 @@ namespace VSSLAM  {
     return true;
   }
 
-  bool Tracker_Features::trackWithReferenceFrame()
-  {
-    std::cout<<"Tracker: [Track] Use Reference frame\n";
-    // -------------------
-    // -- Set location of current frame (as the one of last frame)
-    // -------------------
-    // TODO: check how handle relative poses
-    mCurrentFrame->setPose_T(mPrevFrame->getTransformationMatrix(), nullptr);
-
-    double start_time = omp_get_wtime();
-    // -------------------
-    // -- Try to match all-all with the last reference frame
-    // -------------------
-    Hash_Map<MapLandmark* ,IndexT> map_putative_matches_3D_pts_frame_idx;
-    featureMatcher_->matching_AllAll_3D_2D(featureExtractor_, mLastRefFrame->map_points_, mCurrentFrame.get(), map_putative_matches_3D_pts_frame_idx, track_match_rf_desc_ratio, track_match_rf_max_scale_ratio, featureExtractor_->max_dist_desc_);
-
-    std::cout<<"Tracker: [Track] All-All 3D-2D! RF ID: "<<mLastRefFrame->getFrameId()<<" with # pts: "<<mLastRefFrame->getNumberMapPoints()<<"\n";
-    std::cout<<"Tracker: [Track] All-All 3D-2D! # matches: "<<map_putative_matches_3D_pts_frame_idx.size()<<" ("<<omp_get_wtime() - start_time<<" s)\n";
-
-    // Check if we got enough matches
-    if (map_putative_matches_3D_pts_frame_idx.size() < track_min_matches)
-    {
-      std::cout<<"Tracker: [Track] Match with Reference Frame Failed\n";
-      return false;
-    }
-
-    // TODO: Check how to set reprojection threshold if we just use BA
-    mCurrentFrame->reproj_thresh_sq_ = default_reproj_thresh_sq;
-
-    // Optimize pose with static points (both local and global)
-    start_time = omp_get_wtime();
-    if (!cartographer_->optimizePose(mCurrentFrame.get(),map_putative_matches_3D_pts_frame_idx,false))
-    {
-      std::cout<<"Tracker: [Track] Optimize Pose Failed\n";
-      return false;
-    }
-
-    std::cout<<"Tracker: [Track] Optimize pose OK ("<<omp_get_wtime() - start_time<<" s)\n";
-
-    markInliersInFrame(mCurrentFrame.get(), map_putative_matches_3D_pts_frame_idx,true,3);
-
-    size_t n_matches = mCurrentFrame->getNumberMapPoints();
-
-    std::cout<<"Tracker: [Track] # matched with reference frame: "<<n_matches<<" ("<<omp_get_wtime() - start_time<<" s)\n";
-
-
-    ////////////////////////////////////
-    // Display link between projeccted point and feature on the frame
-    ///////////////////////////////////
-    {
-      std::vector<Vec2> d_A; std::vector<Vec2> d_B;std::vector<Vec2> d_C; std::vector<float> d_s;
-      for ( size_t k_i = 0; k_i < mCurrentFrame->map_points_.size(); ++k_i)
-      {
-        MapLandmark * landmark = mCurrentFrame->map_points_[k_i];
-
-        if (!landmark)
-          continue;
-
-        Vec3 pt_3D_frame;
-        PoseEstimator::getRelativePointPosition(landmark->X_,landmark->ref_frame_,pt_3D_frame,mCurrentFrame.get());
-
-        if (pt_3D_frame(2) < 0)
-          continue;
-
-        IntrinsicBase * cam_intrinsic = mCurrentFrame->getCameraIntrinsics();
-        Vec2 pt_3D_frame_projected = cam_intrinsic->cam2ima(pt_3D_frame.hnormalized());
-        // Check if projection is actually in the image borders
-        if (!mCurrentFrame->isPointInFrame(pt_3D_frame_projected))
-          continue;
-
-        d_A.push_back(mCurrentFrame->pts_undist_[k_i]);
-
-        d_C.push_back(pt_3D_frame_projected);
-
-        Hash_Map<MapLandmark *,IndexT>::iterator it = map_putative_matches_3D_pts_frame_idx.find(landmark);
-        size_t it_dist = std::distance(map_putative_matches_3D_pts_frame_idx.begin(), it);
-
-        d_s.push_back(display_size_A[display_size_A.size()-1][it_dist]);
-      }
-      display_pt2d_A.push_back(d_A);
-      display_pt2d_B.push_back(d_B);
-      display_pt2d_C.push_back(d_C);
-      display_size_A.push_back(d_s);
-    }
-    ////////////////////////////////////
-
-    // -------------------
-    // -- Check if motion model matching is successful
-    // -------------------
-    if (n_matches < track_min_matches)
-    {
-      return false;
-    }
-    return true;
-
-
-
-  }
 
   bool Tracker_Features::trackLocalMap()
   {
@@ -1156,16 +1256,17 @@ namespace VSSLAM  {
         if (!mCurrentFrame->isPointInFrame(pt_3D_frame_projected))
           continue;
 
+        d_B.push_back(Vec2(-1,-1));
         if (map_putative_matches_3D_pts_frame_idx.find(landmark)!=map_putative_matches_3D_pts_frame_idx.end())
         {
-          d_A.push_back(mCurrentFrame->pts_undist_[map_putative_matches_3D_pts_frame_idx.find(landmark)->second]);
+          d_C.push_back(mCurrentFrame->pts_undist_[map_putative_matches_3D_pts_frame_idx.find(landmark)->second]);
         }
         else
         {
-          d_A.push_back(Vec2(-1,-1));
+          d_C.push_back(Vec2(-1,-1));
         }
 
-        d_B.push_back(pt_3D_frame_projected);
+        d_A.push_back(pt_3D_frame_projected);
 
         d_s.push_back(t_lm_win_size);
       }
@@ -1173,10 +1274,9 @@ namespace VSSLAM  {
       display_pt2d_B.push_back(d_B);
       display_pt2d_C.push_back(d_C);
       display_size_A.push_back(d_s);
+      display_text.push_back("LocalMap: Initial 3D-2D matches");
     }
     ////////////////////////////////////
-
-
 
     start_time = omp_get_wtime();
     // ----------------
@@ -1190,7 +1290,7 @@ namespace VSSLAM  {
 
       start_time = omp_get_wtime();
       // Optimize pose with static points (both local and global)
-      if (!cartographer_->optimizePose(mCurrentFrame.get(),map_putative_matches_3D_pts_frame_idx,false))
+      if (!cartographer_->optimizePose(mCurrentFrame.get(),map_putative_matches_3D_pts_frame_idx,true))
       {
         std::cout<<"Tracker: [Track] Optimize Pose Failed\n";
         return false;
@@ -1198,9 +1298,47 @@ namespace VSSLAM  {
 
       std::cout<<"Tracker: [Track] Optimize pose OK ("<<omp_get_wtime() - start_time<<" s)\n";
     }
+
+    removeOutliersInFrame(mCurrentFrame.get());
     // Add matches as inliers -> we will check if they are outliers after local optimization
     markInliersInFrame(mCurrentFrame.get(), map_putative_matches_3D_pts_frame_idx,false,5);
 
+
+    ////////////////////////////////////
+    // Display link between projeccted point and feature on the frame
+    ///////////////////////////////////
+    {
+      IntrinsicBase * cam_intrinsic = mCurrentFrame->getCameraIntrinsics();
+
+      std::vector<Vec2> d_A; std::vector<Vec2> d_B;std::vector<Vec2> d_C; std::vector<float> d_s;
+      for ( size_t k_i = 0; k_i < mCurrentFrame->map_points_.size(); ++k_i)
+      {
+        MapLandmark * landmark = mCurrentFrame->map_points_[k_i];
+
+        if (!landmark)
+          continue;
+
+        Vec3 pt_3D_frame;
+        PoseEstimator::getRelativePointPosition(landmark->X_,landmark->ref_frame_,pt_3D_frame,mCurrentFrame.get());
+
+        Vec2 pt_3D_frame_projected = cam_intrinsic->cam2ima(pt_3D_frame.hnormalized());
+        d_B.push_back(Vec2(-1,-1));
+        d_C.push_back(mCurrentFrame->pts_undist_[k_i]);
+        d_A.push_back(pt_3D_frame_projected);
+
+        Hash_Map<MapLandmark *,IndexT>::iterator it = map_putative_matches_3D_pts_frame_idx.find(landmark);
+        size_t it_dist = std::distance(map_putative_matches_3D_pts_frame_idx.begin(), it);
+
+        d_s.push_back(display_size_A[display_size_A.size()-1][it_dist]);
+      }
+      display_pt2d_A.push_back(d_A);
+      display_pt2d_B.push_back(d_B);
+      display_pt2d_C.push_back(d_C);
+      display_size_A.push_back(d_s);
+      display_text.push_back("LocalMap: Accepted 3D-2D matches after BA");
+    }
+    ////////////////////////////////////
+    display_iterations.push_back(2);
     return true;
   }
 
@@ -1208,7 +1346,9 @@ namespace VSSLAM  {
   {
     std::vector<Frame *> local_map_frames;
 
-    // Center of base camera
+    // Compute scene statistics of the focus frame
+    frame->computeSceneStatistics();
+    // Center of focus camera
     const Vec3 frame_camera_center = frame->getCameraCenter();
 
     double start_time = omp_get_wtime();
@@ -1224,22 +1364,26 @@ namespace VSSLAM  {
     // -- Loop through each neighbor frame and check if we can match any of the (unmatched) points in current frame to
     // -- (unmatched) features in the neighbor frames
     // -------------------
+    display_iterations[4] = local_map_frames.size();
     std::vector<Hash_Map<IndexT,IndexT> > vec_matches_cur_local(local_map_frames.size());
 
     start_time = omp_get_wtime();
-    //#ifdef OPENMVG_USE_OPENMP
-    //#pragma omp parallel for schedule(dynamic)
-    //#endif
+    std::vector<float> vec_scene_max(local_map_frames.size(),0.0);
+    #ifdef OPENMVG_USE_OPENMP
+    #pragma omp parallel for schedule(dynamic)
+    #endif
     for (size_t f_i = 0; f_i < local_map_frames.size(); ++f_i)
     {
       Frame * local_frame_i = local_map_frames[f_i];
 
       // Compute ratio baseline/scene depth between the pair of frames
-      const Vec3 frame_i_center = local_frame_i->getCameraCenter();
-      const float medianSceneDepth_i = local_frame_i->computeSceneMedianDistance();
-      const float baseline = (frame_camera_center - frame_i_center).norm();
-      const float ratio = baseline / medianSceneDepth_i;
-      std::cout<<"Tracker: [Track Triangulate] Ratio baseline/scene depth: "<<ratio<< " (baseline: "<<baseline<<" depth (median): "<<medianSceneDepth_i<<")\n";
+      const Vec3 frame_i_camera_center = local_frame_i->getCameraCenter();
+      local_frame_i->computeSceneStatistics();
+      // The limit for new points will be 3 times the 95% of the points distance
+
+      const float baseline = (frame_camera_center - frame_i_camera_center).norm();
+      const float ratio = baseline / local_frame_i->f_scene_median;
+      std::cout<<"Tracker: [Track Triangulate] Ratio baseline/scene depth: "<<ratio<< " (baseline: "<<baseline<<" depth (median): "<<local_frame_i->f_scene_median<<")\n";
 
       if (ratio > 0.01)
       {
@@ -1248,17 +1392,26 @@ namespace VSSLAM  {
         PoseEstimator::computeFundamentalMatrix(frame,local_frame_i,F_l_c);
 
         // Perform epipolar matching
-        //featureMatcher_->matching_EpipolarLine_2D_2D(featureExtractor_, frame, local_frame_i, F_l_c, vec_matches_cur_local[f_i],track_epipolar_dist, track_match_epipolar_desc_ratio);
-        featureMatcher_->matching_EpipolarLine_2D_2D(featureExtractor_, frame, local_frame_i, F_l_c, vec_matches_cur_local[f_i],2,triangulate_match_epipolar_desc_ratio,triangulate_match_lm_max_scale_ratio, featureExtractor_->max_dist_desc_);
+        featureMatcher_->matching_EpipolarLine_2D_2D(featureExtractor_, frame, local_frame_i, F_l_c, vec_matches_cur_local[f_i],track_epipolar_dist,triangulate_match_epipolar_desc_ratio,triangulate_match_lm_max_scale_ratio, featureExtractor_->max_dist_desc_);
 
         std::cout<<"Tracker: [Track Triangulate] Match by epipolar 2D-2D with frame: "<<local_frame_i->getFrameId()<<"! # matches: "<<vec_matches_cur_local[f_i].size()<<" ("<<omp_get_wtime() - start_time<<" s)\n";
-
 
         ////////////////////////////////////
         // Display epipolar mappings
         ///////////////////////////////////
         {
           std::vector<Vec2> d_A; std::vector<Vec2> d_B;std::vector<Vec2> d_C; std::vector<float> d_s;
+
+          Vec3 pt_epi_3D;
+         PoseEstimator::getRelativePointPosition(frame_camera_center,nullptr,pt_epi_3D,local_frame_i);
+
+         // Project the point to image plane of frame_2 2
+         const Vec2 pt_epi_3D_proj = local_frame_i->getCameraIntrinsics()->cam2ima(local_frame_i->getCameraIntrinsics()->have_disto()?local_frame_i->getCameraIntrinsics()->add_disto(pt_epi_3D.hnormalized()):pt_epi_3D.hnormalized());
+
+          d_A.push_back(pt_epi_3D_proj);
+          d_B.push_back(pt_epi_3D_proj);
+          d_s.push_back(1);
+
           for ( auto match : vec_matches_cur_local[f_i])
           {
 
@@ -1271,43 +1424,38 @@ namespace VSSLAM  {
           display_pt2d_B.push_back(d_B);
           display_pt2d_C.push_back(d_C);
           display_size_A.push_back(d_s);
+          display_text.push_back("EpipolarMatch: Initial 2D-2D matches");
         }
         ////////////////////////////////////
 
       }
       else
       {
-        std::cout<<"Tracker: [Track Triangulate] Skip pair. Small ratio baseline/scene depth: "<<baseline / medianSceneDepth_i<< " (baseline: "<<baseline<<" depth (median): "<<medianSceneDepth_i<<")\n";
+        std::cout<<"Tracker: [Track Triangulate] Skip pair. Small ratio baseline/scene depth: "<<ratio<< " (baseline: "<<baseline<<" depth (median): "<<local_frame_i->f_scene_median<<")\n";
       }
     }
 
     std::cout<<"Tracker: [Track Triangulate] Epipolar 2D 2D: "<<omp_get_wtime() - start_time<<" s\n";
 
-
-    // Get total number of matches
-    size_t total_n_matches_epipolar = 0;
-    for (size_t f_i = 0; f_i < local_map_frames.size(); ++f_i)
-    {
-      total_n_matches_epipolar += vec_matches_cur_local[f_i].size();
-    }
-    // Each point has to be seen from at least (min_obs_new_triangulation-1) other frames
-    vec_new_pts_3D.reserve(total_n_matches_epipolar/(triangulate_min_obs_for_new_pt-1));
+    const size_t frame_n_feats = frame->getNumberOfFeatures();
+    // Reserve max possible new points
+    vec_new_pts_3D.reserve(frame_n_feats);
 
     start_time = omp_get_wtime();
     // -------------------
     // -- Concatenate observations of the same point over all neighbor frames and triangulate
     // -------------------
-    std::vector<bool> b_feat_cur_searched = std::vector<bool>(mCurrentFrame->getNumberOfFeatures(),false);
+    std::vector<bool> b_feat_searched = std::vector<bool>(frame_n_feats,false);
 
     // Projection matrix
-    Mat34 P_cur,P_i;
+    Mat34 P,P_i;
 
-    // Information for current frame
-    const Mat3 frame_cur_Rwc = mCurrentFrame->getRotationMatrixInverse();
-    const IntrinsicBase * cam_intrinsic_cur = mCurrentFrame->getCameraIntrinsics();
-    const Mat3 K_inv_cur = mCurrentFrame->getK_inv();
+    // Information for focus frame
+    const Mat3 frame_Rwc = frame->getRotationMatrixInverse();
+    const IntrinsicBase * cam_intrinsic = frame->getCameraIntrinsics();
+    const Mat3 K_inv = frame->getK_inv();
     //TODO: How to use if we have relative cameras
-    P_cur = mCurrentFrame->getProjectionMatrix();
+    P = frame->getProjectionMatrix();
 
 
     // Go through each local frame and add concatenate observations per feature in current frame
@@ -1323,31 +1471,30 @@ namespace VSSLAM  {
       {
         Hash_Map<IndexT,IndexT>::iterator match_i = vec_matches_cur_local[local_frame_i].begin();
         std::advance(match_i,m_i);
-        IndexT feat_cur_id = match_i->first;
+        IndexT feat_id = match_i->first;
 
-        // If current frame already exists we skip it as we have already searched for it
-        if (b_feat_cur_searched[feat_cur_id])
+        // If we already searched for the feature we skip as we have already searched for it
+        if (b_feat_searched[feat_id])
           continue;
 
         // Create the concatenation of observations from other frames
-        LandmarkObservations feat_cur_obs_nviews;
-        feat_cur_obs_nviews[local_frame_id] = MapObservation(match_i->second, local_frame);
+        LandmarkObservations feat_obs_nviews;
+        feat_obs_nviews[local_frame_id] = MapObservation(match_i->second, local_frame);
 
         // We only have to look for next  frames as if it would exist previously we would already process it
         for (size_t local_frame_j = local_frame_i+1; local_frame_j < local_map_frames.size(); ++local_frame_j)
         {
-          Hash_Map<IndexT,IndexT>::iterator it_matches_cur_frame_j = vec_matches_cur_local[local_frame_j].find(feat_cur_id);
+          Hash_Map<IndexT,IndexT>::iterator it_matches_cur_frame_j = vec_matches_cur_local[local_frame_j].find(feat_id);
           if (it_matches_cur_frame_j != vec_matches_cur_local[local_frame_j].end())
           {
-            feat_cur_obs_nviews[local_map_frames[local_frame_j]->getFrameId()] = MapObservation(it_matches_cur_frame_j->second, local_map_frames[local_frame_j]);
+            feat_obs_nviews[local_map_frames[local_frame_j]->getFrameId()] = MapObservation(it_matches_cur_frame_j->second, local_map_frames[local_frame_j]);
           }
         }
         // Mark that feature has been checked
-        b_feat_cur_searched[feat_cur_id] = true;
+        b_feat_searched[feat_id] = true;
 
-        // If we have less than required number of observations of the point we skip
-        //if (feat_cur_obs_nviews.size() < (triangulate_min_obs_for_new_pt-1))
-        if (feat_cur_obs_nviews.size() < 1)
+        // we need at least one match with feature in the focus frame
+        if (feat_obs_nviews.size() < 1)
           continue;
 
         // Information for local frame
@@ -1358,12 +1505,14 @@ namespace VSSLAM  {
 
         // Test if matched feature correspondences for a new landmark
         // Get location of feature in current frame
-        const Vec2 & pt_cur = mCurrentFrame->getCamCalibrated() ? mCurrentFrame->getFeaturePosition(feat_cur_id) : cam_intrinsic_cur->remove_disto(mCurrentFrame->getFeaturePosition(feat_cur_id));
+        const Vec2 & pt_frame = frame->getCamCalibrated() ? frame->getFeaturePosition(feat_id) : cam_intrinsic->remove_disto(frame->getFeaturePosition(feat_id));
 
-        // Go through the matches of the point in other frame
+        Vec3 pt_3D;
+
+        // Go through all matches of the point and find the one with biggest parallax
         MapObservation * mo_useful_ptr = nullptr;
         // And check if there is a pair with sufficient parallax
-        for (LandmarkObservations::iterator iter_other_obs = feat_cur_obs_nviews.begin(); iter_other_obs != feat_cur_obs_nviews.end(); ++iter_other_obs)
+        for (LandmarkObservations::iterator iter_other_obs = feat_obs_nviews.begin(); iter_other_obs != feat_obs_nviews.end(); ++iter_other_obs)
         {
             MapObservation & m_o = iter_other_obs->second;
             // Information about the camera
@@ -1376,17 +1525,45 @@ namespace VSSLAM  {
             }
 
             // Get measurement in the i-th view
-            const Vec2 & pt_i = frame_i->getCamCalibrated() ? frame_i->getFeaturePosition(m_o.feat_id) : cam_intrinsic_i->remove_disto(frame_i->getFeaturePosition(m_o.feat_id));
+            const Vec2 & pt_frame_i = frame_i->getCamCalibrated() ? frame_i->getFeaturePosition(m_o.feat_id) : cam_intrinsic_i->remove_disto(frame_i->getFeaturePosition(m_o.feat_id));
 
-            // Compute ray angle between points
-            const Vec3 ray_cur = Vec3(frame_cur_Rwc * Vec3( K_inv_cur * Vec3( pt_cur( 0 ), pt_cur( 1 ), 1.0 ) )).normalized();
-            const Vec3 ray_i = Vec3(frame_i_Rwc * Vec3( K_inv_i * Vec3( pt_i( 0 ), pt_i( 1 ), 1.0 ) )).normalized();
-            const double mag = ray_cur.norm() * ray_i.norm();
-            const double dotAngle = ray_cur.dot( ray_i );
+            // Get projection matrix of second camera
+            //TODO: How to use if we have relative cameras
+            P_i = frame_i->getProjectionMatrix();
+
+            // Triangulate results
+            TriangulateDLT(P, pt_frame, P_i, pt_frame_i, &pt_3D);
+
+            // Get projection on first image
+            Vec3 pt_3D_frame;
+            PoseEstimator::getRelativePointPosition(pt_3D,nullptr,pt_3D_frame,frame);
+
+            // Project on second image
+            Vec3 pt_3D_frame_i;
+            PoseEstimator::getRelativePointPosition(pt_3D,nullptr,pt_3D_frame_i,frame_i);
+
+            // Compute parallax angle between points
+            //const Vec3 ray_cur = Vec3(frame_cur_Rwc * Vec3( K_inv_cur * Vec3( pt_cur( 0 ), pt_cur( 1 ), 1.0 ) )).normalized();
+            //const Vec3 ray_i = Vec3(frame_i_Rwc * Vec3( K_inv_i * Vec3( pt_i( 0 ), pt_i( 1 ), 1.0 ) )).normalized();
+            const Vec3 ray_frame = Vec3(frame_Rwc * pt_3D_frame).normalized();
+            const Vec3 ray_frame_i = Vec3(frame_i_Rwc * pt_3D_frame_i).normalized();
+
+            const double mag = ray_frame.norm() * ray_frame_i.norm();
+            const double dotAngle = ray_frame.dot( ray_frame_i );
             const double cosParallax = clamp( dotAngle / mag, -1.0 + 1.e-8, 1.0 - 1.e-8 );
-            // if parallax between two points is big enough we consider the point (cosparalax smaller than threshold)
+            // if parallax between two points is big enough we consider the point (cosParallax smaller than threshold)
             if (cosParallax < init_min_cos_angle_pt)
             {
+              // Check if the points are inside the scene borders
+              if (!frame->checkLandmarkPosition(pt_3D_frame))
+              {
+                break;
+              }
+              if (!frame_i->checkLandmarkPosition(pt_3D_frame_i))
+              {
+                break;
+              }
+
               // Save the observation which can be used for initial triangulation
               mo_useful_ptr = & m_o;
               break;
@@ -1397,64 +1574,38 @@ namespace VSSLAM  {
         if (!mo_useful_ptr)
           continue;
 
-        frame_i = mo_useful_ptr->frame_ptr;
-        if (cam_intrinsic_i != frame_i->getCameraIntrinsics())
-        {
-          cam_intrinsic_i = frame_i->getCameraIntrinsics();
-        }
-        // Get projection matrix of second camera
-        //TODO: How to use if we have relative cameras
-        P_i = frame_i->getProjectionMatrix();
+        // Add observation from current frame
+        feat_obs_nviews[frame->getFrameId()] = MapObservation(feat_id,frame);
 
-        const Vec2 & pt_i = frame_i->getCamCalibrated() ? frame_i->getFeaturePosition(mo_useful_ptr->feat_id) : cam_intrinsic_i->remove_disto(frame_i->getFeaturePosition(mo_useful_ptr->feat_id));
+        // Save number of all observations
+        const size_t n_feat_obs_init = feat_obs_nviews.size();
 
-        // Triangulate results
-        Vec3 pt_3D;
-        TriangulateDLT(P_cur, pt_cur, P_i, pt_i, &pt_3D);
-
-
-        // Check if the point is infront of all cameras
+        // Check in how many frames the triangulated points matches the observations
         Vec3 pt_3D_i;
-        PoseEstimator::getRelativePointPosition(pt_3D,nullptr,pt_3D_i,mCurrentFrame.get());
-
-        if (pt_3D_i(2) < 0)
-          continue;
-
-        if (!mCurrentFrame->checkFeatureAssociation(pt_3D_i,feat_cur_id,5.991))
-        {
-          continue;
-        }
-
-        PoseEstimator::getRelativePointPosition(pt_3D,nullptr,pt_3D_i,mo_useful_ptr->frame_ptr);
-
-        if (pt_3D_i(2) < 0)
-          continue;
-
-        if (!mo_useful_ptr->frame_ptr->checkFeatureAssociation(pt_3D_i,mo_useful_ptr->feat_id,5.991))
-        {
-          continue;
-        }
-
-        // Check if the reprojection error is good in the rest of the frames observing the point
-
-        for (LandmarkObservations::iterator iter_other_obs = feat_cur_obs_nviews.begin(); iter_other_obs != feat_cur_obs_nviews.end();)
+        for (LandmarkObservations::iterator iter_other_obs = feat_obs_nviews.begin(); iter_other_obs != feat_obs_nviews.end();)
         {
           MapObservation & m_o = iter_other_obs->second;
 
           PoseEstimator::getRelativePointPosition(pt_3D,nullptr,pt_3D_i,m_o.frame_ptr);
 
-          if (pt_3D_i(2) < 0)
+          if (!m_o.frame_ptr->checkLandmarkPosition(pt_3D_i))
           {
-            iter_other_obs = feat_cur_obs_nviews.erase(iter_other_obs);
+            iter_other_obs = feat_obs_nviews.erase(iter_other_obs);
             continue;
           }
 
           if (!m_o.frame_ptr->checkFeatureAssociation(pt_3D_i,m_o.feat_id,5.991))
           {
-            iter_other_obs = feat_cur_obs_nviews.erase(iter_other_obs);
+            iter_other_obs = feat_obs_nviews.erase(iter_other_obs);
             continue;
           }
           iter_other_obs++;
+        }
+
+        // If we deleted any observations we still need at least 3 to add it
+        if (feat_obs_nviews.size()!=n_feat_obs_init)
+        {
+          continue;
         }
 
 
@@ -1462,12 +1613,14 @@ namespace VSSLAM  {
         std::unique_ptr<MapLandmark> map_landmark_new = std::unique_ptr<MapLandmark>(new MapLandmark());
         map_landmark_new->X_ = pt_3D;
         // Set all observations
-        map_landmark_new->obs_ = feat_cur_obs_nviews;
-        map_landmark_new->addObservation(mCurrentFrame.get(),match_i->first);
-
+        map_landmark_new->obs_ = feat_obs_nviews;
         map_landmark_new->setNumberOfObservations(map_landmark_new->obs_.size());
+        cartographer_->updateBestMapPointDescriptor(map_landmark_new.get());
+        map_landmark_new->updateLastNormal(frame);
+        map_landmark_new->updateNormal();
+
         // Mark this frame as the last frame that observed it
-        map_landmark_new->last_local_map_frame_id_ = mCurrentFrame->getFrameId();
+        map_landmark_new->last_local_map_frame_id_ = frame->getFrameId();
         // Mark as new triangulated point
         map_landmark_new->association_type_ = 6;
 
@@ -1508,6 +1661,8 @@ namespace VSSLAM  {
       Vec3 pt_3D_frame;
       PoseEstimator::getRelativePointPosition(map_landmark->X_,map_landmark->ref_frame_,pt_3D_frame,frame);
 
+
+      //if (frame->checkLandmarkPosition(pt_3D_frame) && frame->checkFeatureAssociation(pt_3D_frame,feat_id_cur,5.991))
       if (frame->checkFeatureAssociation(pt_3D_frame,feat_id_cur,5.991))
       {
         n_inliers++;
@@ -1524,8 +1679,6 @@ namespace VSSLAM  {
     // -------------------
     const IndexT & frame_id = frame->getFrameId();
     IntrinsicBase * cam_intrinsic = frame->getCameraIntrinsics();
-    const double & frame_reproj_thresh = frame->reproj_thresh_sq_;
-    std::vector<MapLandmark*> & frame_map_points = frame->map_points_;
 
     #ifdef OPENMVG_USE_OPENMP
     #pragma omp parallel for schedule(dynamic)
@@ -1543,6 +1696,7 @@ namespace VSSLAM  {
       Vec3 pt_3D_frame;
       PoseEstimator::getRelativePointPosition(map_landmark->X_,map_landmark->ref_frame_,pt_3D_frame,frame);
 
+      //if (!b_check_error || (frame->checkLandmarkPosition(pt_3D_frame) && frame->checkFeatureAssociation(pt_3D_frame,feat_id_cur,5.991)))
       if (!b_check_error || frame->checkFeatureAssociation(pt_3D_frame,feat_id_cur,5.991))
       {
         frame->setMapPoint(feat_id_cur,map_landmark);
@@ -1568,7 +1722,7 @@ namespace VSSLAM  {
     for (size_t pm_i = 0; pm_i < frame_map_points.size(); ++pm_i)
     {
       bool b_inlier;
-      if (!frame_map_points[pm_i] || !(frame_map_points[pm_i]->isActive()))
+      if (!frame_map_points[pm_i])
         continue;
 
       MapLandmark * map_landmark = frame_map_points[pm_i];
@@ -1576,9 +1730,9 @@ namespace VSSLAM  {
       // Project point to frame coordinate system
       Vec3 pt_3D_frame;
       PoseEstimator::getRelativePointPosition(map_landmark->X_,map_landmark->ref_frame_,pt_3D_frame,frame);
-      b_inlier = frame->checkFeatureAssociation(pt_3D_frame,pm_i,5.991);
 
-      if (!b_inlier)
+      if (pt_3D_frame(2) < 0 || !frame->checkFeatureAssociation(pt_3D_frame,pm_i,5.991))
+      //if (!frame->checkLandmarkPosition(pt_3D_frame) || !frame->checkFeatureAssociation(pt_3D_frame,pm_i,5.991))
       {
         frame->clearMapPoint(pm_i);
         map_landmark->decreaseNumberOfObservations();
@@ -1588,7 +1742,7 @@ namespace VSSLAM  {
 
 
 
-  void Tracker_Features::removeOutliersInNewTriangulatedPoints(std::vector<std::unique_ptr<MapLandmark> > & vec_putative_new_pts_3D)
+  void Tracker_Features::removeOutliersInNewTriangulatedPoints(Frame * frame, std::vector<std::unique_ptr<MapLandmark> > & vec_putative_new_pts_3D)
   {
     // Check newly triangulated points if they have at least two inliers
     std::vector<size_t> vec_new_pts_outliers;
@@ -1600,16 +1754,30 @@ namespace VSSLAM  {
       MapLandmark * map_landmark = vec_putative_new_pts_3D[t_i].get();
 
       LandmarkObservations & obs = map_landmark->obs_;
+      const size_t n_feat_obs_init = obs.size();
 
-      Vec3 pt_3D_frame_i;
+      bool b_sufficient_parallax = false;
+
+      // Get observation in current frame
+      Vec3 pt_3D_frame;
+      size_t frame_id = frame->getFrameId();
+      const MapObservation & m_o = obs.find(frame_id)->second;
+      // Check if everything is ok in current frame
+      PoseEstimator::getRelativePointPosition(map_landmark->X_,map_landmark->ref_frame_,pt_3D_frame,frame);
+      if (!frame->checkLandmarkPosition(pt_3D_frame) || !frame->checkFeatureAssociation(pt_3D_frame,m_o.feat_id,5.991))
+      {
+        continue;
+      }
+
+      // Check the rest of the frames and check if there is any point with sufficient parallax
       for(LandmarkObservations::iterator iter_mo = obs.begin(); iter_mo != obs.end();)
       {
-        MapObservation & m_o =  iter_mo->second;
-        Frame * & frame_i = m_o.frame_ptr;
+        MapObservation & m_o_i =  iter_mo->second;
+        Frame * & frame_i = m_o_i.frame_ptr;
         // Put 3D point into coordinate system of frame
+        Vec3 pt_3D_frame_i;
         PoseEstimator::getRelativePointPosition(map_landmark->X_,map_landmark->ref_frame_,pt_3D_frame_i,frame_i);
-
-        if (!frame_i->checkFeatureAssociation(pt_3D_frame_i,m_o.feat_id,5.991))
+        if (!frame_i->checkLandmarkPosition(pt_3D_frame_i) || !frame_i->checkFeatureAssociation(pt_3D_frame_i,m_o_i.feat_id,5.991))
         {
           // Remove measurement from 3D point
           iter_mo = obs.erase(iter_mo);
@@ -1617,11 +1785,26 @@ namespace VSSLAM  {
         }
         else
         {
+          if (!b_sufficient_parallax)
+          {
+            // Compute parallax angle
+            const Vec3 ray_frame = Vec3(frame->getRotationMatrixInverse() * pt_3D_frame).normalized();
+            const Vec3 ray_frame_i = Vec3(frame_i->getRotationMatrixInverse() * pt_3D_frame_i).normalized();
+
+            const double mag = ray_frame.norm() * ray_frame_i.norm();
+            const double dotAngle = ray_frame.dot( ray_frame_i );
+            const double cosParallax = clamp( dotAngle / mag, -1.0 + 1.e-8, 1.0 - 1.e-8 );
+
+            if (cosParallax < init_min_cos_angle_pt)
+            {
+              b_sufficient_parallax = true;
+            }
+          }
           ++iter_mo;
         }
       }
 
-      if (obs.size()<2)
+      if ((obs.size()!=n_feat_obs_init) || !b_sufficient_parallax)
       {
         // Delete point from the vector of new points
         #pragma omp critical
@@ -1655,11 +1838,12 @@ namespace VSSLAM  {
   (
     const image::Image<unsigned char> & ima,
     Frame * frame,
-    const size_t & min_count
+    const size_t & min_count,
+    const image::Image<unsigned char> * mask
   )
   {
     // Detect feature points
-    size_t n_feats_detected = featureExtractor_->detect(ima,frame,min_count);
+    size_t n_feats_detected = featureExtractor_->detect(ima,frame,min_count,mask);
 
     if (!(n_feats_detected > 0))
     {

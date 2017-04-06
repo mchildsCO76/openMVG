@@ -100,24 +100,24 @@ private:
     const Frame * frame_1,
     const Frame * frame_2,
     matching::IndMatches & vec_putative_matches,
-    const float desc_ratio = 0.8,
+    const float desc_ratio_sq = 0.8,
     const float feat_scale_ratio = std::numeric_limits<float>::infinity(),
-    const float max_desc_d = std::numeric_limits<float>::infinity()
+    const float max_desc_d_sq = std::numeric_limits<float>::infinity()
   )
   {
     const std::string descriptor_type = frame_1->getRegions()->Type_id();
 
     if (descriptor_type == typeid(float).name())
     {
-      matchingWithCascadeHashing_All_All_2D_2D<float>(frame_1,frame_2,vec_putative_matches,desc_ratio,feat_scale_ratio,max_desc_d);
+      matchingWithCascadeHashing_All_All_2D_2D<float>(frame_1,frame_2,vec_putative_matches,desc_ratio_sq,feat_scale_ratio,max_desc_d_sq);
     }
     else if (descriptor_type == typeid(double).name())
     {
-      matchingWithCascadeHashing_All_All_2D_2D<double>(frame_1,frame_2,vec_putative_matches,desc_ratio,feat_scale_ratio,max_desc_d);
+      matchingWithCascadeHashing_All_All_2D_2D<double>(frame_1,frame_2,vec_putative_matches,desc_ratio_sq,feat_scale_ratio,max_desc_d_sq);
     }
     else if (descriptor_type == typeid(unsigned char).name())
     {
-      matchingWithCascadeHashing_All_All_2D_2D<unsigned char>(frame_1,frame_2,vec_putative_matches,desc_ratio,feat_scale_ratio,max_desc_d);
+      matchingWithCascadeHashing_All_All_2D_2D<unsigned char>(frame_1,frame_2,vec_putative_matches,desc_ratio_sq,feat_scale_ratio,max_desc_d_sq);
     }
   }
 
@@ -573,13 +573,13 @@ public:
       float frame_1_pt_scale = frame_1->getFeatureScale(pt_f1_i);
 
       // Compute viewing angle between the point and normal which was last seen
-      const Vec3 normal_X = (pt_3D->getWorldPosition() - frame_2->O_w_).normalized();
+      const Vec3 normal_X = (pt_3D->getWorldPosition() - frame_2->getCameraCenter()).normalized();
       const Vec3 & normal_last = pt_3D->getLastNormal();
 
       // Compute viewing angle
       float angle_factor = radiusByViewingAngle(normal_X.dot(normal_last));   // [1,5]
       // enlarge the area if the viewing angle is bigger
-      float max_px_d_2 = (max_px_d * max_px_d) * angle_factor;
+      float max_px_d_2 = angle_factor*angle_factor;//(max_px_d * max_px_d) * angle_factor;
 
       // Raw descriptors
       void * pt_3D_raw_desc = pt_3D->feat_best_desc_;
@@ -751,13 +751,12 @@ public:
       if (frame_1_3D_pts[pt_f1_i])
         continue;
 
-      const Vec2 & frame_1_pt = frame_1->getFeaturePosition(pt_f1_i);
-      const float & frame_1_pt_scale = frame_1->getFeatureScale(pt_f1_i);
-
       // Raw descriptors
       void * frame_1_pt_desc_raw;
       void * frame_2_pt_desc_raw;
 
+      const Vec2 & frame_1_pt = frame_1->getFeaturePosition(pt_f1_i);
+      const float & frame_1_pt_scale = frame_1->getFeatureScale(pt_f1_i);
       // Get frame_1 descriptor
       featureExtractor_->getDescriptorRaw(frame_1_regions, pt_f1_i, &frame_1_pt_desc_raw);
 
@@ -843,7 +842,6 @@ public:
 
     purgeCandidateMatches(map_putative_matches_1_2_idx,map_matches_1_2_idx);
 */
-
     //matchingWithCascadeHashing(frame_1,frame_2,vec_putative_matches_1_2_idx,desc_ratio_2,feat_scale_ratio,max_desc_d_2);
     //matchingWithCascadeHashing(frame_1,frame_2,putative_matches_1_2_idx, desc_ratio,std::numeric_limits<float>::infinity(),max_desc_d_sq);
     /*

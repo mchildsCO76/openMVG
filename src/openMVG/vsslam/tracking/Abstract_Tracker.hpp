@@ -61,6 +61,8 @@ public:
   std::shared_ptr<Frame> mCurrentFrame;
 
 
+  std::vector<std::string> display_text;
+  std::vector<size_t> display_iterations;
   std::vector<std::vector<Vec2> > display_pt2d_A;
   std::vector<std::vector<Vec2> > display_pt2d_B;
   std::vector<std::vector<Vec2> > display_pt2d_C;
@@ -78,7 +80,8 @@ public:
   virtual bool track
   (
     const image::Image<unsigned char> & ima,
-    std::shared_ptr<Frame> current_frame
+    std::shared_ptr<Frame> current_frame,
+    const image::Image<unsigned char> * mask = nullptr
   ) = 0;
 
   void setCartographer(Cartographer * cart)

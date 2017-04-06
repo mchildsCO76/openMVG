@@ -79,14 +79,25 @@ public:
   float radiusByViewingAngle(const float cos_view_angle)
   {
     // arccos(0.998) ~ 3.6deg arccos(0.9998) ~ 1.15 deg
-    if (cos_view_angle > 0.9995)
+    if (cos_view_angle > 0.99998)
     {
       return 1.0;
     }
+    else if (cos_view_angle > 0.99995)
+    {
+      return 2.0;
+    }
+    else if (cos_view_angle > 0.9995)
+    {
+      return 5.0;
+    }
+    else if (cos_view_angle > 0.999)
+    {
+      return 10.0;
+    }
     else
     {
-      //return 1.0 + (1-cos_view_angle)*4.0;
-      return 2.0;
+      return 20.0;
     }
   }
 

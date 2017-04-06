@@ -101,6 +101,7 @@ int main(int argc, char **argv)
   CmdLine cmd;
 
   std::string sImaDirectory = "";
+  std::string sImaMask = "";
   unsigned int uTracker = 0;
 
   // Features
@@ -113,6 +114,7 @@ int main(int argc, char **argv)
 
   // Command options
   cmd.add( make_option('i', sImaDirectory, "imadir") );
+  cmd.add( make_option('m', sImaMask, "imamask") );
   cmd.add( make_option('t', uTracker, "tracker") );
   cmd.add( make_option('k', sKmatrix, "intrinsics") );
   cmd.add( make_option('c', i_User_camera_model, "camera_model") );
@@ -123,6 +125,7 @@ int main(int argc, char **argv)
   } catch(const std::string& s) {
     std::cerr << "Usage: " << argv[0] << '\n'
     << "[-i|--imadir path] \n"
+    << "[-m|--mask image] \n"
     << "[-t|--tracker Used tracking interface] \n"
     << "\t 0 (default) description based Tracking -> Fast detector + Dipole descriptor\n"
     << "[-k|--intrinsics] Kmatrix: \"f;0;ppx;0;f;ppy;0;0;1\"\n"
@@ -147,6 +150,7 @@ int main(int argc, char **argv)
   std::cout << " You called : " <<std::endl
             << argv[0] << std::endl
             << "--imageDirectory " << sImaDirectory << std::endl
+            << "--imageMask " << sImaMask << std::endl
             << "--intrinsics " << sKmatrix << std::endl
             << "--camera_model " << i_User_camera_model << std::endl;
 
@@ -190,6 +194,8 @@ int main(int argc, char **argv)
 
   // Image management
   image::Image<unsigned char> currentImage;
+  bool b_use_mask = false;
+  image::Image<unsigned char> maskImage;
   // Load images from folder
   std::vector<std::string> vec_image = stlplus::folder_files(sImaDirectory);
   // clean invalid image file
@@ -197,6 +203,14 @@ int main(int argc, char **argv)
     std::vector<std::string> vec_image_;
     for (size_t i = 0; i < vec_image.size(); ++i)
     {
+      if(vec_image[i].find("mask.png") != std::string::npos
+         || vec_image[i].find("_mask.png") != std::string::npos)
+      {
+        std::cout
+            << vec_image[i] << " is a mask image" << "\n";
+        continue;
+      }
+
       if (openMVG::image::GetFormat(vec_image[i].c_str()) != openMVG::image::Unknown)
         vec_image_.push_back(vec_image[i]);
     }
@@ -206,6 +220,26 @@ int main(int argc, char **argv)
 
 
   // TODO: Load masks - per camera/image
+  if (!sImaMask.empty() && stlplus::file_exists(sImaMask))
+  {
+    if (openMVG::image::GetFormat(sImaMask.c_str()) == openMVG::image::Unknown)
+      std::cout << "\nMask image path is invalid! Not using mask image!" << std::endl;
+    else
+    {
+      if (!(openMVG::image::ReadImage( sImaMask.c_str(), &maskImage)))
+      {
+        std::cout << "\nMask image is invalid! Not using mask image!" << std::endl;
+      }
+      else
+      {
+        std::cout << "\nUsing mask image: "<<sImaMask<<"!\n" << std::endl;
+        b_use_mask = true;
+      }
+    }
+
+  }
+
+
 
   // VSSLAM
   using namespace openMVG::VSSLAM;
@@ -262,7 +296,7 @@ int main(int argc, char **argv)
   {
     params_cam_0.bCalibrated = true;
 
-    if (monocular_slam.createCamera(params_cam_0) < 0)
+    if (monocular_slam.createCamera(params_cam_0, b_use_mask ? &maskImage : nullptr) < 0)
     {
       std::cerr << "Error: unknown camera model: " << (int) params_cam_0.camera_model << std::endl;
       return EXIT_FAILURE;
@@ -450,15 +484,14 @@ int main(int argc, char **argv)
         {
 
           ////////////////////////////////////////////////////////////////////////
-          // Show putative matches of matching with MM - two iterations
+          // Show putative matches of matching with MM
           ////////////////////////////////////////////////////////////////////////
-          std::cout<<"-----------------------------------\n";
-          std::cout<<"-------PUTATIVE WITH MM---------\n";
-          std::cout<<"-----------------------------------\n";
           size_t step_i;
-          for (step_i = 0; step_i < 2; step_i++)
+          size_t first_part_i =  monocular_slam.tracker_->display_iterations[0] + monocular_slam.tracker_->display_iterations[1] + monocular_slam.tracker_->display_iterations[2] + monocular_slam.tracker_->display_iterations[3];
+          for (step_i = 0; step_i <first_part_i; step_i++)
           {
-            std::cout<<"--step :"<<step_i<<"----------------\n";
+            std::cout<<"Step :"<<step_i<<"----------------\n";
+            std::cout<<" Title: "<<monocular_slam.tracker_->display_text[step_i]<<"\n";
             glBindTexture(GL_TEXTURE_2D, text2D); //Binding the texture
             glEnable(GL_TEXTURE_2D);              //Enable texture
             //-- Update the openGL texture with the current frame pixel values
@@ -500,17 +533,19 @@ int main(int argc, char **argv)
 
               // Point in prev frame  - RED
               glColor3f(1.f, 0.f, 0.f);
-              glVertex2f(ptA(0),ptA(1));
-
-              // Matched point in current frame - BLUE
               if (ptB(0)!=-1 && ptB(1)!=-1)
               {
-                glColor3f(0.f, 0.f, 1.f);
                 glVertex2f(ptB(0),ptB(1));
+              }
+              // Matched point in current frame - BLUE
+              if (ptC(0)!=-1 && ptC(1)!=-1)
+              {
+                glColor3f(0.f, 0.f, 1.f);
+                glVertex2f(ptC(0),ptC(1));
               }
 
               // Predicted location of the point based on prev_frame and camera pose  - GREEN
-              if (ptB(0)!=-1 && ptB(1)!=-1)
+              if (ptC(0)!=-1 && ptC(1)!=-1)
               {
                 glColor3f(0.f, 1.f, 0.f);
               }
@@ -518,28 +553,21 @@ int main(int argc, char **argv)
               {
                 glColor3f(1.f, 0.f, 0.f);
               }
-              glVertex2f(ptC(0),ptC(1));
-
-              glEnd();
-
-              // Line from point in prev to predicted - WHITE
-              glColor3f(1.f, 1.f, 1.f);
-              glBegin(GL_LINE_STRIP);
               glVertex2f(ptA(0),ptA(1));
-              glVertex2f(ptC(0),ptC(1));
+
               glEnd();
 
               // Line from predicted to matched - green
-              if (ptB(0)!=-1 && ptB(1)!=-1)
+              if (ptC(0)!=-1 && ptC(1)!=-1)
               {
                 glColor3f(0.f, 1.f, 0.f);
                 glBegin(GL_LINE_STRIP);
+                glVertex2f(ptA(0),ptA(1));
                 glVertex2f(ptC(0),ptC(1));
-                glVertex2f(ptB(0),ptB(1));
                 glEnd();
               }
               // Area of search around predicted point
-              if (ptB(0)!=-1 && ptB(1)!=-1)
+              if (ptC(0)!=-1 && ptC(1)!=-1)
               {
                 glColor3f(0.f, 1.f, 0.f);
               }
@@ -547,7 +575,7 @@ int main(int argc, char **argv)
               {
                 glColor3f(1.f, 0.f, 0.f);
               }
-              DrawCircle(ptC(0),ptC(1),pt_s);
+              DrawCircle(ptA(0),ptA(1),pt_s);
             }
 
             glFlush();
@@ -557,164 +585,13 @@ int main(int argc, char **argv)
           }
 
           ////////////////////////////////////////////////////////////////////////
-          // Show accepted matches in a frame
-          ////////////////////////////////////////////////////////////////////////
-          std::cout<<"-----------------------------------\n";
-          std::cout<<"-------ACCEPTED MM in frame---------\n";
-          std::cout<<"-----------------------------------\n";
-          step_i = 2;
-          glBindTexture(GL_TEXTURE_2D, text2D); //Binding the texture
-          glEnable(GL_TEXTURE_2D);              //Enable texture
-          //-- Update the openGL texture with the current frame pixel values
-          glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
-           currentImage.Width(), currentImage.Height(),
-          GL_LUMINANCE, GL_UNSIGNED_BYTE,
-          currentImage.data());
-
-          //-- Draw the current image
-          window.SetOrtho(currentImage.Width(), currentImage.Height());
-          window.DrawFullScreenTexQuad(currentImage.Width(), currentImage.Height());
-          glDisable(GL_TEXTURE_2D);
-
-          // Clear the depth buffer so the drawn image become the background
-          glClear(GL_DEPTH_BUFFER_BIT);
-          glDisable(GL_LIGHTING);
-
-          // Draw all features in current frame - YELLOW
-          for (size_t map_point_i = 0; map_point_i<display_current_frame->map_points_.size(); map_point_i++)
-          {
-            glPointSize(2.0f);
-            glColor3f(1.f, 1.f, 0.f);
-            glBegin(GL_POINTS);
-            Vec2 pt = display_current_frame->getFeaturePosition(map_point_i);
-            glVertex2f(pt(0),pt(1));
-            glEnd();
-          }
-
-          for (size_t i=0; i<monocular_slam.tracker_->display_pt2d_A[step_i].size(); ++i)
-          {
-            Vec2 ptA = monocular_slam.tracker_->display_pt2d_A[step_i][i];
-            Vec2 ptC = monocular_slam.tracker_->display_pt2d_C[step_i][i];
-            float pt_s = monocular_slam.tracker_->display_size_A[step_i][i];
-
-
-            glPointSize(4.0f);
-            glBegin(GL_POINTS);
-
-            // feature matched in current frame  - RED
-            glColor3f(1.f, 0.f, 0.f);
-            glVertex2f(ptA(0),ptA(1));
-
-            // Projected point to current frame  - GREEN
-              glColor3f(0.f, 1.f, 0.f);
-            glVertex2f(ptC(0),ptC(1));
-
-            glEnd();
-
-            // Line from point in prev to predicted - WHITE
-            glColor3f(1.f, 1.f, 1.f);
-            glBegin(GL_LINE_STRIP);
-            glVertex2f(ptA(0),ptA(1));
-            glVertex2f(ptC(0),ptC(1));
-            glEnd();
-
-            // Area of search around predicted point
-            glColor3f(0.f, 1.f, 0.f);
-            DrawCircle(ptC(0),ptC(1),pt_s);
-          }
-
-          glFlush();
-          window.Swap(); // Swap openGL buffer
-
-          sleep(3);
-
-
-          ////////////////////////////////////////////////////////////////////////
-          // Show local map points
-          ////////////////////////////////////////////////////////////////////////
-          std::cout<<"-----------------------------------\n";
-          std::cout<<"-------LOCAL MAP MATCHES-----------\n";
-          std::cout<<"-----------------------------------\n";
-          step_i = 3;
-
-          glBindTexture(GL_TEXTURE_2D, text2D); //Binding the texture
-          glEnable(GL_TEXTURE_2D);              //Enable texture
-          //-- Update the openGL texture with the current frame pixel values
-          glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
-           currentImage.Width(), currentImage.Height(),
-          GL_LUMINANCE, GL_UNSIGNED_BYTE,
-          currentImage.data());
-
-          //-- Draw the current image
-          window.SetOrtho(currentImage.Width(), currentImage.Height());
-          window.DrawFullScreenTexQuad(currentImage.Width(), currentImage.Height());
-          glDisable(GL_TEXTURE_2D);
-
-          // Clear the depth buffer so the drawn image become the background
-          glClear(GL_DEPTH_BUFFER_BIT);
-          glDisable(GL_LIGHTING);
-
-          // Draw all features in current frame - YELLOW
-          for (size_t map_point_i = 0; map_point_i<display_current_frame->map_points_.size(); map_point_i++)
-          {
-            glPointSize(2.0f);
-            glColor3f(1.f, 1.f, 0.f);
-            glBegin(GL_POINTS);
-            Vec2 pt = display_current_frame->getFeaturePosition(map_point_i);
-            glVertex2f(pt(0),pt(1));
-            glEnd();
-          }
-
-          for (size_t i=0; i<monocular_slam.tracker_->display_pt2d_A[step_i].size(); ++i)
-          {
-            Vec2 ptA = monocular_slam.tracker_->display_pt2d_A[step_i][i];
-            Vec2 ptB = monocular_slam.tracker_->display_pt2d_B[step_i][i];
-            float pt_s = monocular_slam.tracker_->display_size_A[step_i][i];
-
-
-            glPointSize(4.0f);
-            glBegin(GL_POINTS);
-
-            // feature matched in current frame  - RED
-            if (ptA(0)!=-1 && ptA(1)!=-1)
-            {
-              // Its a match -> measurement BLUE and projection GREEN
-              glColor3f(0.f, 0.f, 1.f);
-              glVertex2f(ptA(0),ptA(1));
-              glColor3f(0.f, 1.f, 0.f);
-              glVertex2f(ptB(0),ptB(1));
-              glColor3f(0.f, 1.f, 0.f);
-            }
-            else
-            {
-              // No match -> projection RED
-              glColor3f(1.f, 1.f, 0.f);
-              glVertex2f(ptB(0),ptB(1));
-
-              glColor3f(1.f, 0.f, 0.f);
-            }
-
-            glEnd();
-
-            // Area of search around predicted point
-            DrawCircle(ptB(0),ptB(1),pt_s);
-          }
-
-          glFlush();
-          window.Swap(); // Swap openGL buffer
-
-          sleep(3);
-
-
-          ////////////////////////////////////////////////////////////////////////
           // Show matches with epipolar lines
           ////////////////////////////////////////////////////////////////////////
-          std::cout<<"-----------------------------------\n";
-          std::cout<<"-------EPIPOLAR MATCHING-----------\n";
-          std::cout<<"-----------------------------------\n";
-          for (step_i = 4; step_i < monocular_slam.tracker_->display_pt2d_A.size()-2; step_i++)
+          size_t second_part_i = first_part_i + monocular_slam.tracker_->display_iterations[4];
+          for (step_i = first_part_i; step_i < second_part_i; step_i++)
           {
-            std::cout<<"--step :"<<step_i<<"----------------\n";
+            std::cout<<"Step :"<<step_i<<"----------------\n";
+            std::cout<<" Title: "<<monocular_slam.tracker_->display_text[step_i]<<"\n";
             glBindTexture(GL_TEXTURE_2D, text2D); //Binding the texture
             glEnable(GL_TEXTURE_2D);              //Enable texture
             //-- Update the openGL texture with the current frame pixel values
@@ -743,7 +620,15 @@ int main(int argc, char **argv)
               glEnd();
             }
 
-            for (size_t i=0; i<monocular_slam.tracker_->display_pt2d_A[step_i].size(); ++i)
+            glPointSize(8.0f);
+            glColor3f(0.f, 1.f, 1.f);
+            glBegin(GL_POINTS);
+            Vec2 pt = monocular_slam.tracker_->display_pt2d_A[step_i][0];
+            if (pt(0)>0 && pt(0)<currentImage.Width() && pt(1)>0 && pt(1)<currentImage.Height())
+              glVertex2f(pt(0),pt(1));
+            glEnd();
+
+            for (size_t i=1; i<monocular_slam.tracker_->display_pt2d_A[step_i].size(); ++i)
             {
               Vec2 ptA = monocular_slam.tracker_->display_pt2d_A[step_i][i];
               Vec2 ptB = monocular_slam.tracker_->display_pt2d_B[step_i][i];
@@ -775,21 +660,21 @@ int main(int argc, char **argv)
             glFlush();
             window.Swap(); // Swap openGL buffer
 
-            if (step_i < (monocular_slam.tracker_->display_pt2d_A.size()-1))
-              sleep(3);
+            sleep(3);
           }
+
+
 
 
           ////////////////////////////////////////////////////////////////////////
           // Show putative new triangulated pts
           ////////////////////////////////////////////////////////////////////////
 
-          std::cout<<"-----------------------------------\n";
-          std::cout<<"-------New putative 3D pts---------\n";
-          std::cout<<"-----------------------------------\n";
-          for (step_i = monocular_slam.tracker_->display_pt2d_A.size()-2; step_i < monocular_slam.tracker_->display_pt2d_A.size(); step_i++)
+          size_t third_part_i = second_part_i + monocular_slam.tracker_->display_iterations[5];
+          for (step_i = second_part_i; step_i < third_part_i; step_i++)
           {
-            std::cout<<"--step :"<<step_i<<"----------------\n";
+            std::cout<<"Step :"<<step_i<<"----------------\n";
+            std::cout<<" Title: "<<monocular_slam.tracker_->display_text[step_i]<<"\n";
             glBindTexture(GL_TEXTURE_2D, text2D); //Binding the texture
             glEnable(GL_TEXTURE_2D);              //Enable texture
             //-- Update the openGL texture with the current frame pixel values
@@ -856,10 +741,12 @@ int main(int argc, char **argv)
 
       monocular_slam.tracker_->display_pt2d_A.clear();
       monocular_slam.tracker_->display_pt2d_B.clear();
-      monocular_slam.tracker_->display_pt2d_C.clear();;
+      monocular_slam.tracker_->display_pt2d_C.clear();
       monocular_slam.tracker_->display_size_A.clear();
+      monocular_slam.tracker_->display_text.clear();
 
-
+      if (true)
+      {
       bool b_snake_trail = true;
 
       if( monocular_slam.tracker_->getTrackingStatus() == Abstract_Tracker::TRACKING_STATUS::OK)
@@ -873,57 +760,46 @@ int main(int argc, char **argv)
 
           // Define color based on the type of association of the point
           Vec3 color;
-          switch(map_point->association_type_)
+          if (!map_point->isActive())
           {
-            case 1:
-            // Initialization points
-              color = Vec3(1.0,0.0,0.0);  // RED
-            break;
-            case 2:
-            // Motion Model points
-              color = Vec3(0.0,1.0,0.0);  // GREEN
-            break;
-            case 3:
-            // reference frame points
-              color = Vec3(1.0,1.0,0.0);  // YELLOW
-            break;
-            case 4:
-            // Reference map points
-              color = Vec3(1.0,0.0,1.0);  // MAGENTA
-            break;
-            case 5:
-            // Local map points
-              color = Vec3(0.0,1.0,1.0);  // CYAN
-            break;
-            case 6:
-            // Triangulated 2 points
-              color = Vec3(1.0,1.0,1.0);  // WHITE
-            break;
-            case 7:
-            // Triangulated multiple points
-              color = Vec3(0.0,0.0,1.0);  // BLUE
-            break;
+            color = Vec3(1.0,1.0,1.0);  // WHITE
+          }
+          else
+          {
+            switch(map_point->association_type_)
+            {
+              case 1:
+              // Initialization points
+                color = Vec3(1.0,0.0,0.0);  // RED
+              break;
+              case 2:
+              // Motion Model points
+                color = Vec3(0.0,1.0,0.0);  // GREEN
+              break;
+              case 3:
+              // reference frame points
+                color = Vec3(1.0,1.0,0.0);  // YELLOW
+              break;
+              case 4:
+              // Reference map points
+                color = Vec3(1.0,0.0,1.0);  // MAGENTA
+              break;
+              case 5:
+              // Local map points
+                color = Vec3(0.0,1.0,1.0);  // CYAN
+              break;
+              case 6:
+              // Triangulated 2 points
+                color = Vec3(1.0,1.0,1.0);  // WHITE
+              break;
+              case 7:
+              // Triangulated multiple points
+                color = Vec3(0.0,0.0,1.0);  // BLUE
+              break;
+            }
           }
           glColor3f(color(0),color(1),color(2));
 
-
-          if (b_snake_trail)
-          {
-            // Show track trail through all previous tracks
-            LandmarkObservations & map_obs = map_point->obs_;
-
-            // Show track trail through all previous tracks
-            glBegin(GL_LINE_STRIP);
-            for(auto obs : map_obs)
-            {
-              const Vec2 & p0 = (obs.second.frame_ptr->getFeaturePositionDetected(obs.second.feat_id));
-              // Check if projection is actually in the image borders
-              if (!display_current_frame->isPointInFrame(p0))
-                continue;
-              glVertex2f(p0.x(), p0.y());
-            }
-            glEnd();
-          }
 
           // Get projection of the point
           Vec3 pt_3D_frame;
@@ -941,9 +817,41 @@ int main(int argc, char **argv)
           // Draw Scale
           //DrawCircle(pt_3D_frame_projected(0),pt_3D_frame_projected(1),display_current_frame->getFeatureScale(map_point_i));
           DrawCircle(pt_3D_frame_projected(0),pt_3D_frame_projected(1),4);
+
+          if (b_snake_trail)
+          {
+            // Show track trail through all previous tracks
+            LandmarkObservations & map_obs = map_point->obs_;
+
+            // Show track trail through all previous tracks
+            glBegin(GL_LINE_STRIP);
+            for(auto obs : map_obs)
+            {
+              const Vec2 & p0 = (obs.second.frame_ptr->getFeaturePositionDetected(obs.second.feat_id));
+              // Check if projection is actually in the image borders
+              if (!display_current_frame->isPointInFrame(p0))
+                continue;
+              glVertex2f(p0.x(), p0.y());
+            }
+            glEnd();
+
+
+            glPointSize(2.0f);
+            glColor3f(1.0,1.0,1.0);
+            glBegin(GL_POINTS);
+            for(auto obs : map_obs)
+            {
+              const Vec2 & p0 = (obs.second.frame_ptr->getFeaturePositionDetected(obs.second.feat_id));
+              // Check if projection is actually in the image borders
+              if (!display_current_frame->isPointInFrame(p0))
+                continue;
+              glVertex2f(p0.x(), p0.y());
+            }
+            glEnd();
+          }
         }
       }
-
+      }
       display_prev_frame = monocular_slam.tracker_->mPrevFrame->share_ptr();
       glFlush();
       window.Swap(); // Swap openGL buffer
@@ -953,6 +861,7 @@ int main(int argc, char **argv)
       std::cout<<"Press ENTER to continue....."<<std::endl<<std::endl;
       std::cin.ignore(1);
     }
+
   }
 
   glfwTerminate();

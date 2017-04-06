@@ -83,6 +83,10 @@ public:
   // Position of camera in world coordinates
   Vec3 O_w_;
 
+
+  // Scene detainls
+  float f_scene_median = 0.0;
+  float f_scene_095 = std::numeric_limits<float>::max();
   double timestamp_;
 
 
@@ -191,14 +195,16 @@ public:
 
   void setMapPoint(const IndexT p_i, MapLandmark * ml);
 
-  IndexT getNumberMapPoints() const;
+  size_t getNumberMapPoints() const;
+  size_t getNumberGlobalMapPoints() const;
 
   double getSquaredReprojectionError(const Vec3 & pt_frame, const IndexT feat_id) const;
 
   bool checkFeatureAssociation(const Vec3 & pt3D_frame, const IndexT feat_id, double chi2_px2_thresh) const;
 
-  float computeSceneMedianDistance() const;
+  void computeSceneStatistics();
 
+  bool checkLandmarkPosition(const Vec3 & map_landmark_3D);
   /// c - current frame; r - reference frame {e.g W}
   /// transformation from world to camera X_c = T_cr_ * X_w (computer vision)
   /// transformation from camera to world X_r = T_rc_ * X_c (robotics)

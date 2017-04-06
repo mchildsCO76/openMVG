@@ -53,7 +53,8 @@ public:
   (
     const image::Image<unsigned char> & ima,
     Frame * frame,
-    const size_t min_count
+    const size_t min_count,
+    const image::Image<unsigned char> * mask = nullptr
   ) const override
   {
     // Cast region
@@ -61,7 +62,7 @@ public:
     std::unique_ptr<features::Regions> & frame_regions = frame->getRegionsRaw();
     frame_regions.reset(new RegionT);
 
-    image_describer->Describe(ima, frame_regions, nullptr);
+    image_describer->Describe(ima, frame_regions, mask);
 
     const size_t n_features = frame_regions->RegionCount();
     // Estimate the uncertainty of each feature detection

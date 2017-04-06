@@ -35,29 +35,24 @@ namespace VSSLAM  {
     feat_mean_scale_ = feat_mean_scale_/obs_.size();
   }
 
+  void MapLandmark::updateLastNormal(Frame * last_frame)
+  {
+    // Update last normal
+    if (ref_frame_ == nullptr)
+    {
+      last_normal_ = (X_ - last_frame->getCameraCenter()).normalized();
+    }
+  }
+
 
 
   void MapLandmark::addObservation(Frame * frame, const IndexT & feat_id)
   {
     obs_[frame->getFrameId()] = MapObservation(feat_id,frame);
-
-    // Update last normal
-    Vec3 O_frame_i = frame->getCameraCenter();
-    if (ref_frame_ == nullptr)
-    {
-      last_normal_ = (X_ - O_frame_i).normalized();
-    }
-
+    updateLastNormal(frame);
     updateNormal();
   }
 
-  // Method which defines what is enough quality for the points to be added to the system
-  bool MapLandmark::isValidByConnectivityDegree(const size_t & min_degree_landmark) const
-  {
-    if (n_all_obs_ < min_degree_landmark)
-      return false;
-    return true;
-  }
 
   bool MapLandmark::hasFrameObservation(const IndexT & frame_id)
   {

@@ -36,7 +36,8 @@ public:
   (
     const image::Image<unsigned char> & ima,
     Frame * frame,
-    const size_t min_count
+    const size_t min_count,
+    const image::Image<unsigned char> * mask = nullptr
   ) const override
   {
     // Cast region
