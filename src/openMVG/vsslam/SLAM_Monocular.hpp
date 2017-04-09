@@ -56,8 +56,8 @@ struct SLAM_Monocular
     cartographer_ = std::make_shared<Cartographer>();
 
     cartographer_->setCeresLocalBA();
-    cartographer_->setCeresGlobalBA();
-    //cartographer_->setSlamPPGlobalBA();
+    //cartographer_->setCeresGlobalBA();
+    cartographer_->setSlamPPGlobalBA();
     //cartographer_->setSlamPPLocalBA();
 
     if (tracker_)

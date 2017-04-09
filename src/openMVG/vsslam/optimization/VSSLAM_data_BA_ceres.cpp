@@ -59,6 +59,8 @@ VSSLAM_Bundle_Adjustment_Ceres::VSSLAM_Bundle_Adjustment_Ceres
 {
   if (options_.b_use_loss_function_)
     p_LossFunction_ = new ceres::HuberLoss(5.991);
+  else
+    p_LossFunction_ = nullptr;
 }
 
 VSSLAM_Bundle_Adjustment_Ceres::BA_options_Ceres &
@@ -912,6 +914,7 @@ bool VSSLAM_Bundle_Adjustment_Ceres::optimizeGlobal(MapFrames & map_frames, MapL
 
       // Update the pose
       frame->setPose_Rts(R_refined,t_refined,s_refined, nullptr);
+      std::cout<<"Frame: "<<frame->getFrameId()<<" :: "<<frame->T_cr_.block(0,0,3,1).norm()<<"\n"<<frame->T_cr_<<"\n";
     }
 
 

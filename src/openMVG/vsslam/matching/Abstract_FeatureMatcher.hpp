@@ -78,8 +78,22 @@ public:
   // Return radius depending on the angle between average viewing angle of a point and current viewing angle of observation
   float radiusByViewingAngle(const float cos_view_angle)
   {
+    return 1.0;
     // arccos(0.998) ~ 3.6deg arccos(0.9998) ~ 1.15 deg
     if (cos_view_angle > 0.99998)
+    {
+      return 1.0;
+    }
+    else if (cos_view_angle > 0.99995)
+    {
+      return 2.0;
+    }
+    else
+    {
+      return 3.0;
+    }
+
+    /*if (cos_view_angle > 0.99998)
     {
       return 1.0;
     }
@@ -98,7 +112,7 @@ public:
     else
     {
       return 20.0;
-    }
+    }*/
   }
 
 };

@@ -53,7 +53,7 @@ public:
     ) : BA_options(map_camera_type, map_landmark_type, b_verbose),
     nb_threads_(1),
     parameter_tolerance_(1e-8), //~= numeric_limits<float>::epsilon()
-    b_use_loss_function_(true)
+    b_use_loss_function_(false)
     {
       #ifdef OPENMVG_USE_OPENMP
         nb_threads_ = omp_get_max_threads();

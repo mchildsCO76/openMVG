@@ -594,7 +594,8 @@ bool VSSLAM_Bundle_Adjustment_SlamPP::addObservationToGlobalSystem(MapLandmark *
   const size_t frame_slampp_id = map_poses_.find(frame_obs_id)->second.first;
   const size_t landmark_slampp_id = map_landmarks_.find(landmark_id)->second.first;
 
-  problem_->Add_P2CSim3GEdge(landmark_slampp_id,frame_slampp_id,frame_obs->getFeaturePosition(feat_obs_id), frame_obs->getFeatureInformationMatrix(feat_obs_id));
+  Eigen::Matrix2d inf_mat = frame_obs->getFeatureInformationMatrix(feat_obs_id).cwiseProduct(frame_obs->getFeatureInformationMatrix(feat_obs_id));
+  problem_->Add_P2CSim3GEdge(landmark_slampp_id,frame_slampp_id,frame_obs->getFeaturePosition(feat_obs_id), inf_mat);
 
   return true;
 }
@@ -628,8 +629,9 @@ bool VSSLAM_Bundle_Adjustment_SlamPP::addLandmarkToGlobalSysyem(MapLandmark * ma
     }
 
     // Add measurement edge
+    Eigen::Matrix2d inf_mat = frame_obs->getFeatureInformationMatrix(feat_obs_id).cwiseProduct(frame_obs->getFeatureInformationMatrix(feat_obs_id));
     const size_t frame_slampp_id = map_poses_.find(frame_obs_id)->second.first;
-    problem_->Add_P2CSim3GEdge(landmark_slampp_id,frame_slampp_id,frame_obs->getFeaturePosition(feat_obs_id), frame_obs->getFeatureInformationMatrix(feat_obs_id));
+    problem_->Add_P2CSim3GEdge(landmark_slampp_id,frame_slampp_id,frame_obs->getFeaturePosition(feat_obs_id), inf_mat);
 
   }
   return true;
@@ -677,6 +679,17 @@ bool VSSLAM_Bundle_Adjustment_SlamPP::addFrameToGlobalSystem(Frame * frame, bool
 }
 bool VSSLAM_Bundle_Adjustment_SlamPP::optimizeGlobal(MapFrames & map_frames, MapLandmarks & map_landmarks)
 {
+  for (auto & pose_it : map_poses_)
+  {
+    const IndexT & frame_id = pose_it.first;
+    Frame * frame = map_frames[frame_id].get();
+
+    Eigen::Map<const Eigen::VectorXd> frame_state_after(pose_it.second.second, 12);
+    frame->setPoseInverse_sim3(frame_state_after.template head<7>(),frame->ref_frame_);
+    std::cout<<"Frame before: "<<frame->getFrameId()<<" :: "<<frame_state_after<<"\n";
+    std::cout<<"Frame before: "<<frame->getFrameId()<<" :: "<<frame->T_rc_.block(0,0,3,1).norm()<<"\n"<<frame->T_rc_<<"\n";
+  }
+
   // Optimize the solution
   problem_->Optimize(options_.n_max_inc_iters,options_.f_inc_nlsolve_thresh, options_.f_inc_nlsolve_thresh);
 
@@ -687,16 +700,21 @@ bool VSSLAM_Bundle_Adjustment_SlamPP::optimizeGlobal(MapFrames & map_frames, Map
     const IndexT & frame_id = pose_it.first;
     Frame * frame = map_frames[frame_id].get();
 
-    Eigen::Map<const Eigen::VectorXd> frame_state_after(pose_it.second.second, 7);
-    frame->setPoseInverse_sim3(frame_state_after,frame->ref_frame_);
+    Eigen::Map<Eigen::VectorXd> frame_state_after = problem_->r_Vertex_State(pose_it.second.first);;
+    //Eigen::Map<const Eigen::VectorXd> frame_state_after(pose_it.second.second, 12);
+    frame->setPoseInverse_sim3(frame_state_after.template head<7>(),frame->ref_frame_);
+    std::cout<<"Frame: "<<frame->getFrameId()<<" :: "<<frame->T_rc_.block(0,0,3,1).norm()<<"\n"<<frame->T_rc_<<"\n";
   }
 
   for (auto & landmark_it : map_landmarks_)
   {
     const IndexT & landmark_id = landmark_it.first;
+    const IndexT & landmark_slampp_id = landmark_it.second.first;
+    // Get landmark pointer from the structure
     MapLandmark * landmark = map_landmarks[landmark_id].get();
 
-    Eigen::Map<const Eigen::Vector3d> landmark_state_after(landmark_it.second.second, 3);
+    // Recover value from slampp
+    Eigen::Map<Eigen::VectorXd> landmark_state_after = problem_->r_Vertex_State(landmark_slampp_id);
 
     landmark->X_ = landmark_state_after;
   }

@@ -54,7 +54,7 @@ private:
   // Track with Motion Model
   float track_match_mm_desc_ratio = 0.9; // Matching ratio for matching using motion model
   float track_match_mm_max_scale_ratio = 1.2; // Matching can be done only between points with max twice the scale difference
-  float track_mm_win_size = 10;
+  float track_mm_win_size = 5;
 
   // Track with Local Map
   float track_match_lm_desc_ratio = 0.8; // Matching ratio for matching using localMap
@@ -65,12 +65,12 @@ private:
 
   // Track with Reference frame
   float track_match_rf_desc_ratio = 0.7; // Matching ratio for matching using reference frame
-  float track_rf_win_size = 50;
+  float track_rf_win_size = 10;
   float track_match_rf_max_scale_ratio = 2; // Matching can be done only between points with max twice the scale difference
 
   // Track with reference map
   float track_match_rm_desc_ratio = 0.7; // Matching ratio for matching using reference frame
-  float track_rm_win_size = 50;
+
   float track_match_rm_max_scale_ratio = std::numeric_limits<float>::infinity(); // Matching can be done only between points with max twice the scale difference
 
 

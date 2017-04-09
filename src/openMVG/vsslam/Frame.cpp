@@ -299,11 +299,12 @@ using namespace openMVG::geometry;
     Frame * tmp_ref // Pose [sR t] expressed in tmp_ref reference frame
   ) const
   {
-    double s; Mat3 R; Vec3 t;
+    //double s; Mat3 R; Vec3 t;
     // Get [sR t]
-    getPoseInverse_Rts(R,t,s,tmp_ref);
+    //getPoseInverse_Rts(R,t,s,tmp_ref);
+
     // Express in sim3
-    Sim3_log(R,t,s,v_state);
+    Sim3_log(T_rc_,v_state);
   }
 
   // Get transformation from this frame to desired reference (tmp_ref) frame expressed with state vector
@@ -372,6 +373,7 @@ using namespace openMVG::geometry;
     // we already have the transformation in the reference frame
     if (tmp_ref == ref_frame_)
     {
+      T_cr_ = Mat4::Identity();
       T_cr_.block(0,0,3,3) = s * R;
       T_cr_.block(0,3,3,1) = t;
     }
@@ -403,16 +405,16 @@ using namespace openMVG::geometry;
     Frame * tmp_ref
   )
   {
-    double s_rc; Mat3 R_rc; Vec3 t_rc;
+    Mat4 T;
     // From sim3 to Sim3
-    Sim3_exp(v_state,R_rc,t_rc,s_rc);
+    Sim3_exp(v_state,T);
 
     // we already have the transformation in the reference frame
     if (tmp_ref == ref_frame_)
     {
       // Update transformation matrix
-      T_cr_.block(0,0,3,3) = 1.0/s_rc * R_rc.transpose();
-      T_cr_.block(0,3,3,1) = - 1.0/s_rc * R_rc.transpose() * t_rc;
+      T_cr_ = T.inverse();
+
     }
     /*
     else

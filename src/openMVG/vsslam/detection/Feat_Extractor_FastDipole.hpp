@@ -75,9 +75,21 @@ public:
       feats.clear();
     }
 
+    const size_t n_features = frame_regions->RegionCount();
     // Estimate the uncertainty of each feature detection
-    frame->pts_information_mat_.resize(regionsCasted->Features().size());
-    std::fill(frame->pts_information_mat_.begin(),frame->pts_information_mat_.end(), Eigen::Matrix2d::Identity());
+    frame->pts_information_mat_.resize(n_features);
+    // Scale of features
+    frame->pts_scale_.resize(n_features);
+    std::vector<RegionT::FeatureT> vec_features = dynamic_cast<RegionT *>(frame_regions.get())->Features();
+    for (size_t i = 0; i < vec_features.size(); i++)
+    {
+      frame->pts_scale_[i] = 4;
+      frame->pts_information_mat_[i] = Eigen::Matrix2d::Identity() * (1.0 / 4);
+    }
+
+    // Estimate the uncertainty of each feature detection
+    //frame->pts_information_mat_.resize(regionsCasted->Features().size());
+    //std::fill(frame->pts_information_mat_.begin(),frame->pts_information_mat_.end(), Eigen::Matrix2d::Identity());
     // Return number of detected features
     return regionsCasted->Features().size();
   }

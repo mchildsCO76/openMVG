@@ -279,6 +279,7 @@ namespace VSSLAM  {
 
       if (!b_track_OK)
       {
+        std::cout<<"Tracker: [Track] setting lost\n";
         motionModel.setInvalid();
         track_status = false;
         trackingStatus = Abstract_Tracker::TRACKING_STATUS::LOST;
@@ -325,10 +326,21 @@ namespace VSSLAM  {
     // Check how many frames would become ok if we add this frame as keyframe
     size_t n_new_pts = vec_new_pts_3D.size();
 
-    if (frame_n_matches < last_ref_frame_n_matches*0.9 || n_new_pts > frame_n_matches*0.2 )
+    bool c1a = frame_n_matches < last_ref_frame_n_matches*0.75;
+    bool c1b = n_new_pts > frame_n_matches*0.3;
+
+    if (c1a)
+      std::cout << "NEW KEYFRAME c1a: "<<frame_n_matches<<" < "<< last_ref_frame_n_matches*0.75<<"\n";
+
+    if (c1b)
+      std::cout << "NEW KEYFRAME c1b: "<<n_new_pts<<" < "<< frame_n_matches*0.3<<"\n";
+
+
+    if (c1a || c1b )
       return true;
     else
       return false;
+    return true;
   }
 
   // --------------------------
@@ -775,7 +787,7 @@ namespace VSSLAM  {
         float angle_factor = featureMatcher_->radiusByViewingAngle(normal_X.dot(normal_last));   // [1,5]
 
         // enlarge the area if the viewing angle is bigger
-        float win_size = angle_factor;//track_mm_win_size * sqrt(angle_factor);
+        float win_size = track_mm_win_size * sqrt(angle_factor);
 
         d_s.push_back(win_size);
       }
@@ -1054,7 +1066,7 @@ namespace VSSLAM  {
     std::cout<<"Tracker: [Track] Match All 3D - 2D  #matches: "<< map_putative_matches_3D_pts_frame_idx_putative.size()<<"\n";
 
     // Estimate the pose based on the 3D - 2D matching (use scale from last reference frame
-    Mat3 R;Vec3 t; double s=frame_ref->getTransformationMatrix().block(0,0,3,1).norm();
+    Mat3 R;Vec3 t; double s=1.0;
     std::vector<size_t> vec_inliers;
     double AC_threshold;
 

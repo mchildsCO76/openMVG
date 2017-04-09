@@ -29,7 +29,7 @@ class VSSLAM_Bundle_Adjustment_SlamPP : public VSSLAM_Bundle_Adjustment
   public:
     struct BA_options_SlamPP : public BA_options
     {
-      size_t undefined_cam_id = std::numeric_limits<size_t>::max() / 2 + 1;
+      size_t undefined_cam_id = size_t(-1);//std::numeric_limits<size_t>::max() / 2 + 1;
 
       bool b_use_schur_ = true;
       bool b_do_marginals_ = false;
@@ -47,7 +47,7 @@ class VSSLAM_Bundle_Adjustment_SlamPP : public VSSLAM_Bundle_Adjustment
       double f_final_nlsolve_thresh = .005; //final-nonlinear-solve-error-thresh
       double f_trust_radius = 0.2;  // trust-radius
       bool b_trust_radius_persistent = false;
-      double f_update_thresh = 0.0001;  //dx-threshold  (using update threshold 0, disabling update threshold)
+      double f_update_thresh = 0.01;  //dx-threshold  (using update threshold 0, disabling update threshold)
 
       bool b_all_batch = false;
 

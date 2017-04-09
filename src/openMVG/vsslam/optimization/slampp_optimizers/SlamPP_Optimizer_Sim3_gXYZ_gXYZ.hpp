@@ -1,27 +1,29 @@
 #pragma once
 
-#define SIM3_USE_ROBUST_EDGES
-#define USE_EXPLICIT_HARD_UF // use explicit UF via a const vertex?
+//#define SIM3_USE_ROBUST_EDGES
 
 /*
  * SlamPP_Optimizer_Sim3_gXYZ_gXYZ - Global cameras and global XYZ landmarks
  */
 
+#include <map>
+
+
 //#include <openMVG/vsslam/optimization/slampp_optimizers/CBAOptimizerCore_Sim3_gXYZ_gXYZ.app>
 #include <openMVG/vsslam/optimization/slampp_optimizers/SlamPP_Optimizer.hpp>
-#include <map>
 
-/*#include "slam/LinearSolver_UberBlock.h"
-#include "slam/ConfigSolvers.h" // nonlinear graph solvers
-#include "slam/Sim3_Types.h"*/
 
 #include "slam/Sim3SolverBase.h" // C3DJacobians, CBAJacobians, generally useful functions for BA and SE(3), does not need to be included
-#define LANDMARK_TYPE_XYZ
-#define LANDMARKS_GLOBAL
+#include "slam/LinearSolver_UberBlock.h"
+#include "slam/ConfigSolvers.h" // nonlinear graph solvers
+#include "slam/3DSolverBase.h" // want C3DJacobians::Quat_to_AxisAngle() and C3DJacobians::AxisAngle_to_Quat()
+#include "slam/Sim3_Types.h"
+//#include "slam/Marginals.h" // included from nonlinear solver, if supported
+#include "slam/NonlinearSolver_Lambda_DL.h"
+#include "slam/Eigenvalues.h"
 
-#define SIM3_USE_ROBUST_EDGES
-#define USE_EXPLICIT_HARD_UF // use explicit UF via a const vertex?
-#include <map>
+
+
 
 
 /**
@@ -36,11 +38,35 @@ namespace VSSLAM {
 
 class SlamPP_Optimizer_Sim3_gXYZ_gXYZ : public SlamPP_Optimizer {
 public:
-  //int n_dummy_param=1;
-  class CBAOptimizerCore_Sim3_gXYZ_gXYZ;
-protected:
+  // landmark: g_xyz
+  using _TyLandmark = CVertexXYZ;
+  using _TyObservation = CEdgeP2C_XYZ_Sim3_G;
 
-  CBAOptimizerCore_Sim3_gXYZ_gXYZ * m_p_optimizer; // PIMPL
+  using TVertexTypelist = MakeTypelist_Safe((CVertexCamSim3, _TyLandmark));
+  using TConstVertexTypelist = MakeTypelist_Safe((CVertexCamSim3, _TyLandmark));
+  using TEdgeTypelist = MakeTypelist_Safe((_TyObservation, CEdgePoseCamSim3));
+  using CSystemType = CFlatSystem<CBaseVertex, TVertexTypelist, CBaseEdge, TEdgeTypelist, CNullUnaryFactorFactory,
+      CBaseVertex, TConstVertexTypelist>;
+
+  using CLinearSolverType = CLinearSolver_UberBlock<CSystemType::_TyHessianMatrixBlockList>;
+  using CNonlinearSolverType = CNonlinearSolver_Lambda_DL<CSystemType, CLinearSolverType>;
+
+protected:
+  CSystemType m_system;
+  CNonlinearSolverType m_solver;
+
+private:
+  CSystemType::_TyConstVertexRef r_Vertex(size_t n_index) const
+  {
+    return m_system.r_Vertex_Pool()[n_index];
+  }
+
+  CSystemType::_TyVertexRef r_Vertex(size_t n_index)
+  {
+    return m_system.r_Vertex_Pool()[n_index];
+  }
+
+protected:
 	std::map<size_t, size_t> m_camera_ownerships; // using a side channel now. this should be a part of the CVertexInvDepth class but I actually want to experiment a bit with global / local convergence so I'm leaving it here for now
 
 public:
@@ -48,42 +74,36 @@ public:
 		bool b_do_marginals = false, bool b_do_icra_style_marginals = false); // throw(srd::bad_alloc) // todo - add more optimization settings as required
 	~SlamPP_Optimizer_Sim3_gXYZ_gXYZ();
 
-	size_t n_Vertex_Num() const override;
-/*
-	CBAOptimizerCore::CSystemType::_TyConstVertexRef r_Vertex(size_t n_index) const override;
-	CBAOptimizerCore::CSystemType::_TyVertexRef r_Vertex(size_t n_index) override;*/
+	// Set properties
+  void Set_TrustRadius(double f_trust_radius) override;
+  void Set_TrustRadius_Persistence(bool b_trust_radius_persistent) override;
+  void Set_UpdateThreshold(double f_update_thresh) override;
+  void Set_AllBatch(bool b_all_batch) override;
 
+  // Get basic data
+	size_t n_Vertex_Num() const override;
 	Eigen::Map<const Eigen::VectorXd> r_Vertex_State(size_t n_index) const override; // returns const map of vertex state only
 	Eigen::Map<Eigen::VectorXd> r_Vertex_State(size_t n_index) override; // returns map of vertex state only
-
   Eigen::Vector3d v_XYZVertex(size_t n_index) const override;
 
-	void Delay_Optimization() override;
-	void Enable_Optimization() override; // throw(srd::bad_alloc, std::runtime_error)
-
-	void Set_TrustRadius(double f_trust_radius) override;
-	void Set_TrustRadius_Persistence(bool b_trust_radius_persistent) override;
-	void Set_UpdateThreshold(double f_update_thresh) override;
-	void Set_AllBatch(bool b_all_batch) override;
-	void Optimize(size_t n_max_iteration_num = 5, double f_min_dx_norm = .01, double f_min_dl_norm = .01) override; // throw(srd::bad_alloc, std::runtime_error)
-
+  // Add cameras
 	double * Add_CamVertex(size_t n_vertex_id, const Eigen::Matrix<double, 12, 1> &v_cam_state) override; // throw(srd::bad_alloc)
 	double * Add_CamVertexFixed(size_t n_vertex_id, const Eigen::Matrix<double, 12, 1> &v_cam_state) override; // throw(srd::bad_alloc)
-  double * Add_CamVertexConst(size_t n_vertex_id, const Eigen::Matrix<double, 12, 1> &v_cam_state) override; // throw(srd::bad_alloc)
 
-  // a vertex can be added either way, it gets automatically converted to the representation space
+  // Add landmarks
   double * Add_XYZVertex(size_t n_vertex_id, size_t n_owner_id, const Eigen::Vector3d &v_xyz_position) override;
-  double * Add_XYZVertexFixed(size_t n_vertex_id, size_t n_owner_id, const Eigen::Vector3d &v_xyz_position) override;
 
   // Observations
 	void Add_P2CSim3GEdge(size_t n_landmark_vertex_id, size_t n_cam_vertex_id,
 		const Eigen::Vector2d &v_observation, const Eigen::Matrix2d &t_information) override; // throw(srd::bad_alloc)
 
-	void Show_Stats(bool b_calculate_eigenvalues = true) const override;
+	// Optimization
+  void Optimize(size_t n_max_iteration_num = 5, double f_min_dx_norm = .01, double f_min_dl_norm = .01) override; // throw(srd::bad_alloc, std::runtime_error)
 
+  // Export
+	void Show_Stats(bool b_calculate_eigenvalues = true) const override;
 	bool Dump_State(const char *p_s_filename) const override; // note that this saves the state as Sim(3)
 	bool Dump_Marginals(const char *p_s_filename) const override; // note that this saves the marginals of (relative?) Sim(3)
-
 	bool Dump_Poses_SE3(const char *p_s_filename) const override; // only poses, not landmarks
 	bool Dump_State_SE3(const char *p_s_filename) const override; // note that this converts the state to SE(3) for viewing by our utility which does not support Sim(3) now
 	bool Dump_Graph_SE3(const char *p_s_filename) const override; // note that this converts the graph to SE(3) for viewing by our utility which does not support Sim(3) now

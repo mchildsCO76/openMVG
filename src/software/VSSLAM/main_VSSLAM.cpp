@@ -255,10 +255,11 @@ int main(int argc, char **argv)
   {
     case 0:
       // Set Fast Dipole feature detector/descriptor
-      //feat_extractor_ptr.reset(new Feat_Extractor_FastDipole());
-      feat_extractor_ptr.reset(new Feat_Extractor_SIFT());
+      feat_extractor_ptr.reset(new Feat_Extractor_FastDipole());
+      //feat_extractor_ptr.reset(new Feat_Extractor_SIFT());
       //feat_matcher_ptr.reset(new Feat_Matcher_CascadeHashing(feat_extractor_ptr.get()));
-      feat_matcher_ptr.reset(new Feat_Matcher_Basic());
+      feat_matcher_ptr.reset(new Feat_Matcher_CascadeHashing(feat_extractor_ptr.get()));
+      //feat_matcher_ptr.reset(new Feat_Matcher_Basic());
       //feat_matcher_ptr.reset(new Feat_Matcher_CascadeHashing(feat_extractor_ptr.get()));
 
       tracker_ptr.reset(new Tracker_Features(feat_extractor_ptr.get(),feat_matcher_ptr.get(),maxTrackedFeatures));
@@ -375,8 +376,10 @@ int main(int argc, char **argv)
 
       Tracker_Features * tr = dynamic_cast<Tracker_Features*>(monocular_slam.tracker_);
 
+      std::cout<<"AS1\n";
       Frame * display_current_frame = tr->mPrevFrame.get();
 
+      std::cout<<"AS2\n";
       //--
       // Draw feature trajectories
       //--
@@ -384,20 +387,12 @@ int main(int argc, char **argv)
       IndexT frame_id = tr->mPrevFrame->getFrameId();
       IndexT min_frame_id = frame_id<5 ? 0 : frame_id-5;
 
+      std::cout<<"AS3\n";
       glColor3f(0.f, 1.f, 0.f);
       glLineWidth(2.f);
 
 
-      // Draw all features in current frame - YELLOW
-      for (size_t map_point_i = 0; map_point_i<display_current_frame->map_points_.size(); map_point_i++)
-      {
-        glPointSize(2.0f);
-        glColor3f(1.f, 1.f, 0.f);
-        glBegin(GL_POINTS);
-        Vec2 pt = display_current_frame->getFeaturePosition(map_point_i);
-        glVertex2f(pt(0),pt(1));
-        glEnd();
-      }
+      std::cout<<"AS4\n";
 
 
       if (false)
@@ -739,12 +734,14 @@ int main(int argc, char **argv)
         }
       }
 
-      monocular_slam.tracker_->display_pt2d_A.clear();
+      std::cout<<"AS5\n";
+     /* monocular_slam.tracker_->display_pt2d_A.clear();
       monocular_slam.tracker_->display_pt2d_B.clear();
       monocular_slam.tracker_->display_pt2d_C.clear();
       monocular_slam.tracker_->display_size_A.clear();
       monocular_slam.tracker_->display_text.clear();
-
+*/
+      std::cout<<"BB\n";
       if (true)
       {
       bool b_snake_trail = true;
@@ -852,6 +849,17 @@ int main(int argc, char **argv)
         }
       }
       }
+
+      // Draw all features in current frame - YELLOW
+      for (size_t map_point_i = 0; map_point_i<display_current_frame->map_points_.size(); map_point_i++)
+      {
+        glPointSize(2.0f);
+        glColor3f(1.f, 1.f, 0.f);
+        glBegin(GL_POINTS);
+        Vec2 pt = display_current_frame->getFeaturePosition(map_point_i);
+        glVertex2f(pt(0),pt(1));
+        glEnd();
+      }
       display_prev_frame = monocular_slam.tracker_->mPrevFrame->share_ptr();
       glFlush();
       window.Swap(); // Swap openGL buffer
@@ -859,7 +867,7 @@ int main(int argc, char **argv)
       //if (frameId>0)
       //sleep(1);
       std::cout<<"Press ENTER to continue....."<<std::endl<<std::endl;
-      std::cin.ignore(1);
+      //std::cin.ignore(1);
     }
 
   }

@@ -32,12 +32,12 @@ class Feat_Extractor_SIFT : public Abstract_FeatureExtractor
 public:
   Feat_Extractor_SIFT(): Abstract_FeatureExtractor()
   {
-    //image_describer.reset(new features::SIFT_Image_describer
-    //  (features::SIFT_Image_describer::Params(), false));
+    image_describer.reset(new features::SIFT_Image_describer
+      (features::SIFT_Image_describer::Params(), false));
 
-    image_describer.reset(
-      new features::SIFT_Anatomy_Image_describer(features::SIFT_Anatomy_Image_describer::Params()));
-
+    //image_describer.reset(
+    //  new features::SIFT_Anatomy_Image_describer(features::SIFT_Anatomy_Image_describer::Params()));
+    image_describer->Set_configuration_preset(features::HIGH_PRESET);
     max_dist_desc_ = 200;
     //max_dist_desc_ = std::numeric_limits<float>::infinity();
   }
