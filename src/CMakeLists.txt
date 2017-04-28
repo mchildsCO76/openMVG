@@ -266,6 +266,22 @@ if (NOT Ceres_FOUND)
   set(CERES_LIBRARIES ceres cxsparse)
 endif()
 
+
+# ==============================================================================
+# SlamPP
+# ==============================================================================
+# - internal by default (ceres-solver+cxsparse+miniglog),
+# - external if CERES_DIR_HINTS and find_package return a valid Ceres setup
+# ==============================================================================
+set(SLAMPP_SOURCE_DIR "/home/klemen/workspace/ANU/SlamPP_Dev/slam-plus-plus-dev_code/trunk/SLAM_plus_plus")
+set(SLAMPP_INCLUDE_DIR ${SLAMPP_SOURCE_DIR}/include ${SLAMPP_SOURCE_DIR}/include/cholmod/SuiteSparse ${SLAMPP_SOURCE_DIR}/include/eigen33)
+
+include_directories(${SLAMPP_INCLUDE_DIR})
+
+#file(GLOB_RECURSE SLAMPP_HEADERS ${SLAMPP_SOURCE_DIR}/include/slam/*.h)
+
+
+
 # ==============================================================================
 # Flann
 # ==============================================================================
@@ -419,7 +435,8 @@ set(OpenMVG_LIBRARIES
   openMVG_multiview
   openMVG_lInftyComputerVision
   openMVG_system
-  openMVG_sfm)
+  openMVG_sfm
+  openMVG_vsslam)
 
 FOREACH(omvglib ${OpenMVG_LIBRARIES})
   set_property(TARGET ${omvglib} PROPERTY FOLDER OpenMVG/OpenMVG)

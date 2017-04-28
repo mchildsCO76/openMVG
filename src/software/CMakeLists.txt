@@ -9,6 +9,7 @@ endif (OpenMVG_BUILD_OPENGL_EXAMPLES)
 
 add_subdirectory(colorHarmonize)
 add_subdirectory(VO)
+add_subdirectory(VSSLAM)
 
 find_package(Qt4 QUIET)
 if (QT_FOUND)
