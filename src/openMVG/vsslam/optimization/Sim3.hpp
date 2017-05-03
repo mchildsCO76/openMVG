@@ -10,12 +10,16 @@
 
 #define _USE_MATH_DEFINES
 #include <cmath>
-#include "openMVG/types.hpp"
+#include <openMVG/types.hpp>
+#include <openMVG/numeric/numeric.h>
+
+#include <sophus/sim3.hpp>
 
 namespace openMVG {
 namespace vsslam {
   using Vec7 = Eigen::Matrix<double, 7, 1>;
 
+  /*
   static Mat3 Hat(const Vec3 & v)
   {
     Mat3 v_hat;
@@ -26,8 +30,8 @@ namespace vsslam {
 
     return v_hat;
   }
-
-
+*/
+/*
   // Adjusted from Sophus logAndTheta (so3.hpp)
   // https://github.com/strasdat/Sophus/blob/master/sophus/so3.hpp
   // Logarithmic map
@@ -83,7 +87,8 @@ namespace vsslam {
     theta = two_atan_nbyw_by_n * n;
     omega = two_atan_nbyw_by_n* q.vec();
   }
-
+  */
+/*
   // Taken from Viorela Ila's matlab code (IntrinsicSLAM)
   static void SO3_expAndTheta(const Vec3 & omega, Mat3 & R, double & theta)
   {
@@ -106,7 +111,7 @@ namespace vsslam {
       R = I + (sin_theta/theta) * Omega + ((1-cos_theta)/(theta*theta)) * Omega2;
     }
   }
-
+*/
 
   // Adjusted from Sophus log (sim3.hpp line 440)
   // https://github.com/strasdat/Sophus/blob/master/sophus/sim3.hpp
@@ -120,7 +125,7 @@ namespace vsslam {
   // ``logmat(.)`` being the matrix logarithm and ``vee(.)`` the vee-operator
   // of Sim(3).
   //
-
+/*
   static void Sim3_log(const Mat3 & R, const Vec3 & t, const double & scale, Vec7 & v_log)
   {
     // The derivation of the closed-form Sim(3) logarithm for is done
@@ -190,13 +195,16 @@ namespace vsslam {
     v_log(6) = sigma;
 
   }
-
+*/
   static void Sim3_log(const Mat4 & T, Vec7 & v_log)
   {
+    /*
     double s = T.block(0,0,3,1).norm();
     Mat3 R = T.block(0,0,3,3) / s;
     Vec3 t = T.block(0,3,3,1);
-    Sim3_log(R,t,s,v_log);
+    Sim3_log(R,t,s,v_log);*/
+
+    v_log = Sophus::Sim3d(T).log();
   }
 
   // Adjusted from Sophus exp (sim3.hpp line 280)
@@ -214,9 +222,11 @@ namespace vsslam {
   // ``expmat(.)`` being the matrix exponential and ``hat(.)`` the hat-operator
   // of Sim(3), see below.
   //
-
+  /*
   static void Sim3_exp(const Vec7 & v_log, Mat3 & R, Vec3 & t, double & scale)
   {
+    //Sophus::Sim3<double>(Sophus::RxSO3<double>::exp(Sophus::Vector4<double>(0., 0., 0., 0.)), Sophus::Sim3<double>::Point(0, 10, 5)));
+
     const double f_epsilon = 1e-6;
     // For the derivation of the exponential map of Sim(3) see
     // H. Strasdat, "Local Accuracy and Global Consistency for Efficient Visual
@@ -272,16 +282,21 @@ namespace vsslam {
     // Rotation
     double th;
     SO3_expAndTheta(omega,R,th);
-  }
 
+  }
+*/
   static void Sim3_exp(const Vec7 & v_log, Mat4 & T)
   {
+    /*
     T = Mat4::Identity();
     Mat3 R; Vec3 t; double s;
+
     Sim3_exp(v_log,R,t,s);
 
     T.block(0,0,3,3) = s * R;
     T.block(0,3,3,1) = t;
+    */
+    T = Sophus::Sim3d::exp(v_log).matrix();
   }
 
 }

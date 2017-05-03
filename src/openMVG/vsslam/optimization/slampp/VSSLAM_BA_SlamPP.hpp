@@ -48,8 +48,8 @@ public:
     double f_inc_nlsolve_thresh = .005; //nonlinear-solve-error-thresh
     double f_final_nlsolve_thresh = .005; //final-nonlinear-solve-error-thresh
     double f_trust_radius = 0.2;  // trust-radius
-    bool b_trust_radius_persistent = false;
-    double f_update_thresh = 0.0f;  //dx-threshold  (using update threshold 0, disabling update threshold)
+    bool b_trust_radius_persistent = true;
+    double f_update_thresh = 0.0005f;  //dx-threshold  (using update threshold 0, disabling update threshold)
 
     bool b_all_batch = false;
 

@@ -448,7 +448,7 @@ struct VSSLAM_Display
       // Wait
       //sleep(sleep_time);
       std::cout<<"Press ENTER to continue....."<<std::endl<<std::endl;
-      std::cin.ignore(1);
+      //std::cin.ignore(1);
     }
 
 

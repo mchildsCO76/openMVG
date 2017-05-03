@@ -22,6 +22,8 @@ file(
 MESSAGE( STATUS "aa: ${SLAMPP_INCLUDE_DIR}")
 
 
+MESSAGE( STATUS "qt: ${Qt5Core_DIR}")
+
 add_library(openMVG_vsslam ${vsslam_files_header}  ${SLAMPP_HEADERS} ${vsslam_files_cpp})
 target_link_libraries(
   openMVG_vsslam

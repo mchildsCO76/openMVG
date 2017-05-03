@@ -70,6 +70,7 @@ bool VSSLAM_BA_SlamPP::addFrameToGlobalSystem(Frame * frame, bool b_frame_fixed)
   const IndexT & frame_id = frame->getFrameId();
   const IndexT & cam_id = frame->getCamId();
 
+  std::cout<<"OMVG: Add Frame: frame id: "<<frame_id<<"\n";
   if (map_poses_.find(frame_id)!=map_poses_.end())
   {
     std::cout<<"Cartographer: [Slam++ GlobalBA] Frame "<<frame->getFrameId()<< "already in the system!";
@@ -104,8 +105,8 @@ bool VSSLAM_BA_SlamPP::addLandmarkToGlobalSysyem(MapLandmark * map_landmark)
 {
   // Create vertex for Landmark
   const size_t landmark_slampp_id = getNextVertexId();
-
-  //std::cout<<"Slam++: Add landmark id: "<<landmark_slampp_id<<"\n";
+  std::cout<<"OMVG: Add landmark: landmark id: "<<map_landmark->id_<<"\n";
+  std::cout<<"Slam++: Add landmark id: "<<landmark_slampp_id<<"\n";
   // Add landmarks as global point : m_undefined_camera_id as no owner
   double * landmark_ptr = problem_->Add_XYZVertex(landmark_slampp_id,options_.undefined_cam_id, map_landmark->X_);
 
@@ -122,7 +123,7 @@ bool VSSLAM_BA_SlamPP::addLandmarkToGlobalSysyem(MapLandmark * map_landmark)
     const IndexT & frame_id = frame->getFrameId();
     const IndexT & cam_id_frame = frame->getCamId();
     IntrinsicBase * & cam_intrinsic = frame->getCameraIntrinsics();
-
+    std::cout<<"OMVG: Add observation: landmark id: "<<map_landmark->id_<<" frame: "<<frame_id<<" feat: "<<feat_id_frame<<"\n";
     // Add frame to the problem if its not added yet
     if (map_poses_.find(frame_id) == map_poses_.end())
     {
@@ -150,6 +151,7 @@ bool VSSLAM_BA_SlamPP::addObservationToGlobalSystem(MapLandmark * map_landmark, 
   const IndexT & cam_id_frame = frame->getCamId();
   IntrinsicBase * & cam_intrinsic = frame->getCameraIntrinsics();
 
+  std::cout<<"OMVG: Add observation: landmark id: "<<landmark_id<<" frame: "<<frame_id<<" feat: "<<feat_id_frame<<"\n";
   // Add frame to the problem if its not added yet
   if (map_poses_.find(frame_id) == map_poses_.end())
   {
@@ -196,7 +198,7 @@ bool VSSLAM_BA_SlamPP::addObservationToGlobalSystem(MapLandmark * map_landmark, 
   const size_t landmark_slampp_id = map_landmarks_.find(landmark_id)->second.first;
 
 
-  //std::cout<<"Slam++: Add observation: landmark id: "<<landmark_slampp_id<<" frame: "<<frame_slampp_id<<"\n";
+  std::cout<<"Slam++: Add observation: landmark id: "<<landmark_slampp_id<<" frame: "<<frame_slampp_id<<"\n";
   // Add measurement edge
   Eigen::Matrix2d inf_mat = frame->getFeatureSqrtInfMatrix(feat_id_frame).cwiseProduct(frame->getFeatureSqrtInfMatrix(feat_id_frame));
   problem_->Add_P2CSim3GEdge(landmark_slampp_id,frame_slampp_id,frame->getFeaturePosition(feat_id_frame), inf_mat);

@@ -33,6 +33,7 @@ if (OpenMVG_BUILD_OPENGL_EXAMPLES)
 
 
   add_executable(openMVG_main_VSSLAM main_VSSLAM.cpp CGlWindow.hpp ${SLAMPP_HEADERS})
+  
   target_link_libraries(openMVG_main_VSSLAM
     ${OPENGL_gl_LIBRARY}
     glfw
@@ -46,5 +47,29 @@ if (OpenMVG_BUILD_OPENGL_EXAMPLES)
   endif(OpenMVG_USE_OPENCV)
 
   set_property(TARGET openMVG_main_VSSLAM PROPERTY FOLDER OpenMVG/software)
+
+
+
+FIND_PACKAGE(Sophus REQUIRED)
+include_directories(${Sophus_INCLUDE_DIRS})
+
+add_executable(openMVG_main_VSSLAM_test_sim3 tests/main_VSSLAM_unitTest.cpp ${SLAMPP_HEADERS})
+  
+  target_link_libraries(openMVG_main_VSSLAM_test_sim3
+    ${OPENGL_gl_LIBRARY}
+    glfw
+    ${GLFW_LIBRARIES}
+    ${OpenMVG_LIBRARIES}
+    ${Sophus_LIBRARIES}
+  )
+
+  if(OpenMVG_USE_OPENCV)
+    target_link_libraries(openMVG_main_VSSLAM_test_sim3
+        ${OpenCV_LIBS})
+  endif(OpenMVG_USE_OPENCV)
+
+  set_property(TARGET openMVG_main_VSSLAM_test_sim3 PROPERTY FOLDER OpenMVG/software)
+
+
 
 endif()
