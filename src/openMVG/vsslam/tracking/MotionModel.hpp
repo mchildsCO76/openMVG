@@ -58,7 +58,8 @@ public:
     Vec7 sim3_cur;
     // Add the velocity vector
     sim3_cur = sim3_prev + (velocity_ * time_step);
-    sim3_cur(6) = sim3_prev(6);
+    //sim3_cur(6) = sim3_prev(6);
+    sim3_cur(6) = 0.0f;
     // Back to Sim3
     Mat4 T_cur;
     Sim3_exp(sim3_cur,T_cur);

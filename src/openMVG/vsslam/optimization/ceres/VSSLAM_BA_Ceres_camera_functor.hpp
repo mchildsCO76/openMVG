@@ -109,10 +109,10 @@ struct ResidualErrorFunctor_Pinhole_Intrinsic_Rts
     ceres::AngleAxisRotatePoint(cam_R, pos_3dpoint, pos_proj);
 
     // Apply scale
-    pos_proj[0] *= *cam_s;
+    /*pos_proj[0] *= *cam_s;
     pos_proj[1] *= *cam_s;
     pos_proj[2] *= *cam_s;
-
+*/
     // Apply the camera translation
     pos_proj[0] += cam_t[0];
     pos_proj[1] += cam_t[1];
@@ -214,10 +214,10 @@ struct Chi2ErrorFunctor_Pinhole_Intrinsic_Rts
     ceres::AngleAxisRotatePoint(cam_R, pos_3dpoint, pos_proj);
 
     // Apply scale
-    pos_proj[0] *= *cam_s;
+    /*pos_proj[0] *= *cam_s;
     pos_proj[1] *= *cam_s;
     pos_proj[2] *= *cam_s;
-
+*/
     // Apply the camera translation
     pos_proj[0] += cam_t[0];
     pos_proj[1] += cam_t[1];

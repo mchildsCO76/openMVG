@@ -9,6 +9,7 @@
 #pragma once
 
 #include <memory>
+#include <cstdlib>
 
 #include <openMVG/types.hpp>
 #include <openMVG/numeric/numeric.h>
@@ -48,12 +49,13 @@ public:
     double f_inc_nlsolve_thresh = .005; //nonlinear-solve-error-thresh
     double f_final_nlsolve_thresh = .005; //final-nonlinear-solve-error-thresh
     double f_trust_radius = 0.2;  // trust-radius
-    bool b_trust_radius_persistent = true;
-    double f_update_thresh = 0.0005f;  //dx-threshold  (using update threshold 0, disabling update threshold)
+    bool b_trust_radius_persistent = false;
+    double f_update_thresh = 0.0f;  //dx-threshold  (using update threshold 0, disabling update threshold)
 
     bool b_all_batch = false;
 
     bool b_use_loss_function_;
+
 
     BA_options_SlamPP
     (
@@ -71,6 +73,8 @@ private:
   Hash_Map<IndexT, std::pair<size_t,double *> > map_poses_;
   Hash_Map<IndexT, std::pair<size_t,double *> > map_landmarks_;
   Hash_Map<IndexT, std::vector<IndexT> > map_observations_;
+  //graph file
+  std::ofstream slamPP_GraphFile;
 
   size_t next_vertex_idx_slampp_ = 0;
 
