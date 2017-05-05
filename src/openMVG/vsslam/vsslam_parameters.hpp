@@ -32,7 +32,7 @@ struct VSSLAM_Parameters : public std::enable_shared_from_this<VSSLAM_Parameters
   // ---------------
   size_t init_track_min_matches = 30; // Min number of points needed for initialization of tracking
   float init_track_max_model_thresh_px = 2.0f;
-  float init_track_min_cos_parallax_pt = 0.99998 ; // Min angle between rays for the point to be triangulated (0.99998 ~ 0.36deg; 0.99995 ~ 0.5deg;  0.9998 ~ 1.15deg)
+  float init_track_min_cos_parallax_pt = 0.99995 ; // Min angle between rays for the point to be triangulated (0.99998 ~ 0.36deg; 0.99995 ~ 0.5deg;  0.9998 ~ 1.15deg)
 
 
   // ---------------

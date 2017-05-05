@@ -96,7 +96,7 @@ public:
   void removeOutliersInMatches(Frame * frame, Hash_Map<MapLandmark *,IndexT> & matches_map_frame_idx);
   void removeOutliersInFrame(Frame * frame);
   void removeOutliersInCandidateLandmarks(Frame * frame, NewMapLandmarks & vec_new_landmarks);
-  void associateLandmarksWithFrame(Frame * frame, Hash_Map<MapLandmark *,IndexT> & matches_landmarks_frame);
+  void associateLandmarksWithFrame(Frame * frame, Hash_Map<MapLandmark *,IndexT> & matches_landmarks_frame, size_t associate_type= 0);
 
 };
 

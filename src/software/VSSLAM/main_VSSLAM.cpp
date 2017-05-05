@@ -22,6 +22,7 @@
 #include <openMVG/vsslam/tracking/Tracker_Features.hpp>
 #include <openMVG/vsslam/features/Abstract_Feature_Extractor.hpp>
 #include <openMVG/vsslam/features/Feat_Extractor_SIFT.hpp>
+#include <openMVG/vsslam/features/Feat_Extractor_AKAZE_MLDB.hpp>
 #include <openMVG/vsslam/features/Abstract_Feature_Matcher.hpp>
 #include <openMVG/vsslam/features/Feat_Matcher_CascadeHashing.hpp>
 #include <openMVG/vsslam/features/Feat_Matcher_Regions.hpp>
@@ -142,11 +143,6 @@ int main(int argc, char **argv)
   MAP_OPTIMIZATION_TYPE global_BA_type = MAP_OPTIMIZATION_TYPE::SLAMPP;
   MAP_OPTIMIZATION_TYPE local_BA_type = MAP_OPTIMIZATION_TYPE::CERES;
 
-  if (!slam_system.createCartographer(map_frame_type,map_landmark_type,global_BA_type,local_BA_type ))
-  {
-    std::cerr << "Cannot instantiate the cartographer" << std::endl;
-    return EXIT_FAILURE;
-  }
 
 
   {
@@ -159,13 +155,16 @@ int main(int argc, char **argv)
       case 0:
         ptr_feat_extractor.reset(new Feat_Extractor_SIFT(params_system, features::HIGH_PRESET));
         ptr_feat_matcher.reset(new Feat_Matcher_CascadeHashing(params_system, ptr_feat_extractor.get()));
+        global_BA_type = MAP_OPTIMIZATION_TYPE::SLAMPP;
         display_data.b_enable_display = 0;
 
         break;
       case 1:
+        //ptr_feat_extractor.reset(new Feat_Extractor_AKAZE_MLDB(params_system, features::NORMAL_PRESET));
         ptr_feat_extractor.reset(new Feat_Extractor_SIFT(params_system, features::HIGH_PRESET));
         ptr_feat_matcher.reset(new Feat_Matcher_CascadeHashing(params_system, ptr_feat_extractor.get()));
-        display_data.b_enable_display = 1;
+        global_BA_type = MAP_OPTIMIZATION_TYPE::CERES;
+        display_data.b_enable_display = 0;
         //ptr_feat_matcher.reset(new Feat_Matcher_Regions(params_system, ptr_feat_extractor.get()));
 
         break;
@@ -173,6 +172,13 @@ int main(int argc, char **argv)
         std::cerr << "Unknow tracking method" << std::endl;
         return EXIT_FAILURE;
     }
+
+    if (!slam_system.createCartographer(map_frame_type,map_landmark_type,global_BA_type,local_BA_type ))
+    {
+      std::cerr << "Cannot instantiate the cartographer" << std::endl;
+      return EXIT_FAILURE;
+    }
+
 
     ptr_tracker.reset(new Tracker_Features(params_system));
     if (!ptr_tracker)
@@ -279,7 +285,7 @@ int main(int argc, char **argv)
     if (openMVG::image::ReadImage( sImageFilename.c_str(), &currentImage))
     {
       slam_system.nextFrame(currentImage, id_frame, id_cam,timestamp_frame);
-std::cout<<"ID FRAME: "<<id_frame<<"\n";
+
       if (window._height < 0)
       {
         // no window created yet, initialize it with the first frame
@@ -300,7 +306,6 @@ std::cout<<"ID FRAME: "<<id_frame<<"\n";
       {
         // Display steps
         display_data.displaySteps(window,text2D, currentImage,slam_system.getCurrentFramePtr(),2);
-
         display_data.resetSteps();
       }
       else
@@ -308,6 +313,8 @@ std::cout<<"ID FRAME: "<<id_frame<<"\n";
         display_data.displayImage(window,text2D, currentImage);
         display_data.displayDetectedFeatures(slam_system.getCurrentFramePtr());
         display_data.displayHistoryTracks(slam_system.getCurrentFramePtr());
+        display_data.displayByAssociation(slam_system.getCurrentFramePtr());
+        display_data.displayFrameActivityIndicator(window,slam_system.getCurrentFramePtr());
       }
 
       glFlush();

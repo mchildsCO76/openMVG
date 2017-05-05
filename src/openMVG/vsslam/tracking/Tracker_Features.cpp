@@ -75,6 +75,7 @@ namespace vsslam {
 
     // Flag for marking successful tracking
     bool b_track_OK = false;
+    bool b_use_ref_frame= false;
 
     if (tracking_status_ == TRACKING_STATUS::OK)
     {
@@ -88,13 +89,17 @@ namespace vsslam {
         std::cout<<"Tracker: [Track] Motion Model: "<<b_track_OK<<"\n";
       }
 
+      // Mark
+
       // ----------------
       // -- Reference frame tracking
       // --  - if motion model is not good or available (we are lost)
       // --  - we try to match to last reference frame
       // ----------------
+
       if (!b_track_OK)
       {
+        b_use_ref_frame = true;
         b_track_OK = trackWithReferenceFrame(frame_track_last_reference.get(),track_putative_matches_frame_current);
         std::cout<<"Tracker: [Track] Reference frame: "<<b_track_OK<<"\n";
       }
@@ -111,6 +116,7 @@ namespace vsslam {
       // ----------------
       // -- RELOCALIZATION
       // ----------------
+      track_putative_matches_frame_current.clear();
       // Try to track with with All-All with local map of landmarks from last reference frame
       b_track_OK = trackWithReferenceFrameLocalMap(frame_track_last_reference.get(),track_putative_matches_frame_current);
 
@@ -131,7 +137,7 @@ namespace vsslam {
       return false;
     }
     // Associate matches with frame
-    associateLandmarksWithFrame(frame_track_current.get(),track_putative_matches_frame_current);
+    associateLandmarksWithFrame(frame_track_current.get(),track_putative_matches_frame_current, (b_use_ref_frame ? 3 : 2));
 
     // ----------------
     // -- LOCAL MAP TRACKING
@@ -231,7 +237,7 @@ namespace vsslam {
     const size_t n_matches_current_all =  frame->getNumberOfMapPoints(false);
     std::cout<<"#all: "<<n_matches_current_all<<" #reference: "<<n_matches_reference<<" #c.global: "<<n_matches_current_global<<"\n";
 
-    if (frame_track_last_reference->getFrameId() + 5 < frame_track_current->getFrameId())
+    if (frame_track_last_reference->getFrameId() + 20 < frame_track_current->getFrameId())
     {
       std::cout<<"New frame: No new in last 5 frames\n";
       return true;
@@ -242,9 +248,9 @@ namespace vsslam {
       std::cout<<"New frame: Less than 50 tracked\n";
       return true;
     }
-    if (n_matches_current_all < float(n_matches_reference) * 0.90)
+    if (n_matches_current_all < float(n_matches_reference) * 0.70)
     {
-      std::cout<<"New frame: tracking < 0.95*reference\n";
+      std::cout<<"New frame: tracking < 0.70*reference\n";
       return true;
     }
 
@@ -257,7 +263,7 @@ namespace vsslam {
     std::cout<<"Tracker: [End tracker]\n";
   }
 
-  void Tracker_Features::associateLandmarksWithFrame(Frame * frame, Hash_Map<MapLandmark *,IndexT> & matches_landmarks_frame)
+  void Tracker_Features::associateLandmarksWithFrame(Frame * frame, Hash_Map<MapLandmark *,IndexT> & matches_landmarks_frame, size_t associate_type)
   {
 
     //#ifdef OPENMVG_USE_OPENMP
@@ -270,6 +276,9 @@ namespace vsslam {
 
       frame->setLandmark(it_match->second, it_match->first);
       it_match->first->increaseNumberOfObservations();
+
+      // Set association
+      it_match->first->association_type_ = associate_type;
     }
   }
 
@@ -305,7 +314,7 @@ namespace vsslam {
       const float ratio = baseline / f_scene_median_i;
       std::cout<<"Tracker: [Track] Ratio baseline/scene depth: "<<ratio<< " (baseline: "<<baseline<<")\n";
 
-      if (ratio > 0.01)
+      if (ratio > 0)
       {
         // Estimate Fundamental matrix between two frames
         Mat3 F_local_frame; // p_local' * F * p_frame = 0
@@ -836,7 +845,7 @@ namespace vsslam {
       return false;
     }
     // Mark new inliers in the frame
-    associateLandmarksWithFrame(frame_track_current.get(),map_putative_matches_map_frame_idx);
+    associateLandmarksWithFrame(frame_track_current.get(),map_putative_matches_map_frame_idx,5);
 
     n_matches = map_putative_matches_map_frame_idx.size();
 
