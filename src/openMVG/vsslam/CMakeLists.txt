@@ -42,7 +42,6 @@ target_link_libraries(
   openMVG_multiview
   stlplus
   ${CERES_LIBRARIES}
-  glog
   openMVG_lInftyComputerVision
   openMVG_system
   openMVG_matching
@@ -53,6 +52,13 @@ target_link_libraries(
   ${SLAMPP_CXSPARSE_LIBRARY}
   ${SLAMPP_CHOLMOD_LIBRARY}
 )
+MESSAGE(STATUS "MINIGLOG = ${MINIGLOG}")
+IF(NOT MINIGLOG)
+	target_link_libraries(
+	  openMVG_vsslam
+	  glog
+	)
+ENDIF(NOT MINIGLOG)
 
 set_target_properties(openMVG_vsslam PROPERTIES SOVERSION ${OPENMVG_VERSION_MAJOR} VERSION "${OPENMVG_VERSION_MAJOR}.${OPENMVG_VERSION_MINOR}")
 
