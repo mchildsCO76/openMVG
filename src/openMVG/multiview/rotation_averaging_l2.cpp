@@ -15,6 +15,11 @@
 #pragma warning( once : 4267 ) //warning C4267: 'argument' : conversion from 'size_t' to 'const int', possible loss of data
 #endif
 
+#ifdef OPENMVG_USE_OPENMP
+#include <omp.h>
+#endif
+// swine - otherwise causes trouble
+
 //--
 //-- Implementation related to rotation averaging.
 // . Compute global rotation from a list of relative estimates.
