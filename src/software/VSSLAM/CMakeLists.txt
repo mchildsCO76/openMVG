@@ -1,6 +1,7 @@
 
 include_directories("${PROJECT_SOURCE_DIR}/third_party/ceres-solver/include")
 include_directories("${PROJECT_SOURCE_DIR}/third_party/ceres-solver/config") # !!
+include_directories("${PROJECT_SOURCE_DIR}/third_party/ceres-solver/internal/ceres/miniglog") # !!
 # swine
 
 if (OpenMVG_BUILD_OPENGL_EXAMPLES)
@@ -81,7 +82,7 @@ add_executable(openMVG_main_VSSLAM_test_sim3 tests/main_VSSLAM_unitTest.cpp ${SL
 
 else() # swine
 
-	ADD_DEFINITIONS(SWINE_NOGL)
+	ADD_DEFINITIONS(-DSWINE_NOGL)
 	# no opengl
 
   # - VSSLAM (WIP)

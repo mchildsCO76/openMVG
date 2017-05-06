@@ -10,10 +10,11 @@ MESSAGE( STATUS "ceres: ${PROJECT_SOURCE_DIR}/third_party/ceres-solver/include" 
 
 include_directories("${PROJECT_SOURCE_DIR}/third_party/ceres-solver/include")
 include_directories("${PROJECT_SOURCE_DIR}/third_party/ceres-solver/config") # !!
+include_directories("${PROJECT_SOURCE_DIR}/third_party/ceres-solver/internal/ceres/miniglog") # !!
 # swine
 
 IF(NOT OpenMVG_BUILD_OPENGL_EXAMPLES)
-	ADD_DEFINITIONS(SWINE_NOGL)
+	ADD_DEFINITIONS(-DSWINE_NOGL)
 ENDIF(NOT OpenMVG_BUILD_OPENGL_EXAMPLES)
 # swine
 
