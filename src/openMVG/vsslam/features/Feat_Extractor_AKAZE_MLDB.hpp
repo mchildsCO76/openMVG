@@ -9,19 +9,19 @@
 #pragma once
 
 #include <openMVG/types.hpp>
-#include "nonFree/sift/SIFT_describer.hpp"
+#include "openMVG/features/image_describer_akaze.hpp"
 #include <openMVG/vsslam/features/Abstract_Feature_Extractor.hpp>
 
 namespace openMVG {
 namespace vsslam {
 
-class Feat_Extractor_SIFT : public Abstract_Feature_Extractor
+class Feat_Extractor_AKAZE_MLDB : public Abstract_Feature_Extractor
 {
 private:
-  using RegionT = features::SIFT_Regions;
+  using RegionT = features::AKAZE_Binary_Regions;
   std::unique_ptr<features::Image_describer> image_describer;
 public:
-  Feat_Extractor_SIFT
+  Feat_Extractor_AKAZE_MLDB
   (
     std::shared_ptr<VSSLAM_Parameters> & params,
     features::EDESCRIBER_PRESET preset = features::NORMAL_PRESET
@@ -33,11 +33,8 @@ public:
     f_max_desc_dist_low_ = 150;
 
     // Initialize detector/descriptor
-    image_describer.reset(new features::SIFT_Image_describer
-      (features::SIFT_Image_describer::Params(), false));
-
-    //image_describer.reset(
-    //  new features::SIFT_Anatomy_Image_describer(features::SIFT_Anatomy_Image_describer::Params()));
+    image_describer.reset(new features::AKAZE_Image_describer
+      (features::AKAZE_Image_describer::Params(features::AKAZE::Params(), features::AKAZE_MLDB), false));
     image_describer->Set_configuration_preset(preset);
   }
 
@@ -65,13 +62,13 @@ public:
     const size_t n_features = regions_frame->RegionCount();
 
     // Prepare the size of vectors
-    std::vector<Eigen::Matrix<double, 2, 2, Eigen::DontAlign> > & vec_feat_inf = frame->getFeatureSqrtInfMatrixVector();
+    std::vector<Eigen::Matrix2d> & vec_feat_inf = frame->getFeatureSqrtInfMatrixVector();
     std::vector<float> & vec_feat_scale = frame->getFeatureScaleVector();
     vec_feat_inf.resize(n_features);
     vec_feat_scale.resize(n_features);
 
     // Estimate the uncertainty of each measurement
-    const double d_sigma_inv_px = 1.0f / 1.0f;  // assume 4px sigma error
+    const double d_sigma_inv_px = 1.0f / 4.0f;  // assume 4px sigma error
     std::vector<RegionT::FeatureT> vec_features = dynamic_cast<RegionT *>(regions_frame.get())->Features();
     for (size_t i = 0; i < vec_features.size(); i++)
     {

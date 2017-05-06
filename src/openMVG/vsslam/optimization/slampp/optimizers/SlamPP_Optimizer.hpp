@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <map>
 
+#include <omp.h>
 #include "slam/Sim3SolverBase.h" // C3DJacobians, CBAJacobians, generally useful functions for BA and SE(3), does not need to be included
 #include "slam/Eigenvalues.h"
 

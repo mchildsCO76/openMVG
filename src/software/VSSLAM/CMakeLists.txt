@@ -65,6 +65,11 @@ add_executable(openMVG_main_VSSLAM_test_sim3 tests/main_VSSLAM_unitTest.cpp ${SL
     ${GLFW_LIBRARIES}
     ${OpenMVG_LIBRARIES}
     ${Sophus_LIBRARIES}
+  ${SLAMPP_BASE_LIBRARY}
+  ${SLAMPP_CAMD_LIBRARY}
+  ${SLAMPP_CSPARSE_LIBRARY}
+  ${SLAMPP_CXSPARSE_LIBRARY}
+  ${SLAMPP_CHOLMOD_LIBRARY}
   )
 
   if(OpenMVG_USE_OPENCV)

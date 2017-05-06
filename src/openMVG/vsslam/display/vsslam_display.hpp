@@ -290,6 +290,75 @@ struct VSSLAM_Display
   }
 
 
+  void displayFrameActivityIndicator(CGlWindow & window, Frame * frame)
+  {
+    std::cout<<"Activity frame: "<<frame->getFrameId()<<":: "<<frame->isActive()<<"\n";
+
+    // Green circle if active and red if inactive
+    if (frame->isActive())
+    {
+      glColor3f(0.0,1.0,0.0);
+    }
+    else
+    {
+      glColor3f(1.0,0.0,0.0);
+    }
+
+    // Draw point
+    glBegin(GL_POINTS);
+    glPointSize(20.0f);
+    glVertex2f(window._width-30,30);
+    std::cout<<"WW: "<<window._width<<" :: "<<window._height<<"\n";
+    glEnd();
+  }
+
+
+  void displayByAssociation(Frame * frame)
+  {
+    glPointSize(4.0f);
+    std::cout<<"Association tracks: "<<frame->getFrameId()<<":: "<<frame->isActive()<<"\n";
+    for (IndexT feat_i = 0; feat_i<frame->getNumberOfFeatures(); ++feat_i)
+    {
+      MapLandmark * map_landmark = frame->getLandmark(feat_i);
+      if (!map_landmark)
+        continue;
+
+
+      Vec3 pt_color;
+      // check if frame is in global frame
+      switch (map_landmark->association_type_)
+      {
+      case 0: // Unknown - white
+        pt_color = Vec3(0.0,0.0,0.0);
+        break;
+      case 1: // Initialization - red
+        pt_color = Vec3(1.0,0.0,0.0);
+        break;
+      case 2: // Motion - green
+        pt_color = Vec3(0.0,0.6,0.0);
+        break;
+      case 3: // Reference - yellow
+        pt_color = Vec3(1.0,1.0,0.0);
+        break;
+      case 5: // Local Map - violet
+        pt_color = Vec3(0.5,0.0,1.0);
+        break;
+      case 6: // New triangulations - 3 or more observations -  blue
+        if (map_landmark->isActive())
+          pt_color = Vec3(0.0,0.0,1.0);
+        else  // New triangulations - 2 observations - red
+          pt_color = Vec3(1.0,0.0,0.0);
+        break;
+      }
+      // Draw point
+      glColor3f(pt_color(0),pt_color(1),pt_color(2));
+      glBegin(GL_POINTS);
+      Vec2 pt = frame->getFeaturePosition(feat_i);
+      glVertex2f(pt(0),pt(1));
+      glEnd();
+    }
+  }
+
   void displayHistoryTracks(Frame * frame)
   {
     std::cout<<"History tracks: "<<frame->getFrameId()<<":: "<<frame->isActive()<<"\n";

@@ -1,13 +1,11 @@
 #pragma once
 
 /*
- * SlamPP_Optimizer_Sim3_gXYZ_gXYZ - Global cameras and global XYZ landmarks
+ * SlamPP_Optimizer_SE3_gXYZ_gXYZ - Global cameras and global XYZ landmarks
  */
 
 #include <map>
 
-
-//#include <openMVG/vsslam/optimization/slampp_optimizers/CBAOptimizerCore_Sim3_gXYZ_gXYZ.app>
 #include <openMVG/vsslam/optimization/slampp/optimizers/SlamPP_Optimizer.hpp>
 
 

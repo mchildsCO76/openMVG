@@ -15,6 +15,8 @@
 
 #include <sophus/sim3.hpp>
 
+#include "slam/3DSolverBase.h" // want C3DJacobians::Quat_to_AxisAngle() and C3DJacobians::AxisAngle_to_Quat()
+#include "slam/Sim3SolverBase.h"
 namespace openMVG {
 namespace vsslam {
   using Vec7 = Eigen::Matrix<double, 7, 1>;
@@ -204,7 +206,25 @@ namespace vsslam {
     Vec3 t = T.block(0,3,3,1);
     Sim3_log(R,t,s,v_log);*/
 
-    v_log = Sophus::Sim3d(T).log();
+    // Sophus
+    //v_log = Sophus::Sim3d(T).log();
+
+    // Slam++
+    Eigen::Vector7d v_tRs;
+    v_tRs.head<3>() = T.topRightCorner<3, 1>(); // translation
+    v_tRs(6) = T.topLeftCorner<3, 3>().norm() / sqrt(3.0); // scale
+
+    Eigen::Vector3d v_temp;
+    C3DJacobians::Quat_to_AxisAngle(Eigen::Quaterniond(T.topLeftCorner<3, 3>() / v_tRs(6)).normalized(),
+           v_temp); // rotation
+     v_tRs.segment<3>(3) = v_temp;
+
+
+    CSim3Jacobians::TSim3 t_sim3(v_tRs, CSim3Jacobians::TSim3::from_tRs_vector);
+
+    v_log = t_sim3.v_Log();
+
+
   }
 
   // Adjusted from Sophus exp (sim3.hpp line 280)
@@ -296,7 +316,16 @@ namespace vsslam {
     T.block(0,0,3,3) = s * R;
     T.block(0,3,3,1) = t;
     */
-    T = Sophus::Sim3d::exp(v_log).matrix();
+
+    // Sophus
+    //T = Sophus::Sim3d::exp(v_log).matrix();
+
+    // Slam++
+    CSim3Jacobians::TSim3 t_sim3(v_log, CSim3Jacobians::TSim3::from_sim3_vector);
+
+    T = Mat4::Identity();
+    T.block(0,0,3,3) = t_sim3.f_scale * t_sim3.t_rotation.toRotationMatrix();
+    T.block(0,3,3,1) = t_sim3.v_translation;
   }
 
 }

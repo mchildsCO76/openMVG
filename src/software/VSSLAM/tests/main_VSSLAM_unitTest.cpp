@@ -12,6 +12,9 @@
 #include <openMVG/types.hpp>
 #include <openMVG/vsslam/optimization/Sim3.hpp>
 
+#include "slam/3DSolverBase.h" // want C3DJacobians::Quat_to_AxisAngle() and C3DJacobians::AxisAngle_to_Quat()
+#include "slam/Sim3SolverBase.h"
+
 using namespace openMVG;
 using namespace openMVG::vsslam;
 
@@ -73,12 +76,13 @@ int main(int argc, char **argv)
   double s_A = 1.0;
   Mat3 R_A = Mat3::Identity();
   Vec3 t_A = Vec3(5.0,1.0,5.0);
-  T_A_gt = Mat4::Identity();
+  /*T_A_gt = Mat4::Identity();
   T_A_gt.block(0,0,3,3) = s_A*R_A;
-  T_A_gt.block(0,3,3,1) = t_A;
+  T_A_gt.block(0,3,3,1) = t_A;*/
+  T_A_gt << 0.6928, 0.0, 0.4, 2.0,  0.0, 0.8, 0.0, 2.0, -0.4, 0.0, 0.6928, 2.0, 0.0,0.0,0.0, 1.0;
   Vec7 v_A_gt;
-  v_A_gt << 5.0,1.0,5.0,0.0,0.0,0.0,0.0;
-
+  //v_A_gt << 5.0,1.0,5.0,0.0,0.0,0.0,0.0;
+  v_A_gt << 2.4777, 2.0, 1.4305, 0.0, 0.5236, 0.0, -0.2231;
 
   //std::cout<<"AAA: "<<Sophus::Sim3d::exp(v_A_gt).matrix()<<"\n";
   //std::cout<<"BBB: "<<Sophus::Sim3d(T_A_gt).log()<<"\n";
@@ -98,6 +102,53 @@ int main(int argc, char **argv)
     std::cout<<"Test A: SUCCESSFUL\n";
   else
     std::cout<<"Test A: FAILED\n";
+
+  /*
+  // SLAM++
+  Eigen::Quaternionf q_rot(T_A_gt.block(0,0,3,3));
+  double q_scale = q_rot.norm();
+  q_rot.normalize();
+  double T_scale = T_A_gt.block(0,0,3,1).norm();
+  Vec3 T_translation = T_A_gt.block(0,3,3,1);
+
+  std::cout<<"Scale A: "<<q_scale<<" :: "<<T_scale<<"\n";
+
+  CSim3Jacobians::TSim3 pose (T_translation, q_rot, T_scale);// = CSim3Jacobians::t_Exp(vertex); // not Sim3 yet
+*/
+  Eigen::Matrix4d T;
+  T << 0.6928, 0, 0.4000, 2.0000,
+      0, 0.8000, 0, 2.0000,
+      -0.4000, 0, 0.6928, 2.0000,
+      0, 0, 0, 1.0000;
+
+  Eigen::Vector7d v_tRs;
+  v_tRs.head<3>() = T.topRightCorner<3, 1>(); // translation
+  v_tRs(6) = T.topLeftCorner<3, 3>().norm() / sqrt(3.0); // scale
+
+  Eigen::Vector3d v_temp;
+  C3DJacobians::Quat_to_AxisAngle(Eigen::Quaterniond(T.topLeftCorner<3, 3>() / v_tRs(6)).normalized(),
+         v_temp); // rotation
+   v_tRs.segment<3>(3) = v_temp;
+
+
+  std::cout << "T =" << std::endl << T << std::endl << std::endl;
+  std::cout << "v_tRs =" << std::endl << v_tRs << std::endl << std::endl;
+
+  CSim3Jacobians::TSim3 t_sim3(v_tRs, CSim3Jacobians::TSim3::from_tRs_vector);
+
+  Eigen::Vector7d v_log = t_sim3.v_Log();
+
+  std::cout << "v_log =" << std::endl << v_log << std::endl;
+
+  CSim3Jacobians::TSim3 t_sim3B(v_log, CSim3Jacobians::TSim3::from_sim3_vector);
+
+  Mat4 T2 = Mat4::Identity();
+  T2.block(0,0,3,3) = t_sim3B.f_scale * t_sim3B.t_rotation.toRotationMatrix();
+  T2.block(0,3,3,1) = t_sim3B.v_translation;
+
+
+
+  std::cout << "T2 =" << std::endl << T2 << std::endl << std::endl;
 
   /////////////////////////////
   // Dataset 2 - rotation (eul2rotm([0.8,0.2,0.3]))
