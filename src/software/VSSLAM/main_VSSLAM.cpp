@@ -28,8 +28,9 @@
 
 #include <openMVG/vsslam/mapping/Cartographer.hpp>
 
-
-#include "software/VSSLAM/CGlWindow.hpp"
+#ifndef SWINE_NOGL
+#include "software/VSSLAM/CGlWindow.hpp"  // swine
+#endif // !SWINE_NOGL
 
 using namespace openMVG;
 using namespace openMVG::cameras;
@@ -253,6 +254,8 @@ int main(int argc, char **argv)
     return EXIT_FAILURE;
   }
 
+#ifndef SWINE_NOGL
+
   // ----------------------------------
   // Graphics
   // ----------------------------------
@@ -263,6 +266,7 @@ int main(int argc, char **argv)
 
   CGlWindow window;
   GLuint text2D;
+#endif // !SWINE_NOGL
 
   // ----------------------------------
   // Frame-by-Frame processing
@@ -280,6 +284,8 @@ int main(int argc, char **argv)
     {
       slam_system.nextFrame(currentImage, id_frame, id_cam,timestamp_frame);
 std::cout<<"ID FRAME: "<<id_frame<<"\n";
+
+#ifndef SWINE_NOGL
       if (window._height < 0)
       {
         // no window created yet, initialize it with the first frame
@@ -312,6 +318,7 @@ std::cout<<"ID FRAME: "<<id_frame<<"\n";
 
       glFlush();
       window.Swap(); // Swap openGL buffer
+#endif // !SWINE_NOGL
       std::cout<<"Press ENTER to continue....."<<std::endl<<std::endl;
       //std::cin.ignore(1);
     }

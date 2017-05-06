@@ -12,7 +12,9 @@
 
 #include <openMVG/types.hpp>
 #include "openMVG/stl/split.hpp"
-#include "openMVG/image/image.hpp"
+//#include "openMVG/image/image.hpp" // swine
+#include "openMVG/image/image_container.hpp" // swine
+#include "openMVG/image/image_io.hpp" // swine
 #include <openMVG/cameras/cameras.hpp>
 
 namespace openMVG {

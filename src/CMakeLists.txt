@@ -14,6 +14,10 @@ if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
   message(FATAL_ERROR "In-source builds not allowed.")
 endif()
 
+SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fpermissive")
+SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fpermissive")
+# if using OpenMP, akaze breaks (you forgot to include omp.h, you boobs)
+
 # ==============================================================================
 # OpenMVG build options
 # ==============================================================================
@@ -158,7 +162,7 @@ if (OpenMVG_USE_OPENMP)
   endif (OPENMP_FOUND)
 else (OpenMVG_USE_OPENMP)
     option(OpenMVG_USE_OPENMP "Use OpenMP for parallelization" OFF)
-    UPDATE_CACHE_VARIABLE(OpenMVG_USE_OPENMP OFF)
+    #UPDATE_CACHE_VARIABLE(OpenMVG_USE_OPENMP OFF) # swine - this causes issues
     remove_definitions(-DOPENMVG_USE_OPENMP)
 endif (OpenMVG_USE_OPENMP)
 
@@ -270,17 +274,34 @@ endif()
 # ==============================================================================
 # SlamPP
 # ==============================================================================
-# - internal by default (ceres-solver+cxsparse+miniglog),
-# - external if CERES_DIR_HINTS and find_package return a valid Ceres setup
-# ==============================================================================
+IF(UNIX AND NOT APPLE)
+	SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lrt") # precise timers
+ENDIF(UNIX AND NOT APPLE)
+IF(UNIX)
+	IF(CMAKE_BUILD_TYPE STREQUAL "Debug")
+		ADD_DEFINITIONS(-D_DEBUG)
+		SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -ggdb")
+		SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -ggdb")
+	ELSE(CMAKE_BUILD_TYPE STREQUAL "Debug")
+		ADD_DEFINITIONS(-DNDEBUG)
+	ENDIF(CMAKE_BUILD_TYPE STREQUAL "Debug")
+ENDIF(UNIX)
+
+ADD_DEFINITIONS(-DEIGEN_DONT_PARALLELIZE) # dont want Eigen to parallelize small block opts
+ADD_DEFINITIONS(-DEIGEN_UNALIGNED_VECTORIZE=0) # this must match the SLAM++ setting
+ADD_DEFINITIONS(-D__DISABLE_GPU) # this must match the SLAM++ setting
+
+SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -msse4 -mavx -march=native") # this must match the SLAM++ setting
+SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -msse4 -mavx -march=native") # this must match the SLAM++ setting
+SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -msse4 -mavx -march=native") # this must match the SLAM++ setting
+SET(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -msse4 -mavx -march=native") # this must match the SLAM++ setting
+
 set(SLAMPP_SOURCE_DIR "/home/klemen/workspace/ANU/SlamPP_Dev/slam-plus-plus-dev_code/trunk/SLAM_plus_plus")
 set(SLAMPP_INCLUDE_DIR ${SLAMPP_SOURCE_DIR}/include ${SLAMPP_SOURCE_DIR}/include/cholmod/SuiteSparse ${SLAMPP_SOURCE_DIR}/include/eigen33)
 
 include_directories(${SLAMPP_INCLUDE_DIR})
 
 #file(GLOB_RECURSE SLAMPP_HEADERS ${SLAMPP_SOURCE_DIR}/include/slam/*.h)
-
-
 
 # ==============================================================================
 # Flann

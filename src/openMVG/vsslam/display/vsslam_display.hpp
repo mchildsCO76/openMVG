@@ -19,7 +19,9 @@
 #include <openMVG/vsslam/mapping/MapLandmark.hpp>
 #include <openMVG/vsslam/optimization/PoseEstimator.hpp>
 
-#include "software/VSSLAM/CGlWindow.hpp"
+#ifndef SWINE_NOGL
+#include "software/VSSLAM/CGlWindow.hpp" // swine
+#endif // !SWINE_NOGL
 
 namespace openMVG {
 namespace vsslam {
@@ -44,6 +46,7 @@ struct VSSLAM_Display
 
   void DrawCircle(float cx, float cy, float r)
   {
+#ifndef SWINE_NOGL
       int num_segments = 20;
       glBegin(GL_LINE_LOOP);
       for(int ii = 0; ii < num_segments; ii++)
@@ -56,7 +59,8 @@ struct VSSLAM_Display
           glVertex2f(x + cx, y + cy);//output vertex
 
       }
-      glEnd();
+      glEnd(); // swine
+#endif // !SWINE_NOGL
   }
 
   void finishDisplayBundle()
@@ -249,7 +253,7 @@ struct VSSLAM_Display
     n_steps_in_bundle++;
   }
 
-
+#ifndef SWINE_NOGL
   void displayImage(CGlWindow & window, GLuint & text2D,
       image::Image<unsigned char> &currentImage)
   {
@@ -453,6 +457,7 @@ struct VSSLAM_Display
 
 
   }
+#endif // !SWINE_NOGL
 
   void resetSteps()
   {
