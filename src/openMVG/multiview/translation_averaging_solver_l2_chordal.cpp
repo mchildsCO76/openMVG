@@ -40,6 +40,11 @@
 
 #include <ctime>
 
+#ifdef OPENMVG_USE_OPENMP
+#include <omp.h>
+#endif
+// swine - otherwise causes trouble
+
 namespace openMVG {
 
 using ceres::AutoDiffCostFunction;

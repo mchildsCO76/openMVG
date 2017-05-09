@@ -16,6 +16,11 @@
 
 #include <flann/flann.hpp>
 
+#ifdef OPENMVG_USE_OPENMP
+#include <omp.h>
+#endif
+// swine - otherwise causes trouble
+
 namespace openMVG {
 namespace matching  {
 

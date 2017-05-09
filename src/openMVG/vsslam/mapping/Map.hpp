@@ -11,6 +11,8 @@
 #include <memory>
 
 #include <openMVG/types.hpp>
+#include "openMVG/stl/split.hpp"
+//#include "openMVG/image/image.hpp" // swine
 #include <openMVG/cameras/cameras.hpp>
 
 

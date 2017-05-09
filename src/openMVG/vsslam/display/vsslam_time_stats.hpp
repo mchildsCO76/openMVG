@@ -15,7 +15,9 @@
 #include <openMVG/vsslam/system/Frame.hpp>
 #include "openMVG/matching/indMatchDecoratorXY.hpp"
 
-#include "software/VSSLAM/CGlWindow.hpp"
+#ifndef SWINE_NOGL
+#include "software/VSSLAM/CGlWindow.hpp" // swine
+#endif // !SWINE_NOGL
 
 namespace openMVG {
 namespace vsslam {

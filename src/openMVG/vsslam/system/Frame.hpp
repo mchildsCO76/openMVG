@@ -23,18 +23,25 @@ namespace vsslam {
 
 class Frame: public std::enable_shared_from_this<Frame>
 {
+public:
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW // swine - for some reason does not work with std::shared_ptr :(
+
 private:
   IndexT id_;
   double d_timestamp_;
   bool b_active_; // Flag if frame is in the global map
   Camera * ptr_cam_;  // Pointer to camera object
 
+	typedef Eigen::Matrix<double, 4, 4, Eigen::DontAlign>  Mat4U;
+	typedef Eigen::Matrix<double, 3, 3, Eigen::DontAlign>  Mat3U;
+	typedef Eigen::Matrix<double, 3, 4, Eigen::DontAlign>  Mat34U; // swine - a quick hack but works
+
   // Pose
-  Mat4 T_;
-  Mat4 T_inv_;
-  Mat3 R_;
-  Mat3 R_inv_;
-  Mat34 P_; // Projection matrix (world -> camera) .. associated with T_inv_
+  Mat4U T_;
+  Mat4U T_inv_;
+  Mat3U R_;
+  Mat3U R_inv_;
+  Mat34U P_; // Projection matrix (world -> camera) .. associated with T_inv_
   Vec3 origin_;
   Frame * frame_reference_ = nullptr; // owner frame of current frame (nullptr -> global)
 
@@ -46,7 +53,7 @@ private:
   std::unique_ptr<features::Regions> regions_;
 
   std::vector<Vec2> vec_pts_undist_;  // Vector of undistorted positions of keypoints
-  std::vector<Eigen::Matrix2d> vec_pts_sqrt_inf_mat_;  // Vector of information matrix for each keypoint
+  std::vector<Eigen::Matrix<double, 2, 2, Eigen::DontAlign> > vec_pts_sqrt_inf_mat_;  // Vector of information matrix for each keypoint
   std::vector<float> vec_pts_scale_;
 
   // Landmarks
@@ -161,11 +168,11 @@ public:
   {
     return vec_pts_scale_;
   }
-  std::vector<Eigen::Matrix2d> & getFeatureSqrtInfMatrixVector()
+  std::vector<Eigen::Matrix<double, 2, 2, Eigen::DontAlign> > & getFeatureSqrtInfMatrixVector()
   {
     return vec_pts_sqrt_inf_mat_;
   }
-  const std::vector<Eigen::Matrix2d> & getFeatureSqrtInfMatrixVector() const
+  const std::vector<Eigen::Matrix<double, 2, 2, Eigen::DontAlign> > & getFeatureSqrtInfMatrixVector() const
   {
     return vec_pts_sqrt_inf_mat_;
   }
@@ -203,12 +210,12 @@ public:
     return vec_pts_scale_[i];
   }
 
-  const Eigen::Matrix2d & getFeatureSqrtInfMatrix(const size_t & i) const
+  const Eigen::Matrix<double, 2, 2, Eigen::DontAlign> & getFeatureSqrtInfMatrix(const size_t & i) const
   {
     return vec_pts_sqrt_inf_mat_[i];
   }
 
-  Eigen::Matrix2d & getFeatureSqrtInfMatrix(const size_t & i)
+  Eigen::Matrix<double, 2, 2, Eigen::DontAlign> & getFeatureSqrtInfMatrix(const size_t & i)
   {
     return vec_pts_sqrt_inf_mat_[i];
   }
@@ -272,20 +279,20 @@ public:
   const Vec3 getCameraCenter() const;
 
 
-  const Mat4 & getTransformationMatrix() const
+  const Mat4U & getTransformationMatrix() const
   {
     return T_;
   }
-  const Mat4 & getTransformationMatrixInverse() const
+  const Mat4U & getTransformationMatrixInverse() const
   {
     return T_inv_;
   }
 
-  const Mat3 & getRotationMatrix() const
+  const Mat3U & getRotationMatrix() const
   {
     return R_;
   }
-  const Mat3 & getRotationMatrixInverse() const
+  const Mat3U & getRotationMatrixInverse() const
   {
     return R_inv_;
   }
