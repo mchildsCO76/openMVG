@@ -18,6 +18,60 @@ namespace vsslam {
   {
     std::cout<<"VSSLAM: [System] Created new object\n";
     params_ = params->share_ptr();
+
+
+    if (time_data.b_export_stats_file)
+    {
+      time_data.stats_file.open(time_data.s_stats_file_path.c_str(),std::ios::out );
+      time_data.stats_file << "frame_id;"
+          <<" keyframe;"
+          <<" keyframe_reason;"
+          <<" track_total;"
+          <<" track_detect;"
+          <<" track_track;"
+
+          <<" track_mm;"
+          <<" track_mm_poseBA;"
+          <<" track_rf;"
+          <<" track_rf_poseBA;"
+          <<" track_rm;"
+          <<" track_rm_poseBA;"
+          <<" track_lm;"
+          <<" track_lm_poseBA;"
+
+          <<" track_new_pts;"
+          <<" track_new_pts_localBA;"
+          <<" track_global_BA;"
+
+          <<" matches_mm;"
+          <<" matches_mm_outliers;"
+          <<" matches_rf;"
+          <<" matches_rf_outliers;"
+          <<" matches_rm;"
+          <<" matches_lm;"
+
+          <<" map_global_frames;"
+          <<" map_global_landmarks;"
+          <<" map_local_landmarks;"
+
+          <<" map_added_global_landmarks;"
+          <<" map_added_local_landmarks;"
+          <<" map_added_local_to_global_landmarks;"
+          <<" map_removed_local_landmarks_outliers;"
+          <<" map_removed_local_landmarks_inactive;"
+          <<"\n";
+      time_data.stats_file.flush();
+
+    }
+
+  }
+  SLAM_System::~SLAM_System()
+  {
+
+    if (time_data.b_export_stats_file)
+    {
+      time_data.stats_file.close();
+    }
   }
   void SLAM_System::setTracker(std::unique_ptr<Abstract_Tracker> & tracker)
   {
@@ -198,18 +252,137 @@ namespace vsslam {
   {
     std::cout<<"VSSLAM [System] Frame "<<id_frame<<" of camera: "<< id_cam<<" at time: "<<time_frame<<"\n";
 
+    if (time_data.b_enable_time_stats || time_data.b_enable_features_stats)
+    {
+      time_data.restartData();
+      time_data.frame_id = id_frame;
+    }
+
     // Create frame
     Camera * ptr_cam = map_cameras_[id_cam].get();
     frame_current_ = std::make_shared<Frame>(id_frame, time_frame, ptr_cam);
 
+
+    // Time statistics
+    time_data.startTimer(time_data.d_track_track);
+
     // Track frame
     tracker_->track(ima,frame_current_,ptr_cam->getMaskImagePtr());
+
+    cartographer_->setMapStats(time_data);
+
+    // Time statistics
+    time_data.stopTimer(time_data.d_track_track);
 
     // Show tracking status
     tracker_->printTrackingStatus();
 
+    if (time_data.b_enable_time_stats || time_data.b_enable_features_stats)
+    {
+      exportStatistics(time_data);
+      printStatistics(time_data);
+    }
   }
 
+  void SLAM_System::exportStatistics(VSSLAM_Time_Stats & stats)
+  {
+    if (time_data.b_export_stats_file)
+    {
+      time_data.stats_file
+         << stats.frame_id<<"; "
+         << stats.b_keyframe << "; "
+         << stats.keyframe_reason << "; "
+
+         << stats.d_track_track << "; "
+         << stats.d_feat_detection << "; "
+         << stats.d_feat_tracking << "; "
+
+         << stats.d_feat_tracking_mm << "; "
+         << stats.d_feat_pose_opt_mm << "; "
+         << stats.d_feat_tracking_rf << "; "
+         << stats.d_feat_pose_opt_rf << "; "
+         << stats.d_feat_tracking_rm << "; "
+         << stats.d_feat_pose_opt_rm << "; "
+         << stats.d_feat_tracking_lm << "; "
+         << stats.d_feat_pose_opt_lm << "; "
+
+         << stats.d_feat_new_pts << "; "
+         << stats.d_feat_pose_local << "; "
+         << stats.d_feat_add_to_global << "; "
+
+         << stats.i_matches_mm << "; "
+         << stats.i_matches_mm_outliers << "; "
+         << stats.i_matches_rf << "; "
+         << stats.i_matches_rf_outliers << "; "
+         << stats.i_matches_rm << "; "
+         << stats.i_matches_lm << "; "
+
+         << stats.global_frames << "; "
+         << stats.global_landmarks << "; "
+         << stats.local_landmarks << "; "
+
+         << stats.added_global_landmarks << "; "
+         << stats.added_local_landmarks << "; "
+         << stats.added_local_to_global_landmarks << "; "
+         << stats.removed_local_landmarks_outliers << "; "
+         << stats.removed_local_landmarks_inactive << "; "
+
+         <<"\n";
+     time_data.stats_file.flush();
+
+    }
+  }
+
+
+  void SLAM_System::printStatistics(VSSLAM_Time_Stats & stats)
+  {
+    std::cout<<"---------------------------\n"
+        <<"----------STATS-------------\n"
+        <<"---------------------------\n";
+    std::cout<<"Frame ID: "<<stats.frame_id<<"\n"
+        <<"Keyframe: "<<stats.b_keyframe<<"\n"
+        <<"Keyframe reason: "<<stats.keyframe_reason<<"\n"
+
+
+        <<"--------Times-----------\n"
+        <<"Tracking Total: "<<stats.d_track_track<<"\n"
+        <<"Detection: "<<stats.d_feat_detection<<"\n"
+        <<"Tracking: "<<stats.d_feat_tracking<<"\n"
+        <<"Tracking MM: "<<stats.d_feat_tracking_mm<<"\n"
+        <<"Pose MM: "<<stats.d_feat_pose_opt_mm<<"\n"
+
+        <<"Tracking RF: "<<stats.d_feat_tracking_rf<<"\n"
+        <<"Pose RF: "<<stats.d_feat_pose_opt_rf<<"\n"
+        <<"Tracking RM: "<<stats.d_feat_tracking_rm<<"\n"
+        <<"Pose RM: "<<stats.d_feat_pose_opt_rm<<"\n"
+        <<"Tracking LM: "<<stats.d_feat_tracking_lm<<"\n"
+        <<"Pose LM: "<<stats.d_feat_pose_opt_lm<<"\n"
+        <<"Tracking N_PTS: "<<stats.d_feat_new_pts<<"\n"
+        <<"Pose Local: "<<stats.d_feat_pose_local<<"\n"
+        <<"Global BA: "<<stats.d_feat_add_to_global<<"\n"
+
+        <<"--------Features-----------\n"
+        <<"Matches MM / Outliers: "<<stats.i_matches_mm<<"/"<<stats.i_matches_mm_outliers<<"\n"
+        <<"Matches RF / Outliers: "<<stats.i_matches_rf<<"/"<<stats.i_matches_rf_outliers<<"\n"
+        <<"Matches RM: "<<stats.i_matches_rm<<"\n"
+        <<"Matches LM: "<<stats.i_matches_lm<<"\n"
+
+        <<"--------Map-----------\n"
+        <<"Global Frames: "<<stats.global_frames<<"\n"
+        <<"Global Landmarks: "<<stats.global_landmarks<<"\n"
+        <<"Local Landmarks: "<<stats.local_landmarks<<"\n"
+        <<"-------------------\n"
+        <<"Added Global Landmarks: "<<stats.added_global_landmarks<<"\n"
+        <<"Added Local Landmarks: "<<stats.added_local_landmarks<<"\n"
+        <<"Added Local-Global Landmarks: "<<stats.added_local_to_global_landmarks<<"\n"
+        <<"Removed Local Landmarks (outliers): "<<stats.removed_local_landmarks_outliers<<"\n"
+        <<"Removed Local Landmarks (inactive): "<<stats.removed_local_landmarks_inactive<<"\n"
+        <<"-------------------\n";
+
+
+
+
+  }
 
 }
 }

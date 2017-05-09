@@ -30,7 +30,23 @@ VSSLAM_BA_SlamPP::VSSLAM_BA_SlamPP
   problem_->Set_TrustRadius(options_.f_trust_radius);
   problem_->Set_TrustRadius_Persistence(options_.b_trust_radius_persistent);
 
-  slamPP_GraphFile.open( "/home/klemen/SlamPP_test_graphfile.txt", std::ios::out );
+  if (options_.b_export_graph_file)
+  {
+    slamPP_GraphFile.open(options_.s_graph_file.c_str(),std::ios::out );
+  }
+
+}
+
+
+VSSLAM_BA_SlamPP::~VSSLAM_BA_SlamPP()
+{
+
+  // Export consistency marker
+  if (options_.b_export_graph_file)
+  {
+    // Close the graphfile
+    slamPP_GraphFile.close();
+  }
 }
 
 VSSLAM_BA_SlamPP::BA_options_SlamPP & VSSLAM_BA_SlamPP::getOptions()
@@ -100,25 +116,27 @@ bool VSSLAM_BA_SlamPP::addFrameToGlobalSystem(Frame * frame, bool b_frame_fixed)
   std::cout<<"Cartographer: [Slam++ GlobalBA] Add frame: "<<frame->getFrameId()<< " Fixed: "<<b_frame_fixed<<" to global map!\n";
 
   // Graph file
-  // Export to graph file
-  Mat4 T_graph;
-  frame->getPose_T(T_graph,nullptr);
-
-  slamPP_GraphFile << "VERTEX_CAM:SIM3"
-    << " " << frame_slampp_id
-    << " " << T_graph.block(0,3,1,1)
-    << " " << T_graph.block(1,3,1,1)
-    << " " << T_graph.block(2,3,1,1)
-    << " " << vec_state_frame(3)
-    << " " << vec_state_frame(4)
-    << " " << vec_state_frame(5)
-    << " " << T_graph.block(0,0,3,1).norm()
-    << " " << frame->getK()(0,0)
-    << " " << frame->getK()(1,1)
-    << " " << frame->getK()(0,2)
-    << " " << frame->getK()(1,2)
-    << " " << "0.0"
-    << std::endl;
+  if (options_.b_export_graph_file)
+  {
+    // Export to graph file
+    Mat4 T_graph;
+    frame->getPose_T(T_graph,nullptr);
+    slamPP_GraphFile << "VERTEX_CAM:SIM3"
+      << " " << frame_slampp_id
+      << " " << T_graph.block(0,3,1,1)
+      << " " << T_graph.block(1,3,1,1)
+      << " " << T_graph.block(2,3,1,1)
+      << " " << vec_state_frame(3)
+      << " " << vec_state_frame(4)
+      << " " << vec_state_frame(5)
+      << " " << T_graph.block(0,0,3,1).norm()
+      << " " << frame->getK()(0,0)
+      << " " << frame->getK()(1,1)
+      << " " << frame->getK()(0,2)
+      << " " << frame->getK()(1,2)
+      << " " << "0.0"
+      << std::endl;
+  }
   return true;
 
 
@@ -134,12 +152,16 @@ bool VSSLAM_BA_SlamPP::addLandmarkToGlobalSysyem(MapLandmark * map_landmark)
   double * landmark_ptr = problem_->Add_XYZVertex(landmark_slampp_id,options_.undefined_cam_id, map_landmark->X_);
 
   // Graphfile
-  slamPP_GraphFile << "VERTEX_XYZ"
-  << " " << landmark_slampp_id
-  << " " << map_landmark->X_(0)
-  << " " << map_landmark->X_(1)
-  << " " << map_landmark->X_(2)
-  << std::endl;
+
+  if (options_.b_export_graph_file)
+  {
+    slamPP_GraphFile << "VERTEX_XYZ"
+    << " " << landmark_slampp_id
+    << " " << map_landmark->X_(0)
+    << " " << map_landmark->X_(1)
+    << " " << map_landmark->X_(2)
+    << std::endl;
+  }
 
   // Add landmark to map
   map_landmarks_[map_landmark->id_] = std::make_pair(landmark_slampp_id,landmark_ptr);
@@ -168,13 +190,17 @@ bool VSSLAM_BA_SlamPP::addLandmarkToGlobalSysyem(MapLandmark * map_landmark)
     problem_->Add_P2CSim3GEdge(landmark_slampp_id,frame_slampp_id,frame->getFeaturePosition(feat_id_frame), inf_mat);
 
     //  Graphfile
-    slamPP_GraphFile << "EDGE_PROJECT_P2MC"
-    << " " << landmark_slampp_id
-    << " " << frame_slampp_id
-    << " " << frame->getFeaturePosition(feat_id_frame)(0)
-    << " " << frame->getFeaturePosition(feat_id_frame)(1)
-    << " " << inf_mat(0,0) <<" "<< inf_mat(0,1)<<" "<<inf_mat(1,1)
-    << std::endl;
+
+    if (options_.b_export_graph_file)
+    {
+      slamPP_GraphFile << "EDGE_PROJECT_P2MC"
+      << " " << landmark_slampp_id
+      << " " << frame_slampp_id
+      << " " << frame->getFeaturePosition(feat_id_frame)(0)
+      << " " << frame->getFeaturePosition(feat_id_frame)(1)
+      << " " << inf_mat(0,0) <<" "<< inf_mat(0,1)<<" "<<inf_mat(1,1)
+      << std::endl;
+    }
 
 
   }
@@ -245,14 +271,17 @@ bool VSSLAM_BA_SlamPP::addObservationToGlobalSystem(MapLandmark * map_landmark, 
   problem_->Add_P2CSim3GEdge(landmark_slampp_id,frame_slampp_id,frame->getFeaturePosition(feat_id_frame), inf_mat);
 
   //  Graphfile
-  slamPP_GraphFile << "EDGE_PROJECT_P2MC"
-  << " " << landmark_slampp_id
-  << " " << frame_slampp_id
-  << " " << frame->getFeaturePosition(feat_id_frame)(0)
-  << " " << frame->getFeaturePosition(feat_id_frame)(1)
-  << " " << inf_mat(0,0) <<" "<< inf_mat(0,1)<<" "<<inf_mat(1,1)
-  << std::endl;
 
+  if (options_.b_export_graph_file)
+  {
+    slamPP_GraphFile << "EDGE_PROJECT_P2MC"
+    << " " << landmark_slampp_id
+    << " " << frame_slampp_id
+    << " " << frame->getFeaturePosition(feat_id_frame)(0)
+    << " " << frame->getFeaturePosition(feat_id_frame)(1)
+    << " " << inf_mat(0,0) <<" "<< inf_mat(0,1)<<" "<<inf_mat(1,1)
+    << std::endl;
+  }
   return true;
 }
 
@@ -260,10 +289,12 @@ bool VSSLAM_BA_SlamPP::optimizeGlobal(VSSLAM_Map & map_global)
 {
 
   // Export consistency marker
-  slamPP_GraphFile << "CONSISTENCY_MARKER\n";
-
-  // Close the graphfile
-  slamPP_GraphFile.flush();
+  if (options_.b_export_graph_file)
+  {
+    slamPP_GraphFile << "CONSISTENCY_MARKER\n";
+    // Close the graphfile
+    slamPP_GraphFile.flush();
+  }
 
   for (auto & frame_it : map_poses_)
   {

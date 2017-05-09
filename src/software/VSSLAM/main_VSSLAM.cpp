@@ -23,6 +23,7 @@
 #include <openMVG/vsslam/features/Abstract_Feature_Extractor.hpp>
 #include <openMVG/vsslam/features/Feat_Extractor_SIFT.hpp>
 #include <openMVG/vsslam/features/Feat_Extractor_AKAZE_MLDB.hpp>
+#include <openMVG/vsslam/features/Feat_Extractor_AKAZE_MSURF.hpp>
 #include <openMVG/vsslam/features/Abstract_Feature_Matcher.hpp>
 #include <openMVG/vsslam/features/Feat_Matcher_CascadeHashing.hpp>
 #include <openMVG/vsslam/features/Feat_Matcher_Regions.hpp>
@@ -155,13 +156,14 @@ int main(int argc, char **argv)
       case 0:
         ptr_feat_extractor.reset(new Feat_Extractor_SIFT(params_system, features::HIGH_PRESET));
         ptr_feat_matcher.reset(new Feat_Matcher_CascadeHashing(params_system, ptr_feat_extractor.get()));
-        global_BA_type = MAP_OPTIMIZATION_TYPE::SLAMPP;
+        global_BA_type = MAP_OPTIMIZATION_TYPE::CERES;
+        //global_BA_type = MAP_OPTIMIZATION_TYPE::SLAMPP;
         display_data.b_enable_display = 0;
 
         break;
       case 1:
-        //ptr_feat_extractor.reset(new Feat_Extractor_AKAZE_MLDB(params_system, features::NORMAL_PRESET));
-        ptr_feat_extractor.reset(new Feat_Extractor_SIFT(params_system, features::HIGH_PRESET));
+        ptr_feat_extractor.reset(new Feat_Extractor_AKAZE_MSURF(params_system, features::NORMAL_PRESET));
+        //ptr_feat_extractor.reset(new Feat_Extractor_SIFT(params_system, features::HIGH_PRESET));
         ptr_feat_matcher.reset(new Feat_Matcher_CascadeHashing(params_system, ptr_feat_extractor.get()));
         global_BA_type = MAP_OPTIMIZATION_TYPE::CERES;
         display_data.b_enable_display = 0;

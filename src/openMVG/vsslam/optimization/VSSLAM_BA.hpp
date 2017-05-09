@@ -28,6 +28,9 @@ public:
     MAP_LANDMARK_TYPE map_landmark_type_;
     MAP_FRAME_TYPE map_camera_type_;
 
+    bool b_export_graph_file = false;
+    std::string s_graph_file = "";
+
     BA_options
     (
       const MAP_FRAME_TYPE map_camera_type = MAP_FRAME_TYPE::GLOBAL,
@@ -44,7 +47,9 @@ public:
   virtual bool addFrameToGlobalSystem(Frame * frame, bool b_frame_fixed) =0;
   virtual bool optimizeGlobal(VSSLAM_Map & map_global) =0;
 
-private:
+protected:
+  //graph file
+  std::ofstream slamPP_GraphFile;
 
 public:
 };

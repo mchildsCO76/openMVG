@@ -34,14 +34,14 @@ namespace openMVG {
 namespace vsslam {
 
 
-class SlamPP_Optimizer_Sim3_gXYZ_gXYZ : public SlamPP_Optimizer {
+class SlamPP_Optimizer_SE3_gXYZ_gXYZ : public SlamPP_Optimizer {
 public:
   // landmark: g_xyz
   using _TyLandmark = CVertexXYZ;
-  using _TyObservation = CEdgeP2C_XYZ_Sim3_G;
+  using _TyObservation = CEdgeP2C3D;
 
-  using TVertexTypelist = MakeTypelist_Safe((CVertexCamSim3, _TyLandmark));
-  using TConstVertexTypelist = MakeTypelist_Safe((CVertexCamSim3, _TyLandmark));
+  using TVertexTypelist = MakeTypelist_Safe((CVertexCam, _TyLandmark));
+  using TConstVertexTypelist = MakeTypelist_Safe((CVertexCam, _TyLandmark));
   using TEdgeTypelist = MakeTypelist_Safe((_TyObservation, CEdgePoseCamSim3));
   using CSystemType = CFlatSystem<CBaseVertex, TVertexTypelist, CBaseEdge, TEdgeTypelist, CNullUnaryFactorFactory,
       CBaseVertex, TConstVertexTypelist>;

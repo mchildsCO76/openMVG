@@ -127,6 +127,7 @@ namespace vsslam {
 
     std::cout<<"Cartographer: Step: " << step_id_ << " Frame id: " << frame_id << "\n";
     printMapStats();
+
     if (!b_global_map_intialized_)
     {
       std::cout<<"Cartographer: Step: " << step_id_ << ": Initialization\n";
@@ -215,6 +216,10 @@ namespace vsslam {
       {
         addLandmarksToStructure(frame.get(),*vec_new_landmarks,  params_->map_min_quality_landmark);
       }
+
+      // Check if we have more points that have been sufficiently observed to add to the system
+      addLocalLandmarksToGlobalMap(params_->map_min_quality_landmark);
+
       printMapStats();
 
       // Globally optimize the system
@@ -227,6 +232,13 @@ namespace vsslam {
   {
     std::cout<<"Cartographer: Global Frames: "<<map_global_.getNumberOfFrames()<<" Global Pts: "<<map_global_.getNumberOfLandmarks()<<"\n"
         <<"Local Frames: "<<map_local_.getNumberOfFrames()<<" Local Pts: "<<map_local_.getNumberOfLandmarks()<<"\n";
+  }
+
+  void Cartographer::setMapStats(VSSLAM_Time_Stats & stats)
+  {
+    stats.global_frames = map_global_.getNumberOfFrames();
+    stats.global_landmarks = map_global_.getNumberOfLandmarks();
+    stats.local_landmarks = map_local_.getNumberOfLandmarks();
   }
 
   void Cartographer::getLocalMapPoints(Frame * frame, std::vector<Frame*> & local_frames, std::vector<MapLandmark*> & local_points)
@@ -248,8 +260,6 @@ namespace vsslam {
           continue;
 
         // Mark landmark as inspected
-        if (map_landmark->id_ > 100000)
-          std::cout<<"MAP LAA: "<<map_landmark->id_<<" last: "<<map_landmark->last_local_map_frame_id_<<" :: "<<frame_i->getFrameId()<<"\n";
         map_landmark->last_local_map_frame_id_ = frame_id;
         vec_changed_ids.push_back(map_landmark);
 
@@ -344,6 +354,11 @@ namespace vsslam {
       {
         // Add landmark to global map
         map_landmark = addLandmarkToGlobalMap(landmark_new);
+
+        if (time_data.b_enable_features_stats)
+        {
+          time_data.added_global_landmarks++;
+        }
       }
       else
       {
@@ -351,6 +366,11 @@ namespace vsslam {
         map_landmark = addLandmarkToLocalMap(landmark_new);
         // Mark local landmark as seen in this step
         map_landmark->setObservedInStep(step_id_);
+
+        if (time_data.b_enable_features_stats)
+        {
+          time_data.added_local_landmarks++;
+        }
 
       }
       // Update the best descriptor
@@ -402,6 +422,12 @@ namespace vsslam {
         MapLandmark * g_lm = addLandmarkToGlobalMap(map_landmark);
 
         it_map_landmark = map_local_.map_landmarks_.erase(it_map_landmark);
+
+        if (time_data.b_enable_features_stats)
+        {
+          time_data.added_local_to_global_landmarks ++;
+        }
+
       }
       else
       {
@@ -411,9 +437,14 @@ namespace vsslam {
     return n_landmarks_ok;
   }
 
-  void Cartographer::removeOutliersInLocalMapLandmarks(Frame * frame)
+
+  void Cartographer::removeInactiveInLocalMapLandmarks(Frame * frame)
   {
     std::vector<size_t> vec_tmp_structure_outliers;
+
+    #ifdef OPENMVG_USE_OPENMP
+    #pragma omp parallel for schedule(dynamic)
+    #endif
     for(size_t local_landmark_i = 0; local_landmark_i < map_local_.getNumberOfLandmarks(); ++local_landmark_i)
     {
       MapLandmarks::iterator local_landmark_it = map_local_.map_landmarks_.begin();
@@ -428,6 +459,85 @@ namespace vsslam {
         {
           std::cout<<"Map landmark id: "<<map_landmark->id_<<" inactive last: "<<map_landmark->getObservedInStep()<<" limit: "<<params_->map_max_inactive_f_local_landmark<<" C: "<<step_id_<<"\n";
           vec_tmp_structure_outliers.push_back(local_landmark_i);
+
+          if (time_data.b_enable_features_stats)
+          {
+            time_data.removed_local_landmarks_inactive++;
+          }
+
+        }
+        continue;
+      }
+
+    }
+
+    // sort indexes of outliers
+    std::sort(vec_tmp_structure_outliers.begin(),vec_tmp_structure_outliers.end());
+    size_t n_local_landmarks_before = map_local_.getNumberOfLandmarks();
+
+    // Remove any map landmarks that dont have enough measurements
+    std::vector<MapLandmark *>  & vec_landmarks_frame = frame->getLandmarks();
+    for (size_t o_i = 0; o_i < vec_tmp_structure_outliers.size(); ++o_i)
+    {
+      MapLandmarks::iterator outlier_it = map_local_.map_landmarks_.begin();
+      // Reduce the number by the number of elements already deleted
+      std::advance(outlier_it,vec_tmp_structure_outliers[o_i]-o_i);
+
+      MapLandmark * map_landmark = outlier_it->second.get();
+      LandmarkObservations & vec_obs = map_landmark->getObservations();
+
+      for(LandmarkObservations::iterator mo_it = vec_obs.begin(); mo_it != vec_obs.end();++mo_it)
+      {
+        mo_it->second.frame_ptr->removeLandmark(mo_it->second.feat_id);
+      }
+
+
+      // Remove possible connection with current local frame
+      std::vector<MapLandmark*>::iterator it_landmark_frame = std::find(vec_landmarks_frame.begin(),vec_landmarks_frame.end(),outlier_it->second.get());
+
+      if (it_landmark_frame != vec_landmarks_frame.end())
+      {
+        IndexT feat_id = std::distance(vec_landmarks_frame.begin(), it_landmark_frame);
+        frame->removeLandmark(feat_id);
+      }
+
+      // Delete 3D point (all other references have been deleted before)
+      map_local_.map_landmarks_.erase(outlier_it);
+    }
+
+    std::cout<<"Cartographer: [Map verification] Local structure before/after outlier rejection: "<<n_local_landmarks_before<<"/"<<map_local_.getNumberOfLandmarks()<<"\n";
+
+
+
+  }
+
+  void Cartographer::removeOutliersInLocalMapLandmarks(Frame * frame)
+  {
+    std::vector<size_t> vec_tmp_structure_outliers;
+
+    #ifdef OPENMVG_USE_OPENMP
+    #pragma omp parallel for schedule(dynamic)
+    #endif
+    for(size_t local_landmark_i = 0; local_landmark_i < map_local_.getNumberOfLandmarks(); ++local_landmark_i)
+    {
+      MapLandmarks::iterator local_landmark_it = map_local_.map_landmarks_.begin();
+      std::advance(local_landmark_it, local_landmark_i);
+      MapLandmark * map_landmark = local_landmark_it->second.get();
+
+
+      // Check if its not obsure (not seen for a while)
+      if (map_landmark->getObservedInStep() + params_->map_max_inactive_f_local_landmark < step_id_)
+      {
+        #pragma omp critical
+        {
+          std::cout<<"Map landmark id: "<<map_landmark->id_<<" inactive last: "<<map_landmark->getObservedInStep()<<" limit: "<<params_->map_max_inactive_f_local_landmark<<" C: "<<step_id_<<"\n";
+          vec_tmp_structure_outliers.push_back(local_landmark_i);
+
+          if (time_data.b_enable_features_stats)
+          {
+            time_data.removed_local_landmarks_inactive++;
+          }
+
         }
         continue;
       }
@@ -448,6 +558,11 @@ namespace vsslam {
           {
             std::cout<<"Map landmark id: "<<map_landmark->id_<<" observation error\n";
             vec_tmp_structure_outliers.push_back(local_landmark_i);
+
+            if (time_data.b_enable_features_stats)
+            {
+              time_data.removed_local_landmarks_outliers++;
+            }
           }
           b_outlier_landmark = true;
           break;
@@ -537,6 +652,11 @@ namespace vsslam {
           // Remove landmark from local map
           map_local_.removeLandmark(id_local_landmark);
 
+          if (time_data.b_enable_features_stats)
+          {
+            time_data.added_local_to_global_landmarks++;
+          }
+
         }
       }
       else
@@ -573,15 +693,23 @@ namespace vsslam {
     {
       std::cout<<"VSSLAM: [Cartographer] Ceres Global Optimization Mode\n";
       VSSLAM_BA_Ceres::BA_options_Ceres options(map_global_.map_frame_type_, map_global_.map_landmark_type_, true, true);
+
+      options.b_export_graph_file = params_->b_export_graph_file;
+      options.s_graph_file = params_->s_graph_file_path;
+
       BA_obj_ = std::unique_ptr<VSSLAM_BA>(new VSSLAM_BA_Ceres(options));
+
       break;
     }
     case MAP_OPTIMIZATION_TYPE::SLAMPP:
     {
       std::cout<<"VSSLAM: [Cartographer] Slam++ Global Optimization Mode\n";
       VSSLAM_BA_SlamPP::BA_options_SlamPP options(map_global_.map_frame_type_, map_global_.map_landmark_type_, true, true);
-      BA_obj_ = std::unique_ptr<VSSLAM_BA>(new VSSLAM_BA_SlamPP(options));
 
+      options.b_export_graph_file = params_->b_export_graph_file;
+      options.s_graph_file = params_->s_graph_file_path;
+
+      BA_obj_ = std::unique_ptr<VSSLAM_BA>(new VSSLAM_BA_SlamPP(options));
 
       break;
     }

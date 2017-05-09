@@ -48,9 +48,15 @@ namespace vsslam {
     // -------------------------
     // -- Detect features
     // -------------------------
+    // Time statistics
+    time_data.startTimer(time_data.d_feat_detection);
+
     const size_t n_feats_detected = feature_extractor_->detect(ima,frame_track_current.get(),mask);
     feature_extractor_->describe(ima,frame_track_current.get());
     frame_track_current->updateFeaturesData();
+
+    // Time statistics
+    time_data.stopTimer(time_data.d_feat_detection);
 
     // Check if sufficient features were detected
     if ( ((tracking_status_ == TRACKING_STATUS::NOT_INIT || tracking_status_ == TRACKING_STATUS::INIT) && n_feats_detected < params_->init_track_min_matches)
@@ -77,6 +83,9 @@ namespace vsslam {
     bool b_track_OK = false;
     bool b_use_ref_frame= false;
 
+    // Time statistics
+    time_data.startTimer(time_data.d_feat_tracking);
+
     if (tracking_status_ == TRACKING_STATUS::OK)
     {
       // ----------------
@@ -84,9 +93,15 @@ namespace vsslam {
       // ----------------
       if (motion_model_.isValid())
       {
+        // Time statistics
+        time_data.startTimer(time_data.d_feat_tracking_mm);
+
         // Match current frame with lastFrame
         b_track_OK = trackWithMotionModel(track_putative_matches_frame_current);
         std::cout<<"Tracker: [Track] Motion Model: "<<b_track_OK<<"\n";
+
+        // Time statistics
+        time_data.stopTimer(time_data.d_feat_tracking_mm);
       }
 
       // Mark
@@ -99,9 +114,15 @@ namespace vsslam {
 
       if (!b_track_OK)
       {
+        // Time statistics
+        time_data.startTimer(time_data.d_feat_tracking_rf);
+
         b_use_ref_frame = true;
         b_track_OK = trackWithReferenceFrame(frame_track_last_reference.get(),track_putative_matches_frame_current);
         std::cout<<"Tracker: [Track] Reference frame: "<<b_track_OK<<"\n";
+
+        // Time statistics
+        time_data.stopTimer(time_data.d_feat_tracking_rf);
       }
 
       if (!b_track_OK)
@@ -116,6 +137,10 @@ namespace vsslam {
       // ----------------
       // -- RELOCALIZATION
       // ----------------
+
+      // Time statistics
+      time_data.startTimer(time_data.d_feat_tracking_rm);
+
       track_putative_matches_frame_current.clear();
       // Try to track with with All-All with local map of landmarks from last reference frame
       b_track_OK = trackWithReferenceFrameLocalMap(frame_track_last_reference.get(),track_putative_matches_frame_current);
@@ -127,11 +152,17 @@ namespace vsslam {
       }
 
       std::cout<<"Tracker: [Track] Relocalization: "<<b_track_OK<<"\n";
+
+      // Time statistics
+      time_data.stopTimer(time_data.d_feat_tracking_rm);
     }
+
 
     // if we are lost we are done :)
     if (!b_track_OK)
     {
+      // Time statistics
+      time_data.stopTimer(time_data.d_feat_tracking);
       motion_model_.setInvalid();
       endOfFrameProcedure();
       return false;
@@ -142,8 +173,15 @@ namespace vsslam {
     // ----------------
     // -- LOCAL MAP TRACKING
     // ----------------
+
+    // Time statistics
+    time_data.startTimer(time_data.d_feat_tracking_lm);
+
     //  - with estimated pose we try to match more landmarks from local map
     b_track_OK = trackLocalMap();
+
+    // Time statistics
+    time_data.stopTimer(time_data.d_feat_tracking_lm);
 
     if (!b_track_OK)
     {
@@ -160,21 +198,35 @@ namespace vsslam {
     NewMapLandmarks vec_new_map_landmarks;
     if (needNewKeyframe(frame_track_current.get()))
     {
+      // Time statistics
+      time_data.b_keyframe = true;
+      time_data.startTimer(time_data.d_feat_new_pts);
+
       // Find new points for triangulation
       findNewCandidateLandmarks(frame_track_current.get(), vec_new_map_landmarks);
 
+      // Time statistics
+      time_data.startTimer(time_data.d_feat_pose_local);
       bool b_use_robust_function = true;
       if (!cartographer_->optimizeLocalMap(frame_track_current.get(), vec_new_map_landmarks,b_use_robust_function))
       {
+        // Time statistics
+        time_data.stopTimer(time_data.d_feat_pose_local);
+
         std::cout<<"Tracker: [Initialization] Optimize local FAILED\n";
         return false;
       }
+
+      // Time statistics
+      time_data.stopTimer(time_data.d_feat_pose_local);
 
       // Remove outliers after local BA
       removeOutliersInFrame(frame_track_current.get());
       removeOutliersInCandidateLandmarks(frame_track_current.get(),vec_new_map_landmarks);
       cartographer_->removeOutliersInLocalMapLandmarks(frame_track_current.get());
 
+      // Time statistics
+      time_data.stopTimer(time_data.d_feat_new_pts);
 
       // Save for display
       if (display_data.b_enable_display)
@@ -183,18 +235,31 @@ namespace vsslam {
       }
 
 
-      // Export step to Ply
-      std::ostringstream os_before;
-      os_before << std::setw(8) << std::setfill('0') << "Scene_"<<cartographer_->step_id_<<"_"<<cartographer_->step_id_+1<<"_before";
-      cartographer_->exportSceneToPly(stlplus::create_filespec("/home/klemen/exp_ply", os_before.str(), ".ply"),true);
+      if (params_->b_export_intermediate_scene_ply)
+      {
+        // Export step to Ply
+        std::ostringstream os_before;
+        os_before << std::setw(8) << std::setfill('0') << "Scene_"<<cartographer_->step_id_<<"_"<<cartographer_->step_id_+1<<"_before";
+        cartographer_->exportSceneToPly(stlplus::create_filespec("/home/klemen/exp_ply", os_before.str(), ".ply"),true);
+      }
+
+      // Time statistics
+      time_data.startTimer(time_data.d_feat_add_to_global);
+
 
       // Add data to map
       cartographer_->addStep(frame_track_current, &vec_new_map_landmarks);
 
-      // Export step to Ply
-      std::ostringstream os_after;
-      os_after << std::setw(8) << std::setfill('0') << "Scene_"<<cartographer_->step_id_-1<<"_"<<cartographer_->step_id_<<"_after";
-      cartographer_->exportSceneToPly(stlplus::create_filespec("/home/klemen/exp_ply", os_after.str(), ".ply"), false);
+      // Time statistics
+      time_data.stopTimer(time_data.d_feat_add_to_global);
+
+      if (params_->b_export_intermediate_scene_ply)
+      {
+        // Export step to Ply
+        std::ostringstream os_after;
+        os_after << std::setw(8) << std::setfill('0') << "Scene_"<<cartographer_->step_id_-1<<"_"<<cartographer_->step_id_<<"_after";
+        cartographer_->exportSceneToPly(stlplus::create_filespec("/home/klemen/exp_ply", os_after.str(), ".ply"), false);
+      }
 
       // -------------------
       // -- Update last reference camera
@@ -202,12 +267,17 @@ namespace vsslam {
       frame_track_last_reference = frame_track_current->share_ptr();
 
     }
-
+    else
+    {
+      cartographer_->removeInactiveInLocalMapLandmarks(frame_track_current.get());
+    }
     // -------------------
     // -- Update motion model
     // -------------------
     motion_model_.update(frame_track_prev.get(),frame_track_current.get());
 
+    // Time statistics
+    time_data.stopTimer(time_data.d_feat_tracking);
 
     // Set current frame as previous
     endOfFrameProcedure();
@@ -232,28 +302,62 @@ namespace vsslam {
     // - OR
     // - its necessary for creating new points (more than 20% of points are new)
 
-    const size_t n_matches_reference = frame_track_last_reference->getNumberOfMapPoints(false);
+    const size_t n_matches_reference_global = frame_track_last_reference->getNumberOfMapPoints(cartographer_->isMapInitialized());
+    const size_t n_matches_reference_all = frame_track_last_reference->getNumberOfMapPoints(false);
     const size_t n_matches_current_global = frame->getNumberOfMapPoints(cartographer_->isMapInitialized());
     const size_t n_matches_current_all =  frame->getNumberOfMapPoints(false);
-    std::cout<<"#all: "<<n_matches_current_all<<" #reference: "<<n_matches_reference<<" #c.global: "<<n_matches_current_global<<"\n";
 
-    if (frame_track_last_reference->getFrameId() + 20 < frame_track_current->getFrameId())
+    std::cout<<"# current all: "<<n_matches_current_all
+        <<" \n# current global: "<< n_matches_current_global
+        <<" \n# reference all: "<< n_matches_reference_all
+        <<" \n# reference global: "<< n_matches_reference_global<<"\n";
+
+    if (frame_track_last_reference->getFrameId() + 100 < frame_track_current->getFrameId())
     {
-      std::cout<<"New frame: No new in last 5 frames\n";
+      std::cout<<"New frame: No new in last 100 frames\n";
+      if (time_data.b_enable_features_stats)
+      {
+        time_data.keyframe_reason = 1;
+      }
       return true;
     }
 
-    if (n_matches_current_all < 50)
+    if (n_matches_current_global < 50)
     {
       std::cout<<"New frame: Less than 50 tracked\n";
-      return true;
-    }
-    if (n_matches_current_all < float(n_matches_reference) * 0.70)
-    {
-      std::cout<<"New frame: tracking < 0.70*reference\n";
+      if (time_data.b_enable_features_stats)
+      {
+        time_data.keyframe_reason = 2;
+      }
       return true;
     }
 
+    if (n_matches_current_global < 100 && n_matches_current_global < float(n_matches_reference_global) * 0.60)
+    {
+      std::cout<<"New frame: tracking global < 0.60 * reference global\n";
+      if (time_data.b_enable_features_stats)
+      {
+        time_data.keyframe_reason = 3;
+      }
+      return true;
+    }
+
+    if (n_matches_current_all > float(n_matches_reference_global) * 1.40 && frame_track_last_reference->getFrameId() +5 < frame_track_current->getFrameId())
+    {
+      std::cout<<"New frame: tracking all > 1.40 * reference global\n";
+      if (time_data.b_enable_features_stats)
+      {
+        time_data.keyframe_reason = 4;
+      }
+      return true;
+    }
+
+   /* if (n_matches_current_all < float(n_matches_reference) * 0.70 || n_matches_current_all > float(n_matches_reference) * 1.40)
+    {
+      std::cout<<"New frame: tracking < 0.50*reference\n";
+      return true;
+    }
+*/
     return false;
   }
 
@@ -261,14 +365,15 @@ namespace vsslam {
   {
     track_putative_matches_frame_current.clear();
     std::cout<<"Tracker: [End tracker]\n";
+
   }
 
   void Tracker_Features::associateLandmarksWithFrame(Frame * frame, Hash_Map<MapLandmark *,IndexT> & matches_landmarks_frame, size_t associate_type)
   {
 
-    //#ifdef OPENMVG_USE_OPENMP
-    //#pragma omp parallel for schedule(dynamic)
-    //#endif
+    #ifdef OPENMVG_USE_OPENMP
+    #pragma omp parallel for schedule(dynamic)
+    #endif
     for (size_t match_i = 0; match_i < matches_landmarks_frame.size(); ++match_i)
     {
       Hash_Map<MapLandmark *,IndexT>::iterator it_match = matches_landmarks_frame.begin();
@@ -297,9 +402,9 @@ namespace vsslam {
     // -------------------
     std::vector<Hash_Map<IndexT,IndexT> > vec_matches_frame_local_idx(local_map_frames.size());
 
-    //#ifdef OPENMVG_USE_OPENMP
-    // #pragma omp parallel for schedule(dynamic)
-    //#endif
+    #ifdef OPENMVG_USE_OPENMP
+    #pragma omp parallel for schedule(dynamic)
+    #endif
     for (size_t f_i = 0; f_i < local_map_frames.size(); ++f_i)
     {
       Frame * local_frame_i = local_map_frames[f_i];
@@ -336,10 +441,10 @@ namespace vsslam {
 
         std::cout<<"Tracker: [Triangulation] Matched by epipolar: "<<vec_matches_frame_local_idx[f_i].size()<<"\n";
 
-        if (display_data.b_enable_display)
+        /*if (display_data.b_enable_display)
         {
           display_data.addDisplayStep("Tracking epipolar: ",frame_track_current.get(),local_frame_i, vec_matches_frame_local_idx[f_i]);
-        }
+        }*/
       }
     }
 
@@ -518,6 +623,10 @@ namespace vsslam {
     {
       display_data.addDisplayStep("Tracking MM: Narrow search",frame_track_prev.get(),frame_track_current.get(), map_putative_matches_landmark_frame_idx, params_->track_match_mm_win_size);
     }
+    if (time_data.b_enable_features_stats)
+    {
+      time_data.i_matches_mm = n_matches;
+    }
 
     // If not enough matches try matching with wider area
     if (n_matches < params_->track_min_matches)
@@ -542,6 +651,11 @@ namespace vsslam {
         display_data.addDisplayStep("Tracking MM: Wide search",frame_track_prev.get(),frame_track_current.get(), map_putative_matches_landmark_frame_idx, params_->track_match_mm_win_size*4);
       }
 
+      if (time_data.b_enable_features_stats)
+      {
+        time_data.i_matches_mm = n_matches;
+      }
+
       if (n_matches < params_->track_min_matches)
       {
         std::cout<<"Tracker: [Track] Match by Motion Model Failed\n";
@@ -559,14 +673,28 @@ namespace vsslam {
     // -------------------
     // -- Do tiny BA to refine the pose based on the matches
     // -------------------
+
+    // Time statistics
+    time_data.startTimer(time_data.d_feat_pose_opt_mm);
+
     bool b_use_robust_function = true;
     if (!performPoseOptimization(frame_track_current.get(), map_putative_matches_landmark_frame_idx,b_use_robust_function))
     {
+      // Time statistics
+      time_data.stopTimer(time_data.d_feat_pose_opt_mm);
       return false;
     }
     n_matches = map_putative_matches_landmark_frame_idx.size();
-
     std::cout<<"Tracker: [Track] MM outlier removal (before/after): "<<n_matches_old<<"/"<<n_matches<<"\n";
+
+
+    // Time statistics
+    time_data.stopTimer(time_data.d_feat_pose_opt_mm);
+
+    if (time_data.b_enable_features_stats)
+    {
+      time_data.i_matches_mm_outliers = n_matches - n_matches_old;
+    }
 
     // Display matches after outlier removal
     if (display_data.b_enable_display)
@@ -619,6 +747,11 @@ namespace vsslam {
       display_data.addDisplayStep("Tracking reference frame: ",frame_reference,frame_track_current.get(), map_putative_matches_landmark_frame_idx, params_->track_match_rf_win_size);
     }
 
+    if (time_data.b_enable_features_stats)
+    {
+      time_data.i_matches_rf = n_matches;
+    }
+
     if (n_matches < params_->track_min_matches)
     {
       std::cout<<"Tracker: [Track] Match by reference frame Failed\n";
@@ -637,14 +770,27 @@ namespace vsslam {
     // -------------------
     // -- Do tiny BA to refine the pose based on the matches
     // -------------------
+    // Time statistics
+    time_data.startTimer(time_data.d_feat_pose_opt_rf);
+
     bool b_use_robust_function = true;
     if (!performPoseOptimization(frame_track_current.get(), map_putative_matches_landmark_frame_idx,b_use_robust_function))
     {
+      // Time statistics
+      time_data.stopTimer(time_data.d_feat_pose_opt_rf);
       return false;
     }
     n_matches = map_putative_matches_landmark_frame_idx.size();
 
     std::cout<<"Tracker: [Track] RF outlier removal (before/after): "<<n_matches_old<<"/"<<n_matches<<"\n";
+
+    // Time statistics
+    time_data.stopTimer(time_data.d_feat_pose_opt_rf);
+
+    if (time_data.b_enable_features_stats)
+    {
+      time_data.i_matches_rf_outliers = n_matches - n_matches_old;
+    }
 
     // Display matches after outlier removal
     if (display_data.b_enable_display)
@@ -751,6 +897,10 @@ namespace vsslam {
     }
     std::cout<<"Tracker: [Track] Matches with Local Map of Reference frame #matches: "<<map_putative_matches_landmark_frame_idx.size()<<"\n";
 
+    if (time_data.b_enable_features_stats)
+    {
+      time_data.i_matches_rm = map_putative_matches_landmark_frame_idx.size();
+    }
     if (display_data.b_enable_display)
     {
       display_data.addDisplayStep("Tracking Inlier Matches reference frame map: ",frame_reference,frame_track_current.get(), map_putative_matches_landmark_frame_idx, -1);
@@ -768,14 +918,21 @@ namespace vsslam {
     // -------------------
     // -- Do tiny BA to refine the pose based on the matches
     // -------------------
+    // Time statistics
+    time_data.startTimer(time_data.d_feat_pose_opt_rm);
     bool b_use_robust_function = true;
     if (!performPoseOptimization(frame_track_current.get(), map_putative_matches_landmark_frame_idx,b_use_robust_function))
     {
+      // Time statistics
+      time_data.stopTimer(time_data.d_feat_pose_opt_rm);
       return false;
     }
     n_matches = map_putative_matches_landmark_frame_idx.size();
 
     std::cout<<"Tracker: [Track] RF Map outlier removal (before/after): "<<n_matches_old<<"/"<<n_matches<<"\n";
+
+    // Time statistics
+    time_data.stopTimer(time_data.d_feat_pose_opt_rm);
 
     // Display matches after outlier removal
     if (display_data.b_enable_display)
@@ -839,9 +996,14 @@ namespace vsslam {
     // -------------------
     // -- Do tiny BA to refine the pose based on the matches
     // -------------------
+    // Time statistics
+    time_data.startTimer(time_data.d_feat_pose_opt_lm);
+
     bool b_use_robust_function = true;
     if (!performPoseOptimization(frame_track_current.get(), map_putative_matches_map_frame_idx,b_use_robust_function))
     {
+      // Time statistics
+      time_data.stopTimer(time_data.d_feat_pose_opt_lm);
       return false;
     }
     // Mark new inliers in the frame
@@ -850,6 +1012,14 @@ namespace vsslam {
     n_matches = map_putative_matches_map_frame_idx.size();
 
     std::cout<<"Tracker: [Track] Local Map matches (before/after): "<<n_matches_old<<"/"<<n_matches<<"\n";
+
+    // Time statistics
+    time_data.stopTimer(time_data.d_feat_pose_opt_lm);
+
+    if (time_data.b_enable_features_stats)
+    {
+      time_data.i_matches_lm = n_matches;
+    }
 
     // Display matches after outlier removal
     if (display_data.b_enable_display)

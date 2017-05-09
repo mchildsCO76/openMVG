@@ -41,8 +41,6 @@ namespace vsslam {
       // -------------------
       // -- Match features of two images
       // -------------------
-      if (time_data.b_enable_time)
-        time_data.d_feat_matching = omp_get_wtime();
 
       matching::IndMatches vec_putative_matches_ref_cur_idx;
 
@@ -58,10 +56,8 @@ namespace vsslam {
         feature_extractor_->f_max_desc_dist_high_
       );
 
-      if (time_data.b_enable_time)
-        time_data.d_feat_matching = omp_get_wtime() - time_data.d_feat_matching ;
 
-      std::cout<<"Tracker: [Initialization] [Matching All-All 2D-2D]: " << vec_putative_matches_ref_cur_idx.size() << "( "<<time_data.d_feat_matching<<" s)\n";
+      std::cout<<"Tracker: [Initialization] [Matching All-All 2D-2D]: " << vec_putative_matches_ref_cur_idx.size() << "\n";
 
       if (display_data.b_enable_display)
         display_data.addDisplayStep("Initialization: Initial 2D-2D matches",frame_track_init.get(), frame_track_current.get(),vec_putative_matches_ref_cur_idx);
@@ -77,8 +73,6 @@ namespace vsslam {
       // -------------------
       // -- Estimate relative pose between two images
       // -------------------
-      if (time_data.b_enable_time)
-        time_data.d_pose_init = omp_get_wtime();
       bool b_estimated_motion = false;
 
       Mat4 T;
@@ -96,9 +90,6 @@ namespace vsslam {
         std::cout<<"Tracker: [Initialization] No support for HF initializaton ("<<"-1"<<" s)\n";
         b_estimated_motion = false;
       }
-
-      if (time_data.b_enable_time)
-        time_data.d_pose_init = omp_get_wtime() - time_data.d_pose_init ;
 
       if(!b_estimated_motion)
       {

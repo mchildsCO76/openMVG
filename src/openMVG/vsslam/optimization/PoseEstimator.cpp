@@ -317,6 +317,7 @@ bool PoseEstimator::estimateRobustPose_Pinhole
   }
 
 
+/*
   // ----------------------------
   // EPnP
   // ----------------------------
@@ -336,10 +337,37 @@ bool PoseEstimator::estimateRobustPose_Pinhole
   // Update the upper bound precision of the model found by AC-RANSAC
   f_model_thresh = ACRansacOut.first;
   const bool bResection = (vec_inliers.size() > 2.5 * openMVG::euclidean_resection::kernel::EpnpSolver::MINIMUM_SAMPLES);
+*/
+
+  // ----------------------------
+  // P3P
+  // ----------------------------
+
+  // Since K calibration matrix is known, compute only [R|t]
+
+  using KernelType =
+        openMVG::robust::ACKernelAdaptorResection_K<
+        openMVG::euclidean_resection::P3PSolver,
+          ResectionSquaredResidualError,
+          Mat34>;
+
+  KernelType kernel(pt2D_frame, pt3D_frame, frame->getK());
+  Mat34 P;
+  // Robust estimation of the Projection matrix and it's precision
+  // Precision is squared distance to epipolar line
+  const std::pair<double,double> ACRansacOut =
+    openMVG::robust::ACRANSAC(kernel, vec_inliers,ACRANSAC_ITER, &P, param->relocalization_max_model_thresh_px*param->relocalization_max_model_thresh_px, true);
+
+  // Update the upper bound precision of the model found by AC-RANSAC
+  f_model_thresh = ACRansacOut.first*ACRansacOut.first;
+  std::cout<<"P3P inliers: "<<vec_inliers.size()<<"\n";
+
+  // Test if the mode support some points (more than those required for estimation)
+  const bool bResection = (vec_inliers.size() > 2.5 * openMVG::euclidean_resection::P3PSolver::MINIMUM_SAMPLES);
 
   if (bResection)
   {
-    std::cout<<"Pose: Successful EPnP estimation! # inliers: "<<vec_inliers.size()<<"\n";
+    std::cout<<"Pose: Successful P3P estimation! # inliers: "<<vec_inliers.size()<<"\n";
 
     Mat3 K_t;
     Mat3 R;

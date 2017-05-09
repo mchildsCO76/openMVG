@@ -36,7 +36,8 @@ ceres::CostFunction * IntrinsicsToCostFunction
   IntrinsicBase * intrinsic,
   const Vec2 & observation,
   const Eigen::Matrix<double, 2, 2> & inf_matrix,
-  const double weight = 0.0
+  const double weight = 0.0,
+  const bool b_sim3 = false
 );
 
 class VSSLAM_BA_Ceres : public VSSLAM_BA
@@ -51,6 +52,9 @@ public:
     ceres::SparseLinearAlgebraLibraryType sparse_linear_algebra_library_type_;
     double parameter_tolerance_;
     bool b_use_loss_function_;
+
+    bool b_use_sim3_local = false;
+    bool b_use_sim3_global = true;
 
     BA_options_Ceres
     (
@@ -106,11 +110,19 @@ private:
   //  - set it to NULL if you don't want use a lossFunction.
   ceres::LossFunction * p_LossFunction_;
 
+  // Graphfile
+  Hash_Map<IndexT,IndexT> camera_ids_omvg_slamPP;
+  Hash_Map<IndexT,IndexT> track_ids_omvg_slamPP;
+  Hash_Map<IndexT,IndexT> camera_ids_slamPP_omvg;
+  Hash_Map<IndexT,IndexT> track_ids_slamPP_omvg;
+  IndexT next_slampp_id = 0;
+
 public:
   VSSLAM_BA_Ceres
   (
     BA_options_Ceres options = BA_options_Ceres()
   );
+  ~VSSLAM_BA_Ceres();
 
   BA_options_Ceres & getOptions();
 

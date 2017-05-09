@@ -40,6 +40,7 @@ public:
   // Constructor
   SLAM_System(std::shared_ptr<VSSLAM_Parameters> & params);
 
+  ~SLAM_System();
   // Set up tracker
   void setTracker(std::unique_ptr<Abstract_Tracker> & tracker);
   void setFeatureExtractor(std::unique_ptr<Abstract_Feature_Extractor> & extractor);
@@ -75,6 +76,9 @@ public:
     return tracker_->getCurrentFramePtr();
   }
 
+  void printStatistics(VSSLAM_Time_Stats & stats);
+
+  void exportStatistics(VSSLAM_Time_Stats & stats);
 };
 
 }

@@ -355,7 +355,7 @@ namespace vsslam {
   void Frame::getFrameVisibilityConnections(std::vector<Frame *> & frames_connected_ordered, const size_t n_best) const
   {
     // Min points two frames have to have in common to be considered a pair
-    int min_common_pts = 15;
+    int min_common_pts = 0;
     // Loop through all matched points of the frame and vote for each frame that sees any of the points
     Hash_Map<Frame *, size_t> frames_connected_weights;
     for (MapLandmark * map_landmark: map_landmark_)

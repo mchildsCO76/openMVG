@@ -73,8 +73,6 @@ private:
   Hash_Map<IndexT, std::pair<size_t,double *> > map_poses_;
   Hash_Map<IndexT, std::pair<size_t,double *> > map_landmarks_;
   Hash_Map<IndexT, std::vector<IndexT> > map_observations_;
-  //graph file
-  std::ofstream slamPP_GraphFile;
 
   size_t next_vertex_idx_slampp_ = 0;
 
@@ -88,6 +86,8 @@ public:
   (
     BA_options_SlamPP options = BA_options_SlamPP()
   );
+
+  ~VSSLAM_BA_SlamPP();
 
   BA_options_SlamPP & getOptions();
 

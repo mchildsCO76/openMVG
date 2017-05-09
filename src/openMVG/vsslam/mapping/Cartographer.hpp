@@ -105,6 +105,8 @@ public:
   );
 
   void removeOutliersInLocalMapLandmarks(Frame * frame);
+
+  void removeInactiveInLocalMapLandmarks(Frame * frame);
   // -------------------
   // -- Frames
   // -------------------
@@ -180,7 +182,7 @@ public:
   // -- Export
   // -------------------
   bool exportSceneToPly(const std::string & filename, bool b_export_local_scene);
-
+  void setMapStats(VSSLAM_Time_Stats & stats);
 };
 
 }

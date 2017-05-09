@@ -22,7 +22,8 @@ ceres::CostFunction * IntrinsicsToCostFunction
   IntrinsicBase * intrinsic,
   const Vec2 & observation,
   const Eigen::Matrix<double, 2, 2> & inf_matrix,
-  const double weight
+  const double weight,
+  const bool b_sim3
 )
 {
 
@@ -31,7 +32,10 @@ ceres::CostFunction * IntrinsicsToCostFunction
     case PINHOLE_CAMERA:
       //return ResidualErrorFunctor_Pinhole_Intrinsic_Rts::Create(observation, weight);
       //return ResidualErrorFunctor_Pinhole_Intrinsic_Rts::Create(observation, inf_matrix, weight);
-      return Chi2ErrorFunctor_Pinhole_Intrinsic_Rts::Create(observation, inf_matrix, weight);
+      if (b_sim3)
+        return Chi2ErrorFunctor_Pinhole_Intrinsic_Rts::Create(observation, inf_matrix, weight);
+      else
+        return Chi2ErrorFunctor_Pinhole_Intrinsic_Rt::Create(observation, inf_matrix, weight);
      break;
     default:
       return nullptr;
@@ -49,6 +53,22 @@ VSSLAM_BA_Ceres::VSSLAM_BA_Ceres
     p_LossFunction_ = new ceres::HuberLoss(5.991);
   else
     p_LossFunction_ = nullptr;
+
+  if (options_.b_export_graph_file)
+  {
+    slamPP_GraphFile.open(options_.s_graph_file.c_str(),std::ios::out );
+  }
+}
+
+VSSLAM_BA_Ceres::~VSSLAM_BA_Ceres()
+{
+
+  // Export consistency marker
+  if (options_.b_export_graph_file)
+  {
+    // Close the graphfile
+    slamPP_GraphFile.close();
+  }
 }
 
 VSSLAM_BA_Ceres::BA_options_Ceres & VSSLAM_BA_Ceres::getOptions()
@@ -132,7 +152,8 @@ bool VSSLAM_BA_Ceres::OptimizeLocalSystem
       // Create the cost function for the measurement
       ceres::CostFunction* cost_function = IntrinsicsToCostFunction(cam_i_intrinsic,
           frame_i->getFeaturePosition(mp_i),
-          frame_i->getFeatureSqrtInfMatrix(mp_i));
+          frame_i->getFeatureSqrtInfMatrix(mp_i),
+          ba_options.b_use_sim3_local);
 
       // Add cost term
       if (cost_function)
@@ -187,7 +208,8 @@ bool VSSLAM_BA_Ceres::OptimizeLocalSystem
         // Create the cost function for the measurement
         ceres::CostFunction* cost_function = IntrinsicsToCostFunction(cam_obs_intrinsic,
             frame_obs->getFeaturePosition(m_o.second.feat_id),
-            frame_obs->getFeatureSqrtInfMatrix(m_o.second.feat_id));
+            frame_obs->getFeatureSqrtInfMatrix(m_o.second.feat_id),
+            ba_options.b_use_sim3_local);
 
         // Add cost term
         if (cost_function)
@@ -245,7 +267,8 @@ bool VSSLAM_BA_Ceres::OptimizeLocalSystem
         // Create the cost function for the measurement
         ceres::CostFunction* cost_function = IntrinsicsToCostFunction(cam_obs_intrinsic,
             frame_obs->getFeaturePosition(m_o.second.feat_id),
-            frame_obs->getFeatureSqrtInfMatrix(m_o.second.feat_id));
+            frame_obs->getFeatureSqrtInfMatrix(m_o.second.feat_id),
+            ba_options.b_use_sim3_local);
 
         // Add cost term
         if (cost_function)
@@ -392,7 +415,8 @@ bool VSSLAM_BA_Ceres::OptimizePose
     // Create the cost function for the measurement
     ceres::CostFunction* cost_function = IntrinsicsToCostFunction(cam_intrinsic,
         frame->getFeaturePosition(mp_i),
-        frame->getFeatureSqrtInfMatrix(mp_i));
+        frame->getFeatureSqrtInfMatrix(mp_i),
+        ba_options.b_use_sim3_local);
 
     // Add cost term
     if (cost_function)
@@ -423,7 +447,7 @@ bool VSSLAM_BA_Ceres::OptimizePose
     // image location and compares the reprojection against the observation.
     ceres::CostFunction* cost_function = IntrinsicsToCostFunction(cam_intrinsic,
                                                                   frame->getFeaturePosition(match.second),
-                                                                  frame->getFeatureSqrtInfMatrix(match.second));
+                                                                  frame->getFeatureSqrtInfMatrix(match.second),ba_options.b_use_sim3_local);
 
     if (cost_function)
     {
@@ -538,6 +562,39 @@ bool VSSLAM_BA_Ceres::addFrameToGlobalSystem(Frame * frame, bool b_frame_fixed)
     }
   }
 
+
+  if (options_.b_export_graph_file)
+  {
+    // Export to graph file
+    Mat4 T_graph;
+    frame->getPose_T(T_graph,nullptr);
+    R = T_graph.block(0,0,3,3);
+    ceres::RotationMatrixToAngleAxis((const double*)R.data(), angleAxis);
+
+    // Get slam++ id
+    IndexT frame_slampp_id = next_slampp_id;
+    next_slampp_id++;
+    // Add index to map
+    camera_ids_omvg_slamPP[frame->getFrameId()] = frame_slampp_id;
+
+    slamPP_GraphFile << "VERTEX_CAM:SIM3"
+      << " " << frame_slampp_id
+      << " " << T_graph.block(0,3,1,1)
+      << " " << T_graph.block(1,3,1,1)
+      << " " << T_graph.block(2,3,1,1)
+      << " " << angleAxis[0]
+      << " " << angleAxis[1]
+      << " " << angleAxis[2]
+      << " " << T_graph.block(0,0,3,1).norm()
+      << " " << frame->getK()(0,0)
+      << " " << frame->getK()(1,1)
+      << " " << frame->getK()(0,2)
+      << " " << frame->getK()(1,2)
+      << " " << "0.0"
+      << std::endl;
+  }
+
+
   std::cout<<"Cartographer: [Ceres GlobalBA] Add frame: "<<frame->getFrameId()<< " Fixed: "<<b_frame_fixed<<" to global map!\n";
   return true;
 }
@@ -545,6 +602,27 @@ bool VSSLAM_BA_Ceres::addFrameToGlobalSystem(Frame * frame, bool b_frame_fixed)
 bool VSSLAM_BA_Ceres::addLandmarkToGlobalSysyem(MapLandmark * map_landmark)
 {
   LandmarkObservations & obs = map_landmark->getObservations();
+
+  // Graphfile
+
+  if (options_.b_export_graph_file)
+  {
+    // Get slam++ id
+    IndexT landmark_slampp_id = next_slampp_id;
+    next_slampp_id++;
+    // Add index to map
+    track_ids_omvg_slamPP[map_landmark->id_] = landmark_slampp_id;
+    track_ids_slamPP_omvg[landmark_slampp_id] = map_landmark->id_;
+
+    slamPP_GraphFile << "VERTEX_XYZ"
+    << " " << landmark_slampp_id
+    << " " << map_landmark->X_(0)
+    << " " << map_landmark->X_(1)
+    << " " << map_landmark->X_(2)
+    << std::endl;
+
+  }
+
   for(auto & m_o : obs)
   {
     Frame * frame = m_o.second.frame_ptr;
@@ -564,7 +642,8 @@ bool VSSLAM_BA_Ceres::addLandmarkToGlobalSysyem(MapLandmark * map_landmark)
 
     ceres::CostFunction* cost_function = IntrinsicsToCostFunction(cam_intrinsic,
       frame->getFeaturePosition(feat_id_frame),
-      frame->getFeatureSqrtInfMatrix(feat_id_frame));
+      frame->getFeatureSqrtInfMatrix(feat_id_frame),
+      options_.b_use_sim3_global);
 
     if (cost_function)
     {
@@ -573,12 +652,28 @@ bool VSSLAM_BA_Ceres::addLandmarkToGlobalSysyem(MapLandmark * map_landmark)
         &map_intrinsics_[cam_id_frame][0],
         &map_poses_[frame_id][0],
         map_landmark->X_.data());
+
+      //  Graphfile
+
+      if (options_.b_export_graph_file)
+      {
+        Eigen::Matrix2d inf_mat = frame->getFeatureSqrtInfMatrix(feat_id_frame).cwiseProduct(frame->getFeatureSqrtInfMatrix(feat_id_frame));
+        IndexT frame_slampp_id = camera_ids_omvg_slamPP[frame->getFrameId()];
+        IndexT landmark_slampp_id = track_ids_omvg_slamPP[map_landmark->id_];
+        slamPP_GraphFile << "EDGE_PROJECT_P2MC"
+        << " " << landmark_slampp_id
+        << " " << frame_slampp_id
+        << " " << frame->getFeaturePosition(feat_id_frame)(0)
+        << " " << frame->getFeaturePosition(feat_id_frame)(1)
+        << " " << inf_mat(0,0) <<" "<< inf_mat(0,1)<<" "<<inf_mat(1,1)
+        << std::endl;
+      }
     }
     else
     {
       std::cout<<"Cartographer: [Ceres GlobalBA] Adding landmark: "<<map_landmark->id_<<" cost function error!! Skipping landmark!";
-
     }
+
   }
 
   return true;
@@ -603,7 +698,8 @@ bool VSSLAM_BA_Ceres::addObservationToGlobalSystem(MapLandmark * map_landmark, M
 
   ceres::CostFunction* cost_function = IntrinsicsToCostFunction(cam_intrinsic,
     frame->getFeaturePosition(feat_id_frame),
-    frame->getFeatureSqrtInfMatrix(feat_id_frame));
+    frame->getFeatureSqrtInfMatrix(feat_id_frame),
+    options_.b_use_sim3_global);
 
   if (cost_function)
   {
@@ -612,6 +708,22 @@ bool VSSLAM_BA_Ceres::addObservationToGlobalSystem(MapLandmark * map_landmark, M
       &map_intrinsics_[cam_id_frame][0],
       &map_poses_[frame_id][0],
       map_landmark->X_.data());
+
+    //  Graphfile
+
+    if (options_.b_export_graph_file)
+    {
+      Eigen::Matrix2d inf_mat = frame->getFeatureSqrtInfMatrix(feat_id_frame).cwiseProduct(frame->getFeatureSqrtInfMatrix(feat_id_frame));
+      IndexT frame_slampp_id = camera_ids_omvg_slamPP[frame->getFrameId()];
+      IndexT landmark_slampp_id = track_ids_omvg_slamPP[map_landmark->id_];
+      slamPP_GraphFile << "EDGE_PROJECT_P2MC"
+      << " " << landmark_slampp_id
+      << " " << frame_slampp_id
+      << " " << frame->getFeaturePosition(feat_id_frame)(0)
+      << " " << frame->getFeaturePosition(feat_id_frame)(1)
+      << " " << inf_mat(0,0) <<" "<< inf_mat(0,1)<<" "<<inf_mat(1,1)
+      << std::endl;
+    }
   }
   else
   {
@@ -623,6 +735,13 @@ bool VSSLAM_BA_Ceres::addObservationToGlobalSystem(MapLandmark * map_landmark, M
 
 bool VSSLAM_BA_Ceres::optimizeGlobal(VSSLAM_Map & map_global)
 {
+  // Export consistency marker
+  if (options_.b_export_graph_file)
+  {
+    slamPP_GraphFile << "CONSISTENCY_MARKER\n";
+    // Close the graphfile
+    slamPP_GraphFile.flush();
+  }
 
   // Configure a BA engine and run it
   //  Make Ceres automatically detect the bundle structure.
