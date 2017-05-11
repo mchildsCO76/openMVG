@@ -25,9 +25,7 @@
 #include <vector>
 #include <tuple>
 
-#ifdef OPENMVG_USE_CXX11
 #include <regex>
-#endif
 
 using namespace openMVG;
 using namespace openMVG::cameras;
@@ -129,8 +127,6 @@ std::pair<bool, Vec3> checkPriorWeightsString
   return val;
 }
 
-
-#ifdef OPENMVG_USE_CXX11
 using Regex_Camera_Parameters = std::tuple <std::string, EINTRINSIC, std::vector<double> > ;
 /// Check that sCamsParamsRegex is a string like "imgRegex;camType;Kmatrix"
 bool checkCamsRegexStringValidity(const std::string & camsRegex, std::vector<Regex_Camera_Parameters> & vecCamParams)
@@ -236,7 +232,6 @@ bool checkCamsRegexStringValidity(const std::string & camsRegex, std::vector<Reg
   }
   return true;
 }
-#endif
 //
 // Create the description of an input image dataset for OpenMVG toolsuite
 // - Export a SfM_Data file with View & Intrinsic data
@@ -253,10 +248,7 @@ int main(int argc, char **argv)
   std::string sPriorWeights;
   std::pair<bool, Vec3> prior_w_info(false, Vec3(1.0,1.0,1.0));
 
-
-#ifdef OPENMVG_USE_CXX11
   std::string sCamsParamsRegex;
-#endif
 
   int i_User_camera_model = PINHOLE_CAMERA_RADIAL3;
 
@@ -276,9 +268,7 @@ int main(int argc, char **argv)
   cmd.add( make_switch('P', "use_pose_prior") );
   cmd.add( make_option('W', sPriorWeights, "prior_weigths"));
   cmd.add( make_option('m', i_GPS_XYZ_method, "gps_to_xyz_method") );
-#ifdef OPENMVG_USE_CXX11
   cmd.add( make_option('r', sCamsParamsRegex, "regex") );
-#endif
 
   try {
       if (argc == 1) throw std::string("Invalid command line parameter.");
@@ -305,9 +295,7 @@ int main(int argc, char **argv)
       << "[-m|--gps_to_xyz_method] XZY Coordinate system:\n"
       << "\t 0: ECEF (default)\n"
       << "\t 1: UTM\n"
-#ifdef OPENMVG_USE_CXX11
       << "[-r|--regex] Regex: \"{regex;camera_model;f;ppx;ppy;{dist param 1;dist param 2;etc.};]{1,n}\"\n"
-#endif
       << std::endl;
 
       std::cerr << s << std::endl;
@@ -322,10 +310,8 @@ int main(int argc, char **argv)
             << "--focal " << focal_pixels << std::endl
             << "--intrinsics " << sKmatrix << std::endl
             << "--camera_model " << i_User_camera_model << std::endl
-            << "--group_camera_model " << b_Group_camera_model << std::endl;
-#ifdef OPENMVG_USE_CXX11
-  std::cout << "--regex " << sCamsParamsRegex << std::endl;
-#endif
+            << "--group_camera_model " << b_Group_camera_model << std::endl
+            << "--regex " << sCamsParamsRegex << std::endl;
 
   // Expected properties for each image
   double width = -1, height = -1, focal = -1, ppx = -1,  ppy = -1;
@@ -352,7 +338,7 @@ int main(int argc, char **argv)
       return EXIT_FAILURE;
     }
   }
-#ifdef OPENMVG_USE_CXX11
+  
   std::vector<Regex_Camera_Parameters> vecCamParams;
   if(sCamsParamsRegex.size()>0){
     if(!checkCamsRegexStringValidity(sCamsParamsRegex,vecCamParams)){
@@ -360,7 +346,6 @@ int main(int argc, char **argv)
       return EXIT_FAILURE;
     }
   }
-#endif
 
   if (sKmatrix.size() > 0 &&
     !checkIntrinsicStringValidity(sKmatrix, focal, ppx, ppy) )
@@ -451,7 +436,6 @@ int main(int argc, char **argv)
       exifReader->doesHaveExifInfo()
       && !exifReader->getModel().empty();
 
-#ifdef OPENMVG_USE_CXX11
     bool bImageMatched = false;
     // Check if image fits any regex patterns
     std::vector<double> cam_image_param;
@@ -473,16 +457,13 @@ int main(int argc, char **argv)
         }
       }
     }
-#endif
 
     // Build intrinsic parameter related to the view
     std::shared_ptr<IntrinsicBase> intrinsic (NULL);
-
-#ifdef OPENMVG_USE_CXX11    
+ 
     // Image has not been matched with regex
     if(!bImageMatched)
     {
-#endif
       // Consider the case where the focal is provided manually
       if ( !bHaveValidExifMetadata || focal_pixels != -1)
       {
@@ -558,7 +539,6 @@ int main(int argc, char **argv)
             return EXIT_FAILURE;
         }
       }
-#ifdef OPENMVG_USE_CXX11
     }
     else
     {
@@ -596,7 +576,6 @@ int main(int argc, char **argv)
         }
       }
     }
-#endif
 
     // Build the view corresponding to the image
     const std::pair<bool, Vec3> gps_info = checkGPS(sImageFilename, i_GPS_XYZ_method);
