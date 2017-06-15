@@ -93,14 +93,19 @@ struct VSSLAM_Time_Stats
 
   void startTimer(double & d_time)
   {
+    #ifdef OPENMVG_USE_OPENMP
     if (b_enable_time_stats)
       d_time = omp_get_wtime();
+    #endif
   }
 
   void stopTimer(double & d_time)
   {
+    
+    #ifdef OPENMVG_USE_OPENMP
     if (b_enable_time_stats)
       d_time = omp_get_wtime() - d_time;
+    #endif
   }
 
   void restartData()

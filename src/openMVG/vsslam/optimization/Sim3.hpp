@@ -13,7 +13,7 @@
 #include <openMVG/types.hpp>
 #include <openMVG/numeric/numeric.h>
 
-#include <sophus/sim3.hpp>
+//#include <sophus/sim3.hpp>
 
 #include "slam/3DSolverBase.h" // want C3DJacobians::Quat_to_AxisAngle() and C3DJacobians::AxisAngle_to_Quat()
 #include "slam/Sim3SolverBase.h"
