@@ -55,30 +55,30 @@ if (OpenMVG_BUILD_OPENGL_EXAMPLES)
 
 
 
-FIND_PACKAGE(Sophus REQUIRED)
-include_directories(${Sophus_INCLUDE_DIRS})
+#FIND_PACKAGE(Sophus REQUIRED)
+#include_directories(${Sophus_INCLUDE_DIRS})
 
-add_executable(openMVG_main_VSSLAM_test_sim3 tests/main_VSSLAM_unitTest.cpp ${SLAMPP_HEADERS})
+#add_executable(openMVG_main_VSSLAM_test_sim3 tests/main_VSSLAM_unitTest.cpp ${SLAMPP_HEADERS})
   
-  target_link_libraries(openMVG_main_VSSLAM_test_sim3
-    ${OPENGL_gl_LIBRARY}
-    glfw
-    ${GLFW_LIBRARIES}
-    ${OpenMVG_LIBRARIES}
-    ${Sophus_LIBRARIES}
-  ${SLAMPP_BASE_LIBRARY}
-  ${SLAMPP_CAMD_LIBRARY}
-  ${SLAMPP_CSPARSE_LIBRARY}
-  ${SLAMPP_CXSPARSE_LIBRARY}
-  ${SLAMPP_CHOLMOD_LIBRARY}
-  )
+#  target_link_libraries(openMVG_main_VSSLAM_test_sim3
+#    ${OPENGL_gl_LIBRARY}
+#    glfw
+#    ${GLFW_LIBRARIES}
+#    ${OpenMVG_LIBRARIES}
+#    ${Sophus_LIBRARIES}
+#  ${SLAMPP_BASE_LIBRARY}
+#  ${SLAMPP_CAMD_LIBRARY}
+#  ${SLAMPP_CSPARSE_LIBRARY}
+#  ${SLAMPP_CXSPARSE_LIBRARY}
+#  ${SLAMPP_CHOLMOD_LIBRARY}
+#  )
 
-  if(OpenMVG_USE_OPENCV)
-    target_link_libraries(openMVG_main_VSSLAM_test_sim3
-        ${OpenCV_LIBS})
-  endif(OpenMVG_USE_OPENCV)
+#  if(OpenMVG_USE_OPENCV)
+#    target_link_libraries(openMVG_main_VSSLAM_test_sim3
+#        ${OpenCV_LIBS})
+#  endif(OpenMVG_USE_OPENCV)
 
-  set_property(TARGET openMVG_main_VSSLAM_test_sim3 PROPERTY FOLDER OpenMVG/software)
+#  set_property(TARGET openMVG_main_VSSLAM_test_sim3 PROPERTY FOLDER OpenMVG/software)
 
 else() # swine
 
@@ -106,24 +106,24 @@ else() # swine
 
 
 
-FIND_PACKAGE(Sophus REQUIRED)
-include_directories(${Sophus_INCLUDE_DIRS}) # swine - dont have but I put it to path so that it finds it
+#FIND_PACKAGE(Sophus REQUIRED)
+#include_directories(${Sophus_INCLUDE_DIRS}) # swine - dont have but I put it to path so that it finds it
 
-add_executable(openMVG_main_VSSLAM_test_sim3 tests/main_VSSLAM_unitTest.cpp ${SLAMPP_HEADERS})
+#add_executable(openMVG_main_VSSLAM_test_sim3 tests/main_VSSLAM_unitTest.cpp ${SLAMPP_HEADERS})
   
-  target_link_libraries(openMVG_main_VSSLAM_test_sim3
-    ${OpenMVG_LIBRARIES}
-    ${Sophus_LIBRARIES}
-   )
+#  target_link_libraries(openMVG_main_VSSLAM_test_sim3
+#    ${OpenMVG_LIBRARIES}
+#    ${Sophus_LIBRARIES}
+#   )
 
 	#     ${OPENGL_gl_LIBRARY}     glfw     ${GLFW_LIBRARIES}   ${Sophus_LIBRARIES} # removed
 
-  if(OpenMVG_USE_OPENCV)
-    target_link_libraries(openMVG_main_VSSLAM_test_sim3
-        ${OpenCV_LIBS})
-  endif(OpenMVG_USE_OPENCV)
+#  if(OpenMVG_USE_OPENCV)
+#    target_link_libraries(openMVG_main_VSSLAM_test_sim3
+#        ${OpenCV_LIBS})
+#  endif(OpenMVG_USE_OPENCV)
 
-  set_property(TARGET openMVG_main_VSSLAM_test_sim3 PROPERTY FOLDER OpenMVG/software)
+#  set_property(TARGET openMVG_main_VSSLAM_test_sim3 PROPERTY FOLDER OpenMVG/software)
 
 
 endif()

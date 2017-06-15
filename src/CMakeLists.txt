@@ -259,7 +259,7 @@ endif (EIGEN_FOUND)
 # - internal by default (ceres-solver+cxsparse+miniglog),
 # - external if CERES_DIR_HINTS and find_package return a valid Ceres setup
 # ==============================================================================
-find_package(Ceres QUIET HINTS ${CERES_DIR_HINTS})
+#find_package(Ceres QUIET HINTS ${CERES_DIR_HINTS})
 if (NOT Ceres_FOUND)
   set(OpenMVG_USE_INTERNAL_CERES ON)
   set(CERES_INCLUDE_DIRS
@@ -292,12 +292,12 @@ ADD_DEFINITIONS(-DEIGEN_DONT_PARALLELIZE) # dont want Eigen to parallelize small
 ADD_DEFINITIONS(-DEIGEN_UNALIGNED_VECTORIZE=0) # this must match the SLAM++ setting
 ADD_DEFINITIONS(-D__DISABLE_GPU) # this must match the SLAM++ setting
 
-SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -msse4 -mavx -march=native") # this must match the SLAM++ setting
-SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -msse4 -mavx -march=native") # this must match the SLAM++ setting
-SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -msse4 -march=native") # this must match the SLAM++ setting
-SET(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -msse4 -mavx -march=native") # this must match the SLAM++ setting
+#SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -msse4 -mavx -march=native") # this must match the SLAM++ setting
+#SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -msse4 -mavx -march=native") # this must match the SLAM++ setting
+#SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -msse4 -mavx -march=native") # this must match the SLAM++ setting
+#SET(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -msse4 -mavx -march=native") # this must match the SLAM++ setting
 
-set(SLAMPP_SOURCE_DIR "/home/klemen/workspace/ANU/SlamPP_Dev/slam-plus-plus-dev_code/trunk/SLAM_plus_plus")
+#set(SLAMPP_SOURCE_DIR "/home/klemen/SSD/work/workspace/ANU/SlamPP_DEV/slam-plus-plus-dev_code/trunk/SLAM_plus_plus")
 set(SLAMPP_INCLUDE_DIR ${SLAMPP_SOURCE_DIR}/include ${SLAMPP_SOURCE_DIR}/include/cholmod/SuiteSparse ${SLAMPP_SOURCE_DIR}/include/eigen33)
 
 include_directories(${SLAMPP_INCLUDE_DIR})
