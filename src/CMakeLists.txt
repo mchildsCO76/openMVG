@@ -294,7 +294,7 @@ ADD_DEFINITIONS(-D__DISABLE_GPU) # this must match the SLAM++ setting
 
 SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -msse4 -mavx -march=native") # this must match the SLAM++ setting
 SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -msse4 -mavx -march=native") # this must match the SLAM++ setting
-SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -msse4 -mavx -march=native") # this must match the SLAM++ setting
+SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -msse4 -march=native") # this must match the SLAM++ setting
 SET(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -msse4 -mavx -march=native") # this must match the SLAM++ setting
 
 set(SLAMPP_SOURCE_DIR "/home/klemen/workspace/ANU/SlamPP_Dev/slam-plus-plus-dev_code/trunk/SLAM_plus_plus")

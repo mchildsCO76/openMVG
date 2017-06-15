@@ -19,6 +19,10 @@
 #include "software/VSSLAM/CGlWindow.hpp" // swine
 #endif // !SWINE_NOGL
 
+#ifdef OPENMVG_USE_OPENMP
+#include <omp.h>
+#endif
+
 namespace openMVG {
 namespace vsslam {
 
