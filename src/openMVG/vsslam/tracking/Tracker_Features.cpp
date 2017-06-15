@@ -248,11 +248,18 @@ namespace vsslam {
 
 
       // Add data to map
-      cartographer_->addStep(frame_track_current, &vec_new_map_landmarks);
+      bool b_map_insertion = cartographer_->addStep(frame_track_current, &vec_new_map_landmarks);
 
       // Time statistics
       time_data.stopTimer(time_data.d_feat_add_to_global);
 
+      if (!b_map_insertion)
+      {
+        endOfFrameProcedure();
+        tracking_status_ = TRACKING_STATUS::NOT_INIT;
+        return false;
+        
+      }
       if (params_->b_export_intermediate_scene_ply)
       {
         // Export step to Ply

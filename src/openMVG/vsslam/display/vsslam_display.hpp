@@ -362,6 +362,7 @@ struct VSSLAM_Display
   void displayHistoryTracks(Frame * frame)
   {
     std::cout<<"History tracks: "<<frame->getFrameId()<<":: "<<frame->isActive()<<"\n";
+    
     for (IndexT feat_i = 0; feat_i<frame->getNumberOfFeatures(); ++feat_i)
     {
       MapLandmark * map_landmark = frame->getLandmark(feat_i);
@@ -372,27 +373,31 @@ struct VSSLAM_Display
       glColor3f(1.f, 0.f, 0.f);
       glBegin(GL_LINE_STRIP);
 
-        for (auto & obs_it : map_landmark->getObservations())
-        {
+      for (auto & obs_it : map_landmark->getObservations())
+      {
+
+//        if (obs_it.second.frame_ptr)
+//        {
           Vec2 pt = obs_it.second.frame_ptr->getFeaturePosition(obs_it.second.feat_id);
           glVertex2f(pt(0),pt(1));
-        }
-        glEnd();
+//          }
+      }
+      glEnd();
 
-        glPointSize(4.0f);
+      glPointSize(4.0f);
 
-        // check if frame is in global frame
-        if (frame->isActive()){
-          glColor3f(0.f, 1.f, 0.f);
-        }
-        else{
-          glColor3f(1.f, 1.f, 0.f);
-        }
-        glBegin(GL_POINTS);
+      // check if frame is in global frame
+      if (frame->isActive()){
+        glColor3f(0.f, 1.f, 0.f);
+      }
+      else{
+        glColor3f(1.f, 1.f, 0.f);
+      }
+      glBegin(GL_POINTS);
 
-        Vec2 pt = frame->getFeaturePosition(feat_i);
-        glVertex2f(pt(0),pt(1));
-        glEnd();
+      Vec2 pt = frame->getFeaturePosition(feat_i);
+      glVertex2f(pt(0),pt(1));
+      glEnd();
     }
   }
 

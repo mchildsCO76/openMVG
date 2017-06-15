@@ -57,6 +57,11 @@ public:
   // Check
   bool isReady();
 
+  bool isMapInitialized()
+  {
+    return cartographer_->isMapInitialized();
+  }
+
   // Insert a camera together with a mask image for processing
   IndexT createCamera(const CameraParameters & param_cam);
   IndexT createCamera(const CameraParameters & param_cam, image::Image<unsigned char> & mask);

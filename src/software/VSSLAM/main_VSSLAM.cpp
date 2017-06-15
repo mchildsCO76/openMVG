@@ -319,10 +319,16 @@ int main(int argc, char **argv)
       else
       {
         display_data.displayImage(window,text2D, currentImage);
+        std::cout<<"A\n";
         display_data.displayDetectedFeatures(slam_system.getCurrentFramePtr());
-        display_data.displayHistoryTracks(slam_system.getCurrentFramePtr());
-        display_data.displayByAssociation(slam_system.getCurrentFramePtr());
-        display_data.displayFrameActivityIndicator(window,slam_system.getCurrentFramePtr());
+std::cout<<"B\n";    
+if (slam_system.isMapInitialized())    
+  display_data.displayHistoryTracks(slam_system.getCurrentFramePtr());
+std::cout<<"C\n";        
+display_data.displayByAssociation(slam_system.getCurrentFramePtr());
+std::cout<<"D\n";        
+display_data.displayFrameActivityIndicator(window,slam_system.getCurrentFramePtr());
+std::cout<<"E\n";        
       }
 
       glFlush();
