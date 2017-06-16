@@ -62,7 +62,7 @@ public:
     const size_t n_features = regions_frame->RegionCount();
 
     // Prepare the size of vectors
-    std::vector<Eigen::Matrix<double, 2, 2, Eigen::DontAlign> > & vec_feat_inf = frame->getFeatureSqrtInfMatrixVector();
+    std::vector<Eigen::Matrix2d, Eigen::aligned_allocator<Eigen::Matrix2d> > & vec_feat_inf = frame->getFeatureSqrtInfMatrixVector();
     std::vector<float> & vec_feat_scale = frame->getFeatureScaleVector();
     vec_feat_inf.resize(n_features);
     vec_feat_scale.resize(n_features);

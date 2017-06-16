@@ -17,6 +17,8 @@
 #include <openMVG/vsslam/optimization/Sim3.hpp>
 #include <openMVG/vsslam/mapping/MapLandmark.hpp>
 
+#include <Eigen/StdVector>
+
 namespace openMVG {
 namespace vsslam {
 
@@ -53,7 +55,7 @@ private:
   std::unique_ptr<features::Regions> regions_;
 
   std::vector<Vec2> vec_pts_undist_;  // Vector of undistorted positions of keypoints
-  std::vector<Eigen::Matrix<double, 2, 2, Eigen::DontAlign> > vec_pts_sqrt_inf_mat_;  // Vector of information matrix for each keypoint
+  std::vector<Eigen::Matrix2d, Eigen::aligned_allocator<Eigen::Matrix2d> > vec_pts_sqrt_inf_mat_;  // Vector of information matrix for each keypoint
   std::vector<float> vec_pts_scale_;
 
   // Landmarks
@@ -168,11 +170,11 @@ public:
   {
     return vec_pts_scale_;
   }
-  std::vector<Eigen::Matrix<double, 2, 2, Eigen::DontAlign> > & getFeatureSqrtInfMatrixVector()
+  std::vector<Eigen::Matrix2d, Eigen::aligned_allocator<Eigen::Matrix2d> > & getFeatureSqrtInfMatrixVector()
   {
     return vec_pts_sqrt_inf_mat_;
   }
-  const std::vector<Eigen::Matrix<double, 2, 2, Eigen::DontAlign> > & getFeatureSqrtInfMatrixVector() const
+  const std::vector<Eigen::Matrix2d, Eigen::aligned_allocator<Eigen::Matrix2d> > & getFeatureSqrtInfMatrixVector() const
   {
     return vec_pts_sqrt_inf_mat_;
   }
@@ -210,12 +212,12 @@ public:
     return vec_pts_scale_[i];
   }
 
-  const Eigen::Matrix<double, 2, 2, Eigen::DontAlign> & getFeatureSqrtInfMatrix(const size_t & i) const
+  const Eigen::Matrix2d & getFeatureSqrtInfMatrix(const size_t & i) const
   {
     return vec_pts_sqrt_inf_mat_[i];
   }
 
-  Eigen::Matrix<double, 2, 2, Eigen::DontAlign> & getFeatureSqrtInfMatrix(const size_t & i)
+  Eigen::Matrix2d & getFeatureSqrtInfMatrix(const size_t & i)
   {
     return vec_pts_sqrt_inf_mat_[i];
   }
