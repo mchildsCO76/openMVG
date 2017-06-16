@@ -4,16 +4,8 @@
  * SlamPP_Optimizer_Sim3_gXYZ_gXYZ - Global cameras and global XYZ landmarks
  */
 
-#include <map>
-
-
-//#include <openMVG/vsslam/optimization/slampp_optimizers/CBAOptimizerCore_Sim3_gXYZ_gXYZ.app>
 #include <openMVG/vsslam/optimization/slampp/optimizers/SlamPP_Optimizer.hpp>
-
-
-#include <omp.h>
 #include "slam/Sim3SolverBase.h" // C3DJacobians, CBAJacobians, generally useful functions for BA and SE(3), does not need to be included
-
 #include "slam/LinearSolver_UberBlock.h"
 #include "slam/ConfigSolvers.h" // nonlinear graph solvers
 #include "slam/3DSolverBase.h" // want C3DJacobians::Quat_to_AxisAngle() and C3DJacobians::AxisAngle_to_Quat()
@@ -21,6 +13,15 @@
 //#include "slam/Marginals.h" // included from nonlinear solver, if supported
 #include "slam/NonlinearSolver_Lambda_DL.h"
 #include "slam/Eigenvalues.h"
+
+
+#include <map>
+
+
+#ifdef OPENMVG_USE_OPENMP
+#include <omp.h>
+#endif
+
 
 
 
