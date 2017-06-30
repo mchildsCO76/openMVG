@@ -3,25 +3,33 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
-#include "openMVG/exif/exif_IO_EasyExif.hpp"
 
+#include "openMVG/cameras/cameras.hpp"
+#include "openMVG/exif/exif_IO_EasyExif.hpp"
 #include "openMVG/exif/sensor_width_database/ParseDatabase.hpp"
-#include "openMVG/exif/exif_IO_EasyExif.hpp"
 #include "openMVG/geodesy/geodesy.hpp"
+#include "openMVG/image/image_io.hpp"
+#include "openMVG/numeric/eigen_alias_definition.hpp"
+#include "openMVG/sfm/sfm_data.hpp"
+#include "openMVG/sfm/sfm_data_io.hpp"
+#include "openMVG/sfm/sfm_data_utils.hpp"
+#include "openMVG/sfm/sfm_view.hpp"
+#include "openMVG/sfm/sfm_view_priors.hpp"
+#include "openMVG/types.hpp"
 
-#include "openMVG/image/image.hpp"
 #include "openMVG/stl/split.hpp"
-
 #include "openMVG/sfm/sfm.hpp"
 
 #include "third_party/cmdLine/cmdLine.h"
+#include "third_party/progress/progress_display.hpp"
 #include "third_party/stlplus3/filesystemSimplified/file_system.hpp"
 
 #include <iostream>
-#include <fstream>
 #include <sstream>
+#include <fstream>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 #include <tuple>
 
@@ -310,9 +318,8 @@ int main(int argc, char **argv)
             << "--focal " << focal_pixels << std::endl
             << "--intrinsics " << sKmatrix << std::endl
             << "--camera_model " << i_User_camera_model << std::endl
-            << "--group_camera_model " << b_Group_camera_model << std::endl
-            << "--regex " << sCamsParamsRegex << std::endl;
-
+            << "--group_camera_model " << b_Group_camera_model << std::endl;
+  std::cout << "--regex " << sCamsParamsRegex << std::endl;
   // Expected properties for each image
   double width = -1, height = -1, focal = -1, ppx = -1,  ppy = -1;
 
