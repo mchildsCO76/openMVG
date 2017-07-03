@@ -464,14 +464,15 @@ int main(int argc, char **argv)
   }
 
   // Check if prior weights are given
-  if (cmd.used('P') && !sPriorWeights.empty())
+  if ((cmd.used('P') || cmd.used('G')) && !sPriorWeights.empty())
   {
     prior_w_info = checkPriorWeightsString(sPriorWeights);
   }
-  else if (cmd.used('P'))
+  else if (cmd.used('P') || cmd.used('G'))
   {
     prior_w_info.first = true;
   }
+
 
   // Process text file with GPS data
   // use gps_to_xyz_method to define if its ECEF or UTM
