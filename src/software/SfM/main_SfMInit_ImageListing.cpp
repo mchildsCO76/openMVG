@@ -679,7 +679,7 @@ int main(int argc, char **argv)
     // Build the view corresponding to the image
     const std::pair<bool, Vec3> gps_info = ( cmd.used('G') && !map_GPS_data.empty() ) ? checkGPS(*iter_image, map_GPS_data, i_GPS_XYZ_method) : checkGPS(sImageFilename, i_GPS_XYZ_method);
     //const std::pair<bool, Vec3> gps_info = checkGPS(sImageFilename, i_GPS_XYZ_method);
-    if (gps_info.first && cmd.used('P'))
+    if (gps_info.first && ( cmd.used('P') || cmd.used('G') ) )
     {
       ViewPriors v(*iter_image, views.size(), views.size(), views.size(), width, height);
 
