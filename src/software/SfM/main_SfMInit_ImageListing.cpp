@@ -12,21 +12,30 @@
 #include "openMVG/geodesy/geodesy.hpp"
 #include "openMVG/image/image_io.hpp"
 #include "openMVG/numeric/eigen_alias_definition.hpp"
+#include "openMVG/sfm/sfm.hpp"
 #include "openMVG/sfm/sfm_data.hpp"
 #include "openMVG/sfm/sfm_data_io.hpp"
 #include "openMVG/sfm/sfm_data_utils.hpp"
 #include "openMVG/sfm/sfm_view.hpp"
 #include "openMVG/sfm/sfm_view_priors.hpp"
+#include "openMVG/stl/split.hpp"
 #include "openMVG/types.hpp"
 
 #include "third_party/cmdLine/cmdLine.h"
 #include "third_party/progress/progress_display.hpp"
 #include "third_party/stlplus3/filesystemSimplified/file_system.hpp"
 
+#include <iostream>
 #include <fstream>
 #include <memory>
+#include <regex>
+#include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
+#include <tuple>
+
+
 
 using namespace openMVG;
 using namespace openMVG::cameras;
@@ -211,6 +220,111 @@ Hash_Map<std::string,Vec3> parseGPSfile(std::string & sGPSfile)
 }
 
 
+using Regex_Camera_Parameters = std::tuple <std::string, EINTRINSIC, std::vector<double> > ;
+/// Check that sCamsParamsRegex is a string like "imgRegex;camType;Kmatrix"
+bool checkCamsRegexStringValidity(const std::string & camsRegex, std::vector<Regex_Camera_Parameters> & vecCamParams)
+{
+  std::vector<std::string> vec_str;
+  stl::split(camsRegex, ';', vec_str);
+  
+  // Start looping through elements
+  for (size_t i = 0; i< vec_str.size();)
+  {
+    // Go to camera type element (second in the element)
+    Regex_Camera_Parameters regex_camParams;
+    EINTRINSIC camType;
+    std::stringstream ss;
+    
+    // Check if there is enough parameters for at least one basic camera
+    if((vec_str.size()-i)<5)
+    {
+      std::cerr << "\n Not enough elements in the regex string" << std::endl;
+      return false;	  
+    }
+    // Set regex string to the camera unit
+    std::get<0>(regex_camParams) = vec_str[i];
+    
+    // Read camera type
+    i=i+1;    
+    // Check if string is integer
+    char * p ;
+    std::strtol(vec_str[i].c_str(), &p, 10);
+    if(*p==0)
+    {
+      // Convert to string and EINTRINSIC
+      int iCamType;
+      ss.str(vec_str[i]);
+      ss >> iCamType;
+      camType = EINTRINSIC(iCamType);
+    }
+    else{
+      std::cerr << "\n Used an invalid not a number character in camera type" << std::endl;
+      return false;
+    }
+    std::get<1>(regex_camParams) = camType;
+    
+    // Read f,ppx,ppy
+    i = i+1;
+    double param;
+    for(int p_i = 0;p_i<3;p_i++)
+    {
+      std::get<2>(regex_camParams).push_back(std::stod(vec_str[i+p_i]));
+    }
+
+    // Read distortion params
+    i = i+3;
+    int n_dist_param = 0;
+    // Check if there is enough elements in the regex string for distortion parameters
+    switch(camType)
+    {
+      case PINHOLE_CAMERA:
+        n_dist_param = 0;
+      break;
+      case PINHOLE_CAMERA_RADIAL1:
+        n_dist_param = 1;
+      break;
+      case PINHOLE_CAMERA_RADIAL3:
+        n_dist_param = 3;
+      break;
+      case PINHOLE_CAMERA_BROWN:
+        n_dist_param = 5;
+      break;
+      case PINHOLE_CAMERA_FISHEYE:
+        n_dist_param = 4;
+      break;
+      default:
+      std::cerr << "Error: unknown camera model: " << (int) camType << std::endl;
+      return EXIT_FAILURE;
+    }
+
+    // Check if there is sufficient number of parameters
+    if((vec_str.size()-i)<n_dist_param)
+    {
+      std::cerr << "\n Not enough elements in the regex string" << std::endl;
+      return false;	  
+    }
+    // Add all distortion parameters  
+    for(int p_i = 0;p_i<n_dist_param;p_i++)
+    {
+      std::get<2>(regex_camParams).push_back(std::stod(vec_str[i+p_i]));
+    }
+    i=i+n_dist_param;
+    
+    // Add the regex unit to the list
+    vecCamParams.push_back(regex_camParams);
+    
+    // Print the summary of the regex camera unit
+    std::cout << "\nCamera model: " << (int) camType << std::endl;
+    std::cout << "F: " << std::get<2>(regex_camParams).at(0)<<" PPX: "<< std::get<2>(regex_camParams).at(1)<<" PPY: "<< std::get<2>(regex_camParams).at(2)<< std::endl;
+    std::cout << "Distortion: ";
+    for(int p_i=0;p_i<n_dist_param;p_i++)
+    {
+      std::cout<<std::get<2>(regex_camParams).at(3+p_i) << " ";
+    }
+    std::cout << "\nRegex: "<<std::get<0>(regex_camParams) << std::endl;
+  }
+  return true;
+}
 //
 // Create the description of an input image dataset for OpenMVG toolsuite
 // - Export a SfM_Data file with View & Intrinsic data
@@ -226,6 +340,8 @@ int main(int argc, char **argv)
 
   std::string sPriorWeights;
   std::pair<bool, Vec3> prior_w_info(false, Vec3(1.0,1.0,1.0));
+
+  std::string sCamsParamsRegex;
 
   int i_User_camera_model = PINHOLE_CAMERA_RADIAL3;
 
@@ -248,6 +364,8 @@ int main(int argc, char **argv)
   cmd.add( make_option('W', sPriorWeights, "prior_weigths"));
   cmd.add( make_option('m', i_GPS_XYZ_method, "gps_to_xyz_method") );
   cmd.add( make_option('G', sGPSfile, "gps_file") );
+  cmd.add( make_option('r', sCamsParamsRegex, "regex") );
+
 
   try {
       if (argc == 1) throw std::string("Invalid command line parameter.");
@@ -275,6 +393,7 @@ int main(int argc, char **argv)
       << "\t 0: ECEF (default)\n"
       << "\t 1: UTM\n"
       << "[-G|--gps_file (has priority over EXIF GPS)\n"
+      << "[-r|--regex] Regex: \"{regex;camera_model;f;ppx;ppy;{dist param 1;dist param 2;etc.};]{1,n}\"\n"
       << std::endl;
 
       std::cerr << s << std::endl;
@@ -290,11 +409,12 @@ int main(int argc, char **argv)
             << "--intrinsics " << sKmatrix << std::endl
             << "--camera_model " << i_User_camera_model << std::endl
             << "--group_camera_model " << b_Group_camera_model << std::endl;
+  std::cout << "--regex " << sCamsParamsRegex << std::endl;
 
   // Expected properties for each image
   double width = -1, height = -1, focal = -1, ppx = -1,  ppy = -1;
 
-  const EINTRINSIC e_User_camera_model = EINTRINSIC(i_User_camera_model);
+  EINTRINSIC e_User_camera_model = EINTRINSIC(i_User_camera_model);
 
   if ( !stlplus::folder_exists( sImageDir ) )
   {
@@ -313,6 +433,14 @@ int main(int argc, char **argv)
     if ( !stlplus::folder_create( sOutputDir ))
     {
       std::cerr << "\nCannot create output directory" << std::endl;
+      return EXIT_FAILURE;
+    }
+  }
+  
+  std::vector<Regex_Camera_Parameters> vecCamParams;
+  if(sCamsParamsRegex.size()>0){
+    if(!checkCamsRegexStringValidity(sCamsParamsRegex,vecCamParams)){
+      std::cerr << "\nInvalid Cameras parameters regex string input" << std::endl;
       return EXIT_FAILURE;
     }
   }
@@ -414,80 +542,144 @@ int main(int argc, char **argv)
       exifReader->doesHaveExifInfo()
       && !exifReader->getModel().empty();
 
-    // Consider the case where the focal is provided manually
-    if ( !bHaveValidExifMetadata || focal_pixels != -1)
+    bool bImageMatched = false;
+    // Check if image fits any regex patterns
+    std::vector<double> cam_image_param;
+    if(vecCamParams.size()>0)
     {
-      if (sKmatrix.size() > 0) // Known user calibration K matrix
+      // Loop through regex patterns
+      for(std::vector<Regex_Camera_Parameters>::const_iterator iter_cParam = vecCamParams.begin();iter_cParam!=vecCamParams.end(); ++iter_cParam)
       {
-        if (!checkIntrinsicStringValidity(sKmatrix, focal, ppx, ppy))
-          focal = -1.0;
-      }
-      else // User provided focal length value
-        if (focal_pixels != -1 )
-          focal = focal_pixels;
-    }
-    else // If image contains meta data
-    {
-      const std::string sCamModel = exifReader->getModel();
-
-      // Handle case where focal length is equal to 0
-      if (exifReader->getFocal() == 0.0f)
-      {
-        error_report_stream
-          << stlplus::basename_part(sImageFilename) << ": Focal length is missing." << "\n";
-        focal = -1.0;
-      }
-      else
-      // Create the image entry in the list file
-      {
-        Datasheet datasheet;
-        if ( getInfo( sCamModel, vec_database, datasheet ))
+        const std::regex imgNameRegex(std::get<0>(*iter_cParam),std::regex_constants::extended);
+        std::smatch smBaseCamMatch;
+        // Check if it match the regex
+        if (std::regex_match(*iter_image, smBaseCamMatch, imgNameRegex))
         {
-          // The camera model was found in the database so we can compute it's approximated focal length
-          const double ccdw = datasheet.sensorSize_;
-          focal = std::max ( width, height ) * exifReader->getFocal() / ccdw;
-        }
-        else
-        {
-          error_report_stream
-            << stlplus::basename_part(sImageFilename)
-            << "\" model \"" << sCamModel << "\" doesn't exist in the database" << "\n"
-            << "Please consider add your camera model and sensor width in the database." << "\n";
+          e_User_camera_model = EINTRINSIC(std::get<1>(*iter_cParam));
+          // Get intrinsic parameters of the model
+          cam_image_param = std::get<2>(*iter_cParam);
+          bImageMatched = true;
+          break;
         }
       }
     }
 
     // Build intrinsic parameter related to the view
-    std::shared_ptr<IntrinsicBase> intrinsic;
-
-    if (focal > 0 && ppx > 0 && ppy > 0 && width > 0 && height > 0)
+    std::shared_ptr<IntrinsicBase> intrinsic (NULL);
+ 
+    // Image has not been matched with regex
+    if(!bImageMatched)
     {
-      // Create the desired camera type
-      switch (e_User_camera_model)
+      // Consider the case where the focal is provided manually
+      if ( !bHaveValidExifMetadata || focal_pixels != -1)
       {
-        case PINHOLE_CAMERA:
+        if (sKmatrix.size() > 0) // Known user calibration K matrix
+        {
+          if (!checkIntrinsicStringValidity(sKmatrix, focal, ppx, ppy))
+            focal = -1.0;
+        }
+        else // User provided focal length value
+          if (focal_pixels != -1 )
+            focal = focal_pixels;
+      }
+      else // If image contains meta data
+      {
+        const std::string sCamModel = exifReader->getModel();
+
+        // Handle case where focal length is equal to 0
+        if (exifReader->getFocal() == 0.0f)
+        {
+          error_report_stream
+            << stlplus::basename_part(sImageFilename) << ": Focal length is missing." << "\n";
+          focal = -1.0;
+        }
+        else
+        // Create the image entry in the list file
+        {
+          Datasheet datasheet;
+          if ( getInfo( sCamModel, vec_database, datasheet ))
+          {
+            // The camera model was found in the database so we can compute it's approximated focal length
+            const double ccdw = datasheet.sensorSize_;
+            focal = std::max ( width, height ) * exifReader->getFocal() / ccdw;
+          }
+          else
+          {
+            error_report_stream
+              << stlplus::basename_part(sImageFilename)
+              << "\" model \"" << sCamModel << "\" doesn't exist in the database" << "\n"
+              << "Please consider add your camera model and sensor width in the database." << "\n";
+          }
+        }
+      }
+      e_User_camera_model = EINTRINSIC(i_User_camera_model);
+      
+      
+      if (focal > 0 && ppx > 0 && ppy > 0 && width > 0 && height > 0)
+      {
+        // Create the desired camera type
+        switch(e_User_camera_model)
+        {
+          case PINHOLE_CAMERA:
           intrinsic = std::make_shared<Pinhole_Intrinsic>
-            (width, height, focal, ppx, ppy);
-        break;
-        case PINHOLE_CAMERA_RADIAL1:
-          intrinsic = std::make_shared<Pinhole_Intrinsic_Radial_K1>
-            (width, height, focal, ppx, ppy, 0.0); // setup no distortion as initial guess
-        break;
-        case PINHOLE_CAMERA_RADIAL3:
-          intrinsic = std::make_shared<Pinhole_Intrinsic_Radial_K3>
-            (width, height, focal, ppx, ppy, 0.0, 0.0, 0.0);  // setup no distortion as initial guess
-        break;
-        case PINHOLE_CAMERA_BROWN:
-          intrinsic =std::make_shared<Pinhole_Intrinsic_Brown_T2>
-            (width, height, focal, ppx, ppy, 0.0, 0.0, 0.0, 0.0, 0.0); // setup no distortion as initial guess
-        break;
-        case PINHOLE_CAMERA_FISHEYE:
-          intrinsic =std::make_shared<Pinhole_Intrinsic_Fisheye>
-            (width, height, focal, ppx, ppy, 0.0, 0.0, 0.0, 0.0); // setup no distortion as initial guess
-        break;
-        default:
-          std::cerr << "Error: unknown camera model: " << (int) e_User_camera_model << std::endl;
-          return EXIT_FAILURE;
+              (width, height, focal, ppx, ppy);
+          break;
+          case PINHOLE_CAMERA_RADIAL1:
+            intrinsic = std::make_shared<Pinhole_Intrinsic_Radial_K1>
+              (width, height, focal, ppx, ppy, 0.0); // setup no distortion as initial guess
+          break;
+          case PINHOLE_CAMERA_RADIAL3:
+            intrinsic = std::make_shared<Pinhole_Intrinsic_Radial_K3>
+              (width, height, focal, ppx, ppy, 0.0, 0.0, 0.0);  // setup no distortion as initial guess
+          break;
+          case PINHOLE_CAMERA_BROWN:
+            intrinsic =std::make_shared<Pinhole_Intrinsic_Brown_T2>
+              (width, height, focal, ppx, ppy, 0.0, 0.0, 0.0, 0.0, 0.0); // setup no distortion as initial guess
+          break;
+          case PINHOLE_CAMERA_FISHEYE:
+            intrinsic =std::make_shared<Pinhole_Intrinsic_Fisheye>
+              (width, height, focal, ppx, ppy, 0.0, 0.0, 0.0, 0.0); // setup no distortion as initial guess
+          break;
+          default:
+            std::cerr << "Error: unknown camera model: " << (int) e_User_camera_model << std::endl;
+            return EXIT_FAILURE;
+        }
+      }
+    }
+    else
+    {
+      focal = cam_image_param.at(0);
+      ppx = cam_image_param.at(1);
+      ppy = cam_image_param.at(2);
+      if (focal > 0 && ppx > 0 && ppy > 0 && width > 0 && height > 0)
+      {
+        // Create the desired camera type
+        switch(e_User_camera_model)
+        {
+          case PINHOLE_CAMERA:
+          intrinsic = std::make_shared<Pinhole_Intrinsic>
+              (width, height, focal, ppx, ppy);
+          break;
+          case PINHOLE_CAMERA_RADIAL1:
+            intrinsic = std::make_shared<Pinhole_Intrinsic_Radial_K1>
+              (width, height, focal, ppx, ppy, cam_image_param.at(3)); // setup no distortion as initial guess
+          break;
+          case PINHOLE_CAMERA_RADIAL3:
+            intrinsic = std::make_shared<Pinhole_Intrinsic_Radial_K3>
+              (width, height, focal, ppx, ppy, cam_image_param.at(3), cam_image_param.at(4), cam_image_param.at(5));  // setup no distortion as initial guess
+          break;
+          case PINHOLE_CAMERA_BROWN:
+            intrinsic =std::make_shared<Pinhole_Intrinsic_Brown_T2>
+              (width, height, focal, ppx, ppy, cam_image_param.at(3), cam_image_param.at(4), cam_image_param.at(5), cam_image_param.at(6), cam_image_param.at(7)); // setup no distortion as initial guess
+          break;
+          case PINHOLE_CAMERA_FISHEYE:
+            intrinsic =std::make_shared<Pinhole_Intrinsic_Fisheye>
+              (width, height, focal, ppx, ppy, cam_image_param.at(3), cam_image_param.at(4), cam_image_param.at(5), cam_image_param.at(6)); // setup no distortion as initial guess
+          break;
+          default:
+            std::cerr << "Error: unknown camera model: " << (int) e_User_camera_model << std::endl;
+            return EXIT_FAILURE;
+        }
       }
     }
 
