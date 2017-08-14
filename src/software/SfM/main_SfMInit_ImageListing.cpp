@@ -1,3 +1,5 @@
+// This file is part of OpenMVG, an Open Multiple View Geometry C++ library.
+
 // Copyright (c) 2012, 2013, 2015 Pierre MOULON.
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -10,30 +12,30 @@
 #include "openMVG/geodesy/geodesy.hpp"
 #include "openMVG/image/image_io.hpp"
 #include "openMVG/numeric/eigen_alias_definition.hpp"
+#include "openMVG/sfm/sfm.hpp"
 #include "openMVG/sfm/sfm_data.hpp"
 #include "openMVG/sfm/sfm_data_io.hpp"
 #include "openMVG/sfm/sfm_data_utils.hpp"
 #include "openMVG/sfm/sfm_view.hpp"
 #include "openMVG/sfm/sfm_view_priors.hpp"
-#include "openMVG/types.hpp"
-
 #include "openMVG/stl/split.hpp"
-#include "openMVG/sfm/sfm.hpp"
+#include "openMVG/types.hpp"
 
 #include "third_party/cmdLine/cmdLine.h"
 #include "third_party/progress/progress_display.hpp"
 #include "third_party/stlplus3/filesystemSimplified/file_system.hpp"
 
 #include <iostream>
-#include <sstream>
 #include <fstream>
 #include <memory>
+#include <regex>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 #include <tuple>
 
-#include <regex>
+
 
 using namespace openMVG;
 using namespace openMVG::cameras;
@@ -419,7 +421,7 @@ int main(int argc, char **argv)
       continue; // image cannot be opened
     }
 
-    if(sImFilenamePart.find("mask.png") != std::string::npos
+    if (sImFilenamePart.find("mask.png") != std::string::npos
        || sImFilenamePart.find("_mask.png") != std::string::npos)
     {
       error_report_stream
@@ -591,7 +593,7 @@ int main(int argc, char **argv)
       ViewPriors v(*iter_image, views.size(), views.size(), views.size(), width, height);
 
       // Add intrinsic related to the image (if any)
-      if (intrinsic == NULL)
+      if (intrinsic == nullptr)
       {
         //Since the view have invalid intrinsic data
         // (export the view, with an invalid intrinsic field value)
@@ -619,7 +621,7 @@ int main(int argc, char **argv)
       View v(*iter_image, views.size(), views.size(), views.size(), width, height);
 
       // Add intrinsic related to the image (if any)
-      if (intrinsic == NULL)
+      if (intrinsic == nullptr)
       {
         //Since the view have invalid intrinsic data
         // (export the view, with an invalid intrinsic field value)
