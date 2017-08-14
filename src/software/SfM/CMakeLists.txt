@@ -137,6 +137,14 @@ TARGET_LINK_LIBRARIES(openMVG_main_PointsFiltering
   stlplus
   )
 
+ADD_EXECUTABLE(openMVG_main_ChangeLocalOrigin main_ChangeLocalOrigin.cpp)
+TARGET_LINK_LIBRARIES(openMVG_main_ChangeLocalOrigin
+  openMVG_system
+  openMVG_image
+  openMVG_features
+  openMVG_sfm
+  stlplus
+  )
 # Installation rules
 SET_PROPERTY(TARGET openMVG_main_IncrementalSfM PROPERTY FOLDER OpenMVG/software)
 INSTALL(TARGETS openMVG_main_IncrementalSfM DESTINATION bin/)
@@ -152,6 +160,8 @@ SET_PROPERTY(TARGET openMVG_main_ComputeSfM_DataColor PROPERTY FOLDER OpenMVG/so
 INSTALL(TARGETS openMVG_main_ComputeSfM_DataColor DESTINATION bin/)
 SET_PROPERTY(TARGET openMVG_main_PointsFiltering PROPERTY FOLDER OpenMVG/software)
 INSTALL(TARGETS openMVG_main_PointsFiltering DESTINATION bin/)
+SET_PROPERTY(TARGET openMVG_main_ChangeLocalOrigin PROPERTY FOLDER OpenMVG/software)
+INSTALL(TARGETS openMVG_main_ChangeLocalOrigin DESTINATION bin/)
 
 ###
 # SfM tools to visualize feature tracking data
