@@ -304,6 +304,8 @@ int main(int argc, char **argv)
 
   bool b_Group_camera_model = true;
 
+  bool b_EXIF_Extended_Lookup = false;
+
   int i_GPS_XYZ_method = 0;
 
   double focal_pixels = -1.0;
@@ -320,6 +322,7 @@ int main(int argc, char **argv)
   cmd.add( make_switch('P', "use_pose_prior") );
   cmd.add( make_option('W', sPriorWeights, "prior_weigths"));
   cmd.add( make_option('m', i_GPS_XYZ_method, "gps_to_xyz_method") );
+  cmd.add( make_option('x', b_EXIF_Extended_Lookup, "exif_extended_lookup") );
   cmd.add(make_option('l', sLandmarksFilename, "landmarksFilename"));
 
   try {
@@ -347,6 +350,7 @@ int main(int argc, char **argv)
       << "[-m|--gps_to_xyz_method] XYZ Coordinate system:\n"
       << "\t 0: ECEF (default)\n"
       << "\t 1: UTM\n"
+      << "[-x|--exif_extended_lookup] Allow partial map on camera model name in EXIF information"
 	  << "[-l|--landmarksFilename] Landmarks Filename\n"
       << std::endl;
 
@@ -363,6 +367,7 @@ int main(int argc, char **argv)
 	  << "--intrinsics " << sKmatrix << std::endl
 	  << "--camera_model " << i_User_camera_model << std::endl
 	  << "--group_camera_model " << b_Group_camera_model << std::endl
+	  << "--exif_extended_lookup " << b_EXIF_Extended_Lookup << std::endl
 	  << "--landmarksFilename " << sLandmarksFilename << std::endl;
 
   // Expected properties for each image
@@ -509,7 +514,7 @@ int main(int argc, char **argv)
       // Create the image entry in the list file
       {
         Datasheet datasheet;
-        if ( getInfo( sCamModel, vec_database, datasheet ))
+        if ( getInfo( sCamModel, vec_database, datasheet, b_EXIF_Extended_Lookup))
         {
           // The camera model was found in the database so we can compute it's approximated focal length
           const double ccdw = datasheet.sensorSize_;
