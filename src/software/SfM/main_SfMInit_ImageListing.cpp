@@ -277,6 +277,13 @@ bool readLandmarksTextFile
 		{
 			IndexT landmark_unique_id = (IndexT)sfm_data.control_points.size(); // unique ID just from current landmark count
 			sfm_data.control_points[ landmark_unique_id ] = landmark;
+
+			// Log what we added
+			std::cout << "Added landmark " << landmark_unique_id << " at location (" << landmark.X.x() << ", "
+				<< landmark.X.y() << ", " << landmark.X.z() << ") with the following " << landmark.obs.size() << " control points:" << std::endl;
+			for (const auto& obs : landmark.obs) {
+				std::cout << "--View " << obs.second.id_feat << "@ pixel coordinates (" << obs.second.x.x() << ", " << obs.second.x.y() << ")" << std::endl;
+			}
 		}
 
 	}

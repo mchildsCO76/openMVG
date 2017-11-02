@@ -12,6 +12,7 @@
 #include "openMVG/sfm/sfm_data.hpp"
 #include "openMVG/sfm/sfm_data_io.hpp"
 #include "openMVG/sfm/sfm_data_transform.hpp"
+#include "openMVG/sfm/sfm_data_BA_ceres.hpp"
 
 #include "openMVG/exif/exif_IO_EasyExif.hpp"
 #include "openMVG/geodesy/geodesy.hpp"
@@ -81,7 +82,7 @@ int main(int argc, char **argv)
   //
   // Load a SfM scene
   // For each valid view (pose & intrinsic defined)
-  //  - iff a GPS position can be parsed
+  //  - if a GPS position can be parsed
   //    - store corresponding camera pose & GPS position
   // - Compute the registration between the selected camera poses & GPS positions
 
@@ -93,6 +94,29 @@ int main(int argc, char **argv)
       << "\nThe input SfM_Data file \"" << sSfM_Data_Filename_In
       << "\" cannot be read." << std::endl;
     return EXIT_FAILURE;
+  }
+
+  //---
+  // Bundle adjustment with GCP
+  //---
+  if (!sfm_data.control_points.empty()) {
+	  using namespace openMVG::sfm;
+	  std::cout << "Performing GCP bundle adjustment using " << sfm_data.control_points.size() << " control points." << std::endl;
+	  Bundle_Adjustment_Ceres::BA_Ceres_options options;
+	  Bundle_Adjustment_Ceres bundle_adjustment_obj(options);
+	  Control_Point_Parameter control_point_opt(20.0, true);
+	  if (!bundle_adjustment_obj.Adjust(sfm_data,
+		  Optimize_Options
+		  (
+			  cameras::Intrinsic_Parameter_Type::NONE, // Keep intrinsic constant
+			  Extrinsic_Parameter_Type::ADJUST_ALL, // Adjust camera motion
+			  Structure_Parameter_Type::ADJUST_ALL, // Adjust structure
+			  control_point_opt // Use GCP and weight more their observation residuals
+		  )
+	  ))
+	  {
+		  std::cerr << "Error performing GCP bundle adjustment" << std::endl;
+	  }
   }
 
   // Init the EXIF reader (will be used for GPS data reading)
