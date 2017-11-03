@@ -37,10 +37,174 @@ using namespace openMVG::sfm;
 
 using namespace std;
 
+enum
+{
+	ROBUST_RIGID_REGISTRATION = 0,
+	RIGID_REGISTRATION_ALL_POINTS = 1
+};
+
+static bool
+registerProjectUsingExifData
+	(
+	SfM_Data&			sfm_data,
+	int					rigid_registration_method,
+	const std::string&	sSfM_Data_Filename_Out
+	)
+{
+	// Init the EXIF reader (will be used for GPS data reading)
+	std::unique_ptr<Exif_IO> exifReader(new Exif_IO_EasyExif);
+	if (!exifReader)
+	{
+		std::cerr << "Cannot instantiate the EXIF metadata reader." << std::endl;
+		return false;
+	}
+
+	// List corresponding poses (SfM - GPS)
+	std::vector<Vec3> vec_sfm_center, vec_gps_center;
+
+	for (const auto & view_it : sfm_data.GetViews())
+	{
+		if (!sfm_data.IsPoseAndIntrinsicDefined(view_it.second.get()))
+			continue;
+
+		const std::string view_filename =
+			stlplus::create_filespec(sfm_data.s_root_path, view_it.second->s_Img_path);
+
+		// Try to parse EXIF metada & check existence of EXIF data
+		if (!(exifReader->open(view_filename) &&
+			exifReader->doesHaveExifInfo()))
+			continue;
+
+		// Check existence of GPS coordinates
+		double latitude, longitude, altitude;
+		if (exifReader->GPSLatitude(&latitude) &&
+			exifReader->GPSLongitude(&longitude) &&
+			exifReader->GPSAltitude(&altitude))
+		{
+			// Add ECEF XYZ position to the GPS position array
+			vec_gps_center.push_back(lla_to_ecef(latitude, longitude, altitude));
+			const openMVG::geometry::Pose3 pose(sfm_data.GetPoseOrDie(view_it.second.get()));
+			vec_sfm_center.push_back(pose.center());
+		}
+	}
+
+	if (vec_sfm_center.empty())
+	{
+		std::cerr << "No valid corresponding GPS data found for the used views." << std::endl;
+		return false;
+	}
+
+	std::cout << std::endl
+		<< "Registration report:\n"
+		<< " #corresponding SFM - GPS data: " << vec_sfm_center.size() << "\n"
+		<< std::endl;
+
+	// Export the corresponding poses (for debugging & see the transformation)
+	plyHelper::exportToPly(vec_gps_center,
+		stlplus::create_filespec(stlplus::folder_part(sSfM_Data_Filename_Out), "GPS_position", "ply"));
+	plyHelper::exportToPly(vec_sfm_center,
+		stlplus::create_filespec(stlplus::folder_part(sSfM_Data_Filename_Out), "SFM_position", "ply"));
+
+	{
+		// Convert positions to the appropriate data container
+		const Mat X_SfM = Eigen::Map<Mat>(vec_sfm_center[0].data(), 3, vec_sfm_center.size());
+		const Mat X_GPS = Eigen::Map<Mat>(vec_gps_center[0].data(), 3, vec_gps_center.size());
+
+		openMVG::geometry::Similarity3 sim;
+
+		// Compute the registration:
+		// - using a rigid scheme (using all points)
+		// - using a robust scheme (using partial points - robust estimation)
+		switch (rigid_registration_method)
+		{
+		case ROBUST_RIGID_REGISTRATION:
+		{
+			using namespace openMVG::robust;
+			using namespace openMVG::geometry;
+
+			geometry::kernel::Similarity3_Kernel kernel(X_SfM, X_GPS);
+			const double lmeds_median = LeastMedianOfSquares
+			(
+				kernel,
+				&sim
+			);
+			std::cout << "LMeds found a model with an upper bound of: " << sqrt(lmeds_median) << " user units." << std::endl;
+
+			// Compute & display fitting errors
+			{
+				const Vec vec_fitting_errors_eigen(
+					geometry::kernel::Similarity3ErrorSquaredMetric::ErrorVec(sim, X_SfM, X_GPS).array().sqrt());
+				std::cout << "\n3D Similarity fitting error using all points (in target coordinate system units):";
+				minMaxMeanMedian<float>(
+					vec_fitting_errors_eigen.data(),
+					vec_fitting_errors_eigen.data() + vec_fitting_errors_eigen.rows());
+			}
+			// INLIERS only
+			{
+				std::vector<float> vec_fitting_errors;
+				for (Mat::Index i = 0; i < X_SfM.cols(); ++i)
+				{
+					if (geometry::kernel::Similarity3ErrorSquaredMetric::Error(sim, X_SfM.col(i), X_GPS.col(i)) < lmeds_median)
+						vec_fitting_errors.push_back((X_GPS.col(i) - sim(X_SfM.col(i))).norm());
+				}
+				std::cout << "\nFound: " << vec_fitting_errors.size() << " inliers"
+					<< " from " << X_SfM.cols() << " points." << std::endl;
+				std::cout << "\n3D Similarity fitting error using only the fitted inliers (in target coordinate system units):";
+				minMaxMeanMedian<float>(vec_fitting_errors.begin(), vec_fitting_errors.end());
+			}
+		}
+		break;
+		case RIGID_REGISTRATION_ALL_POINTS:
+		{
+			Vec3 t;
+			Mat3 R;
+			double S;
+			if (!openMVG::geometry::FindRTS(X_SfM, X_GPS, &S, &t, &R))
+			{
+				std::cerr << "Failed to comute the registration" << std::endl;
+				return false;
+			}
+
+			std::cout
+				<< "Found transform:\n"
+				<< " scale: " << S << "\n"
+				<< " rotation:\n" << R << "\n"
+				<< " translation: " << std::fixed << std::setprecision(9)
+				<< t.transpose() << std::endl;
+
+			// Encode the transformation as a 3D Similarity transformation matrix // S * R * X + t
+			sim = openMVG::geometry::Similarity3(geometry::Pose3(R, -R.transpose()* t / S), S);
+
+			// Compute & display fitting errors
+			{
+				const Vec vec_fitting_errors_eigen(
+					geometry::kernel::Similarity3ErrorSquaredMetric::ErrorVec(sim, X_SfM, X_GPS).array().sqrt());
+				std::cout << "\n3D Similarity fitting error (in target coordinate system units):";
+				minMaxMeanMedian<float>(
+					vec_fitting_errors_eigen.data(),
+					vec_fitting_errors_eigen.data() + vec_fitting_errors_eigen.rows());
+			}
+		}
+		break;
+		default:
+			std::cerr << "Unknow rigid registration method" << std::endl;
+			return false;
+		}
+
+		//--
+		// Apply the found transformation to the SfM Data Scene
+		//--
+		openMVG::sfm::ApplySimilarity(sim, sfm_data);
+	}
+
+	return (true);
+}
+
 static bool
 registerProjectUsingControlPoints
 	(
-	SfM_Data&	sfm_data
+	SfM_Data&	sfm_data,
+	bool		bDoBundleAdjustment
 	)
 {
 	// Make sure we have enough data
@@ -171,9 +335,8 @@ registerProjectUsingControlPoints
 		}
 	}
 
-	//---
 	// Bundle adjustment with GCP
-	//---
+	if ( bDoBundleAdjustment )
 	{
 		using namespace openMVG::sfm;
 		std::cout << "Performing GCP bundle adjustment using " << sfm_data.control_points.size() << " control points." << std::endl;
@@ -204,18 +367,23 @@ int main(int argc, char **argv)
 {
   enum
   {
-    ROBUST_RIGID_REGISTRATION = 0,
-    RIGID_REGISTRATION_ALL_POINTS = 1
+	  LANDMARKS_DONT_USE = 0,		// don't use landmarks
+	  LANDMARKS_APPLY_FIRST = 1,	// apply landmarks before GPS registration
+	  LANDMARKS_APPLY_LAST = 2,		// apply landmarks after GPS registration
+	  LANDMARKS_ONLY = 3,			// if landmarks work, don't do GPS registration
   };
+
   std::string
     sSfM_Data_Filename_In,
     sSfM_Data_Filename_Out;
   unsigned int rigid_registration_method = RIGID_REGISTRATION_ALL_POINTS;
+  unsigned int landmarks_usage = LANDMARKS_DONT_USE;
 
   CmdLine cmd;
   cmd.add(make_option('i', sSfM_Data_Filename_In, "input_file"));
   cmd.add(make_option('o', sSfM_Data_Filename_Out, "output_file"));
   cmd.add(make_option('m', rigid_registration_method, "method"));
+  cmd.add(make_option('l', landmarks_usage, "landmarks_usage"));
 
   try
   {
@@ -232,7 +400,12 @@ int main(int argc, char **argv)
       << "[-m|--method] method to use for the rigid registration\n"
       << "\t0 => registration is done using a robust estimation,\n"
       << "\t1 (default)=> registration is done using all points.\n"
-      << std::endl;
+	  << "[-l|--landmarks_usage] how to use landmarks during registration\n"
+	  << "\t0 (default)=> don't use landmarks\n"
+      << "\t1 => apply landmarks first, then GPS\n"
+	  << "\t2 => apply GPS, then landmarks\n"
+	  << "\t3 => apply landmarks, only apply GPS if landmarks fail\n"
+	  << std::endl;
 
     std::cerr << s << std::endl;
     return EXIT_FAILURE;
@@ -261,156 +434,31 @@ int main(int argc, char **argv)
     return EXIT_FAILURE;
   }
 
-  // Init the EXIF reader (will be used for GPS data reading)
-  std::unique_ptr<Exif_IO> exifReader(new Exif_IO_EasyExif);
-  if (!exifReader)
-  {
-	  std::cerr << "Cannot instantiate the EXIF metadata reader." << std::endl;
-	  return EXIT_FAILURE;
-  }
-
-  // List corresponding poses (SfM - GPS)
-  std::vector<Vec3> vec_sfm_center, vec_gps_center;
-
-  for (const auto & view_it : sfm_data.GetViews())
-  {
-	  if (!sfm_data.IsPoseAndIntrinsicDefined(view_it.second.get()))
-		  continue;
-
-	  const std::string view_filename =
-		  stlplus::create_filespec(sfm_data.s_root_path, view_it.second->s_Img_path);
-
-	  // Try to parse EXIF metada & check existence of EXIF data
-	  if (!(exifReader->open(view_filename) &&
-		  exifReader->doesHaveExifInfo()))
-		  continue;
-
-	  // Check existence of GPS coordinates
-	  double latitude, longitude, altitude;
-	  if (exifReader->GPSLatitude(&latitude) &&
-		  exifReader->GPSLongitude(&longitude) &&
-		  exifReader->GPSAltitude(&altitude))
-	  {
-		  // Add ECEF XYZ position to the GPS position array
-		  vec_gps_center.push_back(lla_to_ecef(latitude, longitude, altitude));
-		  const openMVG::geometry::Pose3 pose(sfm_data.GetPoseOrDie(view_it.second.get()));
-		  vec_sfm_center.push_back(pose.center());
-	  }
-  }
-
-  if (vec_sfm_center.empty())
-  {
-	  std::cerr << "No valid corresponding GPS data found for the used views." << std::endl;
-	  return EXIT_FAILURE;
-  }
-
-  std::cout << std::endl
-	  << "Registration report:\n"
-	  << " #corresponding SFM - GPS data: " << vec_sfm_center.size() << "\n"
-	  << std::endl;
-
-  // Export the corresponding poses (for debugging & see the transformation)
-  plyHelper::exportToPly(vec_gps_center,
-	  stlplus::create_filespec(stlplus::folder_part(sSfM_Data_Filename_Out), "GPS_position", "ply"));
-  plyHelper::exportToPly(vec_sfm_center,
-	  stlplus::create_filespec(stlplus::folder_part(sSfM_Data_Filename_Out), "SFM_position", "ply"));
-
-  {
-	  // Convert positions to the appropriate data container
-	  const Mat X_SfM = Eigen::Map<Mat>(vec_sfm_center[0].data(), 3, vec_sfm_center.size());
-	  const Mat X_GPS = Eigen::Map<Mat>(vec_gps_center[0].data(), 3, vec_gps_center.size());
-
-	  openMVG::geometry::Similarity3 sim;
-
-	  // Compute the registration:
-	  // - using a rigid scheme (using all points)
-	  // - using a robust scheme (using partial points - robust estimation)
-	  switch (rigid_registration_method)
-	  {
-	  case ROBUST_RIGID_REGISTRATION:
-	  {
-		  using namespace openMVG::robust;
-		  using namespace openMVG::geometry;
-
-		  geometry::kernel::Similarity3_Kernel kernel(X_SfM, X_GPS);
-		  const double lmeds_median = LeastMedianOfSquares
-		  (
-			  kernel,
-			  &sim
-		  );
-		  std::cout << "LMeds found a model with an upper bound of: " << sqrt(lmeds_median) << " user units." << std::endl;
-
-		  // Compute & display fitting errors
-		  {
-			  const Vec vec_fitting_errors_eigen(
-				  geometry::kernel::Similarity3ErrorSquaredMetric::ErrorVec(sim, X_SfM, X_GPS).array().sqrt());
-			  std::cout << "\n3D Similarity fitting error using all points (in target coordinate system units):";
-			  minMaxMeanMedian<float>(
-				  vec_fitting_errors_eigen.data(),
-				  vec_fitting_errors_eigen.data() + vec_fitting_errors_eigen.rows());
-		  }
-		  // INLIERS only
-		  {
-			  std::vector<float> vec_fitting_errors;
-			  for (Mat::Index i = 0; i < X_SfM.cols(); ++i)
-			  {
-				  if (geometry::kernel::Similarity3ErrorSquaredMetric::Error(sim, X_SfM.col(i), X_GPS.col(i)) < lmeds_median)
-					  vec_fitting_errors.push_back((X_GPS.col(i) - sim(X_SfM.col(i))).norm());
-			  }
-			  std::cout << "\nFound: " << vec_fitting_errors.size() << " inliers"
-				  << " from " << X_SfM.cols() << " points." << std::endl;
-			  std::cout << "\n3D Similarity fitting error using only the fitted inliers (in target coordinate system units):";
-			  minMaxMeanMedian<float>(vec_fitting_errors.begin(), vec_fitting_errors.end());
-		  }
-	  }
-	  break;
-	  case RIGID_REGISTRATION_ALL_POINTS:
-	  {
-		  Vec3 t;
-		  Mat3 R;
-		  double S;
-		  if (!openMVG::geometry::FindRTS(X_SfM, X_GPS, &S, &t, &R))
-		  {
-			  std::cerr << "Failed to comute the registration" << std::endl;
-			  return EXIT_FAILURE;
-		  }
-
-		  std::cout
-			  << "Found transform:\n"
-			  << " scale: " << S << "\n"
-			  << " rotation:\n" << R << "\n"
-			  << " translation: " << std::fixed << std::setprecision(9)
-			  << t.transpose() << std::endl;
-
-		  // Encode the transformation as a 3D Similarity transformation matrix // S * R * X + t
-		  sim = openMVG::geometry::Similarity3(geometry::Pose3(R, -R.transpose()* t / S), S);
-
-		  // Compute & display fitting errors
-		  {
-			  const Vec vec_fitting_errors_eigen(
-				  geometry::kernel::Similarity3ErrorSquaredMetric::ErrorVec(sim, X_SfM, X_GPS).array().sqrt());
-			  std::cout << "\n3D Similarity fitting error (in target coordinate system units):";
-			  minMaxMeanMedian<float>(
-				  vec_fitting_errors_eigen.data(),
-				  vec_fitting_errors_eigen.data() + vec_fitting_errors_eigen.rows());
-		  }
-	  }
-	  break;
-	  default:
-		  std::cerr << "Unknow rigid registration method" << std::endl;
-		  return EXIT_FAILURE;
-	  }
-
-	  //--
-	  // Apply the found transformation to the SfM Data Scene
-	  //--
-	  openMVG::sfm::ApplySimilarity(sim, sfm_data);
-  }
-
   // Bundle adjustment with GCPs
-  if (!sfm_data.control_points.empty())
+  bool bControlPointAdjustmentDone = false;
+  bool bDoBundleAdjustment = true;
+  if (!sfm_data.control_points.empty() && (LANDMARKS_DONT_USE != landmarks_usage) && (LANDMARKS_APPLY_LAST != landmarks_usage))
   {
-	  registerProjectUsingControlPoints(sfm_data);
+	  bControlPointAdjustmentDone = registerProjectUsingControlPoints(sfm_data, bDoBundleAdjustment);
+  }
+
+  // Adjust using EXIF if we haven't already adjusted to control points
+  if (!bControlPointAdjustmentDone || (LANDMARKS_ONLY != landmarks_usage))
+  { 
+	  if (!registerProjectUsingExifData(sfm_data, rigid_registration_method, sSfM_Data_Filename_Out))
+	  {
+		  return (EXIT_FAILURE);
+	  }
+  }
+  else
+  {
+	  std::cout << "Skipping adjustment using image EXIF tags as we used control points." << std::endl;
+  }
+
+  // Apply control points after if needed
+  if (!sfm_data.control_points.empty() && (LANDMARKS_APPLY_LAST == landmarks_usage))
+  {
+	  bControlPointAdjustmentDone = registerProjectUsingControlPoints(sfm_data, bDoBundleAdjustment);
   }
 
   // Export the SfM_Data scene in the expected format
