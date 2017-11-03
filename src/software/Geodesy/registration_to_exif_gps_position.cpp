@@ -365,25 +365,15 @@ registerProjectUsingControlPoints
 
 int main(int argc, char **argv)
 {
-  enum
-  {
-	  LANDMARKS_DONT_USE = 0,		// don't use landmarks
-	  LANDMARKS_APPLY_FIRST = 1,	// apply landmarks before GPS registration
-	  LANDMARKS_APPLY_LAST = 2,		// apply landmarks after GPS registration
-	  LANDMARKS_ONLY = 3,			// if landmarks work, don't do GPS registration
-  };
-
   std::string
     sSfM_Data_Filename_In,
     sSfM_Data_Filename_Out;
   unsigned int rigid_registration_method = RIGID_REGISTRATION_ALL_POINTS;
-  unsigned int landmarks_usage = LANDMARKS_DONT_USE;
 
   CmdLine cmd;
   cmd.add(make_option('i', sSfM_Data_Filename_In, "input_file"));
   cmd.add(make_option('o', sSfM_Data_Filename_Out, "output_file"));
   cmd.add(make_option('m', rigid_registration_method, "method"));
-  cmd.add(make_option('l', landmarks_usage, "landmarks_usage"));
 
   try
   {
@@ -400,11 +390,6 @@ int main(int argc, char **argv)
       << "[-m|--method] method to use for the rigid registration\n"
       << "\t0 => registration is done using a robust estimation,\n"
       << "\t1 (default)=> registration is done using all points.\n"
-	  << "[-l|--landmarks_usage] how to use landmarks during registration\n"
-	  << "\t0 (default)=> don't use landmarks\n"
-      << "\t1 => apply landmarks first, then GPS\n"
-	  << "\t2 => apply GPS, then landmarks\n"
-	  << "\t3 => apply landmarks, only apply GPS if landmarks fail\n"
 	  << std::endl;
 
     std::cerr << s << std::endl;
@@ -423,59 +408,34 @@ int main(int argc, char **argv)
   //  - if a GPS position can be parsed
   //    - store corresponding camera pose & GPS position
   // - Compute the registration between the selected camera poses & GPS positions
+  // - Apply registration using control points (landmarks) if we have enough for a transform
 
   // Load input SfM_Data scene
   SfM_Data sfm_data;
   if (!Load(sfm_data, sSfM_Data_Filename_In, ESfM_Data(ALL)))
   {
-    std::cerr
-      << "\nThe input SfM_Data file \"" << sSfM_Data_Filename_In
-      << "\" cannot be read." << std::endl;
+    std::cerr << "\nThe input SfM_Data file \"" << sSfM_Data_Filename_In << "\" cannot be read." << std::endl;
     return EXIT_FAILURE;
-  }
-
-  // Bundle adjustment with GCPs
-  bool bControlPointAdjustmentDone = false;
-  bool bDoBundleAdjustment = true;
-  if (!sfm_data.control_points.empty() && (LANDMARKS_DONT_USE != landmarks_usage) && (LANDMARKS_APPLY_LAST != landmarks_usage))
-  {
-	  bControlPointAdjustmentDone = registerProjectUsingControlPoints(sfm_data, bDoBundleAdjustment);
   }
 
   // Adjust using EXIF if we haven't already adjusted to control points
-  if (!bControlPointAdjustmentDone || (LANDMARKS_ONLY != landmarks_usage))
-  { 
-	  if (!registerProjectUsingExifData(sfm_data, rigid_registration_method, sSfM_Data_Filename_Out))
-	  {
-		  return (EXIT_FAILURE);
-	  }
-  }
-  else
+  if (!registerProjectUsingExifData(sfm_data, rigid_registration_method, sSfM_Data_Filename_Out))
   {
-	  std::cout << "Skipping adjustment using image EXIF tags as we used control points." << std::endl;
+	  return (EXIT_FAILURE);
   }
 
-  // Apply control points after if needed
-  if (!sfm_data.control_points.empty() && (LANDMARKS_APPLY_LAST == landmarks_usage))
+  // Apply control points
+  if (!sfm_data.control_points.empty())
   {
-	  bControlPointAdjustmentDone = registerProjectUsingControlPoints(sfm_data, bDoBundleAdjustment);
+	  registerProjectUsingControlPoints(sfm_data, true);
   }
 
   // Export the SfM_Data scene in the expected format
-  if (Save(
-        sfm_data,
-        sSfM_Data_Filename_Out.c_str(),
-        ESfM_Data(ALL)))
+  if ( !Save(sfm_data, sSfM_Data_Filename_Out.c_str(), ESfM_Data(ALL)))
   {
-    return EXIT_SUCCESS;
-  }
-  else
-  {
-    std::cerr
-      << std::endl
-      << "An error occured while trying to save \""
-      << sSfM_Data_Filename_Out << "\"." << std::endl;
+    std::cerr << std::endl << "An error occured while trying to save \"" << sSfM_Data_Filename_Out << "\"." << std::endl;
     return EXIT_FAILURE;
   }
-  return EXIT_FAILURE;
+
+  return EXIT_SUCCESS;
 }
