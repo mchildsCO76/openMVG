@@ -37,7 +37,7 @@ using namespace openMVG::sfm;
 
 using namespace std;
 
-enum
+enum ERegistrationType
 {
 	ROBUST_RIGID_REGISTRATION = 0,
 	RIGID_REGISTRATION_ALL_POINTS = 1
@@ -368,7 +368,7 @@ int main(int argc, char **argv)
   std::string
     sSfM_Data_Filename_In,
     sSfM_Data_Filename_Out;
-  unsigned int rigid_registration_method = RIGID_REGISTRATION_ALL_POINTS;
+  unsigned int rigid_registration_method = ERegistrationType::RIGID_REGISTRATION_ALL_POINTS;
 
   CmdLine cmd;
   cmd.add(make_option('i', sSfM_Data_Filename_In, "input_file"));

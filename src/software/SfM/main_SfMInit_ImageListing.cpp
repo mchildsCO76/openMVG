@@ -327,7 +327,7 @@ int main(int argc, char **argv)
   cmd.add( make_option('c', i_User_camera_model, "camera_model") );
   cmd.add( make_option('g', b_Group_camera_model, "group_camera_model") );
   cmd.add( make_switch('P', "use_pose_prior") );
-  cmd.add( make_option('W', sPriorWeights, "prior_weigths"));
+  cmd.add( make_option('W', sPriorWeights, "prior_weights"));
   cmd.add( make_option('m', i_GPS_XYZ_method, "gps_to_xyz_method") );
   cmd.add( make_option('x', b_EXIF_Extended_Lookup, "exif_extended_lookup") );
   cmd.add(make_option('l', sLandmarksFilename, "landmarksFilename"));
@@ -567,11 +567,11 @@ int main(int argc, char **argv)
             (width, height, focal, ppx, ppy, 0.0, 0.0, 0.0);  // setup no distortion as initial guess
         break;
         case PINHOLE_CAMERA_BROWN:
-          intrinsic =std::make_shared<Pinhole_Intrinsic_Brown_T2>
+          intrinsic = std::make_shared<Pinhole_Intrinsic_Brown_T2>
             (width, height, focal, ppx, ppy, 0.0, 0.0, 0.0, 0.0, 0.0); // setup no distortion as initial guess
         break;
         case PINHOLE_CAMERA_FISHEYE:
-          intrinsic =std::make_shared<Pinhole_Intrinsic_Fisheye>
+          intrinsic = std::make_shared<Pinhole_Intrinsic_Fisheye>
             (width, height, focal, ppx, ppy, 0.0, 0.0, 0.0, 0.0); // setup no distortion as initial guess
         break;
         default:
